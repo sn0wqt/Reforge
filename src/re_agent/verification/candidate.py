@@ -54,7 +54,9 @@ def create_candidate_overlay(
             "schema_version=1\n", encoding="utf-8"
         )
         if source is None:
-            candidate_file = overlay_root / f"{target.class_name}_{target.function_name}.cpp"
+            safe_class_name = re.sub(r"[^A-Za-z0-9_.-]", "_", target.class_name)
+            safe_function_name = re.sub(r"[^A-Za-z0-9_.-]", "_", target.function_name)
+            candidate_file = overlay_root / f"{safe_class_name}_{safe_function_name}.cpp"
             candidate_file.parent.mkdir(parents=True, exist_ok=True)
             candidate_file.write_text(code.rstrip() + "\n", encoding="utf-8")
             return candidate_file

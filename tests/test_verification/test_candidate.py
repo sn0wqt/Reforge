@@ -41,6 +41,32 @@ def test_candidate_overlay_replaces_only_function_body(tmp_path: Path) -> None:
     assert source_file.read_text(encoding="utf-8").startswith("void CTrain::Go() { OldCall")
 
 
+def test_candidate_overlay_sanitizes_qualified_class_name(tmp_path: Path) -> None:
+    candidate = create_candidate_overlay(
+        FunctionTarget("0x100", "app::ui::Widget", "Render"),
+        "void Render() { NewCall(); }",
+        None,
+        tmp_path / "src",
+        tmp_path / "reports",
+    )
+    assert candidate.exists()
+    assert "::" not in candidate.name
+    assert candidate.read_text(encoding="utf-8") == "void Render() { NewCall(); }\n"
+
+
+def test_candidate_overlay_sanitizes_template_and_operator_names(tmp_path: Path) -> None:
+    candidate = create_candidate_overlay(
+        FunctionTarget("0x101", "std::vector<int, alloc>", "operator<"),
+        "void operator<() {}",
+        None,
+        tmp_path / "src",
+        tmp_path / "reports",
+    )
+    assert candidate.exists()
+    illegal_chars = set(':<>,/\\*?"| ')
+    assert not illegal_chars.intersection(candidate.name)
+
+
 def test_validation_gate_runs_configured_command(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
