@@ -14,6 +14,21 @@ from re_agent.utils.archives import ArchiveSafetyError, inspect_archive
 ANDROID_HERMES_BUNDLES: Final[tuple[str, ...]] = ("index.android.bundle",)
 IOS_HERMES_BUNDLES: Final[tuple[str, ...]] = ("main.jsbundle", "index.ios.bundle")
 MAX_DIRECTORY_ENTRIES: Final[int] = 100_000
+IL2CPP_DUMP_MARKERS: Final[tuple[str, ...]] = (
+    "script.json",
+    "dump.cs",
+    "il2cpp.h",
+    "static_metadata.json",
+)
+PLATFORM_HINTS: Final[dict[str, str]] = {
+    "android": "android",
+    "android-arm64": "android",
+    "ios": "ios",
+    "ios-arm64": "ios",
+    "windows": "windows",
+    "windows-x64": "windows",
+}
+MAX_PLATFORM_EVIDENCE_BYTES: Final[int] = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -28,6 +43,7 @@ class ArchitectureDetection:
     bundle_member: str | None = None
     package_type: str = "binary"
     detected_components: tuple[str, ...] = ()
+    detection_notes: tuple[str, ...] = ()
 
     @property
     def is_android(self) -> bool:
@@ -60,6 +76,7 @@ def _detection(
     bundle_member: str | None = None,
     package_type: str = "binary",
     detected_components: tuple[str, ...] = (),
+    detection_notes: tuple[str, ...] = (),
 ) -> ArchitectureDetection:
     return ArchitectureDetection(
         pathway_id=pathway_id,
@@ -70,6 +87,160 @@ def _detection(
         bundle_member=bundle_member,
         package_type=package_type,
         detected_components=detected_components,
+        detection_notes=detection_notes,
+    )
+
+
+def normalize_platform_hint(platform_hint: str | None) -> str | None:
+    """Normalize a user-facing platform/profile name to a platform identifier."""
+    if platform_hint is None:
+        return None
+    normalized = platform_hint.strip().casefold()
+    if not normalized:
+        return None
+    try:
+        return PLATFORM_HINTS[normalized]
+    except KeyError as exc:
+        supported = ", ".join(sorted(PLATFORM_HINTS))
+        raise ValueError(
+            f"Unsupported platform hint '{platform_hint}'. Expected one of: {supported}."
+        ) from exc
+
+
+def _read_prefix_text(path: Path) -> str:
+    try:
+        with path.open("rb") as stream:
+            return stream.read(MAX_PLATFORM_EVIDENCE_BYTES).decode(
+                "utf-8",
+                errors="ignore",
+            )
+    except OSError:
+        return ""
+
+
+def _il2cpp_dump_markers(path: Path) -> tuple[str, ...]:
+    """Return root-level Il2CppDumper artifacts without inspecting DummyDll."""
+    if not path.is_dir():
+        return ()
+    return tuple(
+        marker
+        for marker in IL2CPP_DUMP_MARKERS
+        if (path / marker).is_file()
+    )
+
+
+def _infer_il2cpp_dump_platform(path: Path) -> tuple[str, tuple[str, ...]]:
+    """Infer a dump's target platform only from platform-specific evidence.
+
+    Il2CppDumper's ``DummyDll`` and generated ``cpp_project`` directories are
+    host-side analysis artifacts. Their PE files and Visual Studio scaffolding
+    do not establish that the dumped game itself targets Windows.
+    """
+    root_names = {
+        child.name.casefold()
+        for child in path.iterdir()
+        if child.is_file()
+    }
+    if "gameassembly.dll" in root_names:
+        return "windows", ("root-level GameAssembly.dll",)
+    if "libil2cpp.so" in root_names:
+        return "android", ("root-level libil2cpp.so",)
+    if "unityframework" in root_names:
+        return "ios", ("root-level UnityFramework",)
+
+    dump_prefix = _read_prefix_text(path / "dump.cs")
+    weighted_markers = {
+        "ios": {
+            "Unity.Notifications.iOS.dll": 10,
+            "UnityEngine.iOSModule.dll": 6,
+            "UnityEngine.Apple.dll": 4,
+        },
+        "android": {
+            "Unity.Notifications.Android.dll": 10,
+            "UnityEngine.AndroidModule.dll": 6,
+            # This compatibility assembly is sometimes retained in non-Android
+            # Unity dumps, so it is supporting evidence only.
+            "UnityEngine.AndroidJNIModule.dll": 1,
+        },
+        "windows": {
+            "UnityEngine.WindowsStandaloneModule.dll": 10,
+            "UnityEngine.WindowsGamingInputModule.dll": 4,
+        },
+    }
+    platform_evidence = {
+        platform: tuple(
+            marker
+            for marker in marker_weights
+            if marker in dump_prefix
+        )
+        for platform, marker_weights in weighted_markers.items()
+    }
+    scores = {
+        platform: sum(
+            marker_weights[marker]
+            for marker in platform_evidence[platform]
+        )
+        for platform, marker_weights in weighted_markers.items()
+    }
+    ranked_scores = sorted(
+        scores.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    best_platform, best_score = ranked_scores[0]
+    runner_up_score = ranked_scores[1][1]
+    if best_score >= 4 and best_score - runner_up_score >= 3:
+        return best_platform, tuple(
+            f"dump.cs image: {marker}"
+            for marker in platform_evidence[best_platform]
+        )
+    return "unknown", ()
+
+
+def _il2cpp_detection(
+    platform: str,
+    *,
+    package_type: str,
+    detection_notes: tuple[str, ...] = (),
+) -> ArchitectureDetection:
+    route = {
+        "android": (
+            3,
+            "unity-il2cpp-android",
+            "Unity IL2CPP (Android)",
+        ),
+        "ios": (
+            4,
+            "unity-il2cpp-ios",
+            "Unity IL2CPP (iOS)",
+        ),
+        "windows": (
+            5,
+            "unity-il2cpp-windows",
+            "Unity IL2CPP (Windows)",
+        ),
+    }.get(platform)
+    if route is None:
+        return _detection(
+            0,
+            "unity-il2cpp-unresolved",
+            "unknown",
+            "unity-il2cpp",
+            "Unity IL2CPP (platform unresolved)",
+            package_type=package_type,
+            detected_components=("unity-il2cpp",),
+            detection_notes=detection_notes,
+        )
+    pathway_id, pathway, display_name = route
+    return _detection(
+        pathway_id,
+        pathway,
+        platform,
+        "unity-il2cpp",
+        display_name,
+        package_type=package_type,
+        detected_components=("unity-il2cpp",),
+        detection_notes=detection_notes,
     )
 
 
@@ -387,9 +558,14 @@ def _detect_file(path: Path) -> ArchitectureDetection:
     )
 
 
-def detect_architecture_from_path(target_path: str | Path) -> ArchitectureDetection:
+def detect_architecture_from_path(
+    target_path: str | Path,
+    *,
+    platform_hint: str | None = None,
+) -> ArchitectureDetection:
     """Resolve one of the eight supported platform pathways."""
     path = Path(target_path)
+    normalized_hint = normalize_platform_hint(platform_hint)
     if not path.exists():
         return _detection(
             7,
@@ -403,6 +579,24 @@ def detect_architecture_from_path(target_path: str | Path) -> ArchitectureDetect
         return _detect_archive(path)
     if path.is_file():
         return _detect_file(path)
+
+    dump_markers = _il2cpp_dump_markers(path)
+    if dump_markers:
+        inferred_platform, platform_evidence = _infer_il2cpp_dump_platform(path)
+        if normalized_hint is not None:
+            inferred_platform = normalized_hint
+            platform_evidence = (
+                f"explicit --platform {platform_hint}",
+            )
+        notes = (
+            f"Il2CppDumper artifacts: {', '.join(dump_markers)}",
+            *platform_evidence,
+        )
+        return _il2cpp_detection(
+            inferred_platform,
+            package_type="metadata-directory",
+            detection_notes=notes,
+        )
 
     names = [
         str(candidate.relative_to(path)).replace("\\", "/")

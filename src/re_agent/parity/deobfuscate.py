@@ -4,13 +4,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-STACK_STORE_PATTERN = re.compile(
-    r"(?:mov|str|movb|movl|movw)\b.*"
-    r"\[(?:rsp|rbp|sp|x\d+|r\d+)\s*[\+\-]\s*"
-    r"(0x[0-9a-fA-F]+|\d+)\]\s*,\s*(0x[0-9a-fA-F]+|\d+)",
-    re.IGNORECASE,
-)
-
 
 def detect_xor_loops(pcode_lines: list[str]) -> list[dict[str, Any]]:
     """Scan P-code lines for XOR decryption loop patterns (e.g., XOR, INT_XOR operations in loops)."""
@@ -30,47 +23,68 @@ def detect_xor_loops(pcode_lines: list[str]) -> list[dict[str, Any]]:
     return results
 
 
-def detect_stack_strings(assembly: list[str]) -> list[dict[str, Any]]:
-    """Detect stack string construction patterns in assembly.
+def detect_stack_strings(assembly_lines: list[str]) -> list[dict[str, Any]]:
+    """Scan assembly lines for stack string construction (byte and 32-bit dword assignments)."""
+    stack_string_entries: list[dict[str, Any]] = []
+    mov_stack_pattern = re.compile(
+        r"(?:mov|str|movb|movl|movw)\b.*"
+        r"\[(?:rsp|rbp|sp|x\d+|r\d+)\s*[\+\-]\s*"
+        r"(?:0x[0-9a-fA-F]+|\d+)\],\s*(0x[0-9a-fA-F]+|\d+)",
+        re.IGNORECASE,
+    )
 
-    Finds instructions that move immediate bytes onto stack offsets.
-    """
-    entries: list[dict[str, Any]] = []
-    for line in assembly:
-        match = STACK_STORE_PATTERN.search(line)
+    for idx, line in enumerate(assembly_lines):
+        match = mov_stack_pattern.search(line)
         if match:
-            entries.append(
-                {
-                    "offset": match.group(1),
-                    "value": match.group(2),
-                    "line": line.strip(),
-                }
-            )
-    return entries
-
-
-def reconstruct_stack_strings(assembly: list[str]) -> str:
-    """Reconstruct ASCII strings assembled piece-by-piece on the stack."""
-    chars: list[tuple[int, str]] = []
-    for line in assembly:
-        match = STACK_STORE_PATTERN.search(line)
-        if match:
+            raw_val = match.group(1)
             try:
-                offset = int(match.group(1), 16) if match.group(1).startswith("0x") else int(match.group(1))
-                raw_val = match.group(2)
-                val = int(raw_val, 16) if raw_val.startswith("0x") else int(raw_val)
-                # Unpack 32-bit dword packed ASCII integers if present
+                val = int(raw_val, 0)
+                # Handle 32-bit dword packed ASCII (little endian 4 bytes)
                 if val > 255 and val <= 0xFFFFFFFF:
-                    packed_bytes = val.to_bytes(4, byteorder="little", signed=False)
-                    for idx, b in enumerate(packed_bytes):
-                        if 32 <= b <= 126:
-                            chars.append((offset + idx, chr(b)))
-                elif 32 <= val <= 126:
-                    chars.append((offset, chr(val)))
-            except ValueError:
+                    b0 = val & 0xFF
+                    b1 = (val >> 8) & 0xFF
+                    b2 = (val >> 16) & 0xFF
+                    b3 = (val >> 24) & 0xFF
+                    for b in (b0, b1, b2, b3):
+                        if b != 0:
+                            stack_string_entries.append({
+                                "line_index": idx,
+                                "line": line.strip(),
+                                "value": hex(b),
+                            })
+                else:
+                    stack_string_entries.append({
+                        "line_index": idx,
+                        "line": line.strip(),
+                        "value": raw_val,
+                    })
+            except (ValueError, TypeError):
                 continue
-    chars.sort(key=lambda x: x[0])
-    return "".join(c[1] for c in chars)
+
+    return stack_string_entries
+
+
+def reconstruct_stack_strings(assembly_lines: list[str]) -> list[str]:
+    """Reconstruct ASCII strings constructed on the stack via sequential MOV byte instructions."""
+    entries = detect_stack_strings(assembly_lines)
+    if not entries:
+        return []
+
+    chars: list[str] = []
+    for entry in entries:
+        try:
+            val = int(entry["value"], 0)
+            if 32 <= val <= 126:
+                chars.append(chr(val))
+            elif val == 0 and chars:
+                chars.append("\0")
+        except (ValueError, TypeError):
+            continue
+
+    raw_str = "".join(chars)
+    # Split on null terminators and filter strings >= 3 chars
+    extracted = [s.strip() for s in raw_str.split("\0") if len(s.strip()) >= 3]
+    return extracted
 
 
 def deobfuscate_xor_buffer(data: bytes | bytearray, key: bytes | bytearray) -> bytes:

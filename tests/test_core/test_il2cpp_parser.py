@@ -49,6 +49,9 @@ def test_parse_dump_cs() -> None:
 
         // RVA: 0x2000 Offset: 0x2000 VA: 0x2000
         public void add_OnCurrencyExchange(Delegate value) { }
+
+        // RVA: 0x3000 Offset: 0x3000 VA: 0x3000
+        public int GetCurrency(Dictionary<CurrencyType, int> values, CurrencyType type = default) { }
     }
     """
     classes = parse_dump_cs(dump_text)
@@ -56,12 +59,18 @@ def test_parse_dump_cs() -> None:
     assert classes[0]["name"] == "PlayerManager"
     assert len(classes[0]["fields"]) == 1
     assert classes[0]["fields"][0]["name"] == "currentHealth"
-    assert len(classes[0]["methods"]) == 2
+    assert len(classes[0]["methods"]) == 3
     assert classes[0]["methods"][0]["return_type"] == "int32_t"
     assert classes[0]["methods"][0]["rva"] == 0x1000
     assert classes[0]["methods"][0]["address_kind"] == "method_rva"
     assert classes[0]["methods"][0]["is_event"] is False
     assert classes[0]["methods"][1]["is_event"] is True
+    assert classes[0]["methods"][1]["parameter_types"] == ("Delegate",)
+    assert classes[0]["methods"][1]["parameters"] == [{"type": "Delegate"}]
+    assert classes[0]["methods"][2]["parameter_types"] == (
+        "Dictionary<CurrencyType, int>",
+        "CurrencyType",
+    )
 
 
 def test_parse_dump_cs_trailing_field_offsets() -> None:

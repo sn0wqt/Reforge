@@ -435,8 +435,15 @@ Global options must precede the subcommand, for example
 | `re-agent estimate --class CLASS --limit N` | Estimate a class batch |
 | `re-agent batch --binary FILE --goal TEXT --limit N` | Rank a complete local candidate inventory and semantically refine a bounded shortlist |
 | `re-agent pipeline --binary FILE --goal TEXT --no-repack` | Generate pathway-aware candidate reports and review hook scaffolds |
+| `re-agent pipeline --metadata-dir DIR --platform ios --goal TEXT --no-repack` | Analyze a metadata-only IL2CPP dump with an explicit platform when auto-detection is ambiguous |
 
 Use `re-agent <command> --help` for the exact option list.
+
+Pipeline reports retain the complete evidence-ranked candidate inventory.
+Generated hook files stay bounded: active blocks require complete readiness
+evidence, and at most 20 additional candidates are included as commented
+review blocks. This keeps `Hook_Goal.cpp` and `Hook_Frida.js` usable even when
+a binary exposes thousands of keyword-adjacent members.
 
 ## Configuration precedence
 

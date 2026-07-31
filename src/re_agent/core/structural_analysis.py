@@ -10,7 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from re_agent.config.domain_keywords import COLLISION_KEYWORDS, CURRENCY_KEYWORDS
+from re_agent.config.domain_keywords import (
+    COLLISION_KEYWORDS,
+    CURRENCY_KEYWORDS,
+    is_contextual_currency_match,
+    matches_identifier_keyword,
+)
 
 
 @dataclass
@@ -72,11 +77,18 @@ def analyze_structures(
                 "system.int32",
                 "system.int64",
             ):
-                semantic_name = m_name.casefold()
                 if (
                     has_numeric_field
                     and m_name.startswith(("get_", "Get"))
-                    and any(keyword in semantic_name for keyword in CURRENCY_KEYWORDS)
+                    and any(
+                        matches_identifier_keyword(keyword, m_name)
+                        and is_contextual_currency_match(
+                            keyword,
+                            cls_name,
+                            m_name,
+                        )
+                        for keyword in CURRENCY_KEYWORDS
+                    )
                 ):
                     results.append(
                         StructuralCandidate(
@@ -104,7 +116,10 @@ def analyze_structures(
                         "system.int32",
                         "system.double",
                     )
-                    and any(keyword in m_name.casefold() for keyword in COLLISION_KEYWORDS)
+                    and any(
+                        matches_identifier_keyword(keyword, m_name)
+                        for keyword in COLLISION_KEYWORDS
+                    )
                 ):
                     results.append(
                         StructuralCandidate(
@@ -149,52 +164,4 @@ def analyze_structures(
 
     # Sort results by confidence descending
     results.sort(key=lambda x: x.confidence, reverse=True)
-    return results
-
-
-def analyze_deobfuscated_assembly(
-    class_name: str,
-    method_name: str,
-    assembly_lines: list[str],
-    target_keywords: Iterable[str] | None = None,
-) -> list[StructuralCandidate]:
-    """De-obfuscate assembly for a specific method using dynamic domain keywords."""
-    from re_agent.parity.deobfuscate import detect_xor_loops, reconstruct_stack_strings
-
-    results: list[StructuralCandidate] = []
-    recovered_words = reconstruct_stack_strings(assembly_lines)
-    xor_hits = detect_xor_loops(assembly_lines)
-
-    search_keywords = (
-        frozenset(target_keywords)
-        if target_keywords
-        else CORE_CURRENCY_VALUE_KEYWORDS
-    )
-
-    for word in recovered_words:
-        word_lower = word.lower()
-        if any(matches_identifier_keyword(k, word_lower) for k in search_keywords):
-            results.append(
-                StructuralCandidate(
-                    class_name=class_name,
-                    target_name=method_name,
-                    target_type="method",
-                    category="deobfuscated_domain_target",
-                    confidence=75,
-                    details=f"De-obfuscated stack string '{word}' recovered inside method {method_name}",
-                )
-            )
-
-    if xor_hits and not results:
-        results.append(
-            StructuralCandidate(
-                class_name=class_name,
-                target_name=method_name,
-                target_type="method",
-                category="xor_encrypted_body",
-                confidence=65,
-                details=f"Method {method_name} uses XOR decryption loops for runtime string unpacking",
-            )
-        )
-
     return results

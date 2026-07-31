@@ -109,6 +109,7 @@ def _write_pipeline_manifest(
             "display_name": architecture.display_name,
             "platform": architecture.platform,
             "engine_type": architecture.engine_type,
+            "detection_notes": list(architecture.detection_notes),
         },
         "exit_code": exit_code,
         "candidate_count": candidate_count,
@@ -743,6 +744,12 @@ def _write_patch_summary(
         f"Pathway {architecture.pathway_id}: {architecture.display_name}",
         f"Platform: {architecture.platform}",
         f"Engine: {architecture.engine_type}",
+        "Detection evidence: "
+        + (
+            "; ".join(architecture.detection_notes)
+            if architecture.detection_notes
+            else "(none recorded)"
+        ),
         f"Bundle member: {architecture.bundle_member or '(none)'}",
         f"Extracted bundle: {bundle_path or '(none)'}",
         f"Modified deployable bundle: {modified_bundle or '(none)'}",
@@ -768,7 +775,10 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         print(f"[!] Binary path does not exist: {binary_path}")
         return 2
 
-    architecture = detect_architecture_from_path(detection_target)
+    architecture = detect_architecture_from_path(
+        detection_target,
+        platform_hint=getattr(args, "platform", None),
+    )
     configured_output_dir = getattr(args, "output_dir", None)
     output_dir = (
         Path(configured_output_dir)
@@ -791,9 +801,20 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     print("==========================================================")
     if not configured_output_dir:
         print(f"[+] Default output directory: {output_dir.resolve()}")
-    print(f"[+] Pathway {architecture.pathway_id}/8: {architecture.display_name} ({architecture.pathway})")
+    if architecture.pathway_id:
+        print(
+            f"[+] Pathway {architecture.pathway_id}/8: "
+            f"{architecture.display_name} ({architecture.pathway})"
+        )
+    else:
+        print(
+            f"[!] Pathway unresolved: {architecture.display_name} "
+            f"({architecture.pathway})"
+        )
     if architecture.detected_components:
         print(f"[+] Detected components: {', '.join(architecture.detected_components)}")
+    for note in architecture.detection_notes:
+        print(f"[+] Detection evidence: {note}")
     if len(architecture.detected_components) > 1:
         print(
             "[!] Hybrid package detected. The selected pathway is the primary "
@@ -826,14 +847,14 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     decompiled_path: Path | None = None
     hermes_targets: list[AnalyzedTarget] = []
     if architecture.pathway_id in {1, 2} and binary_path is not None:
-        print("\n[*] Step 1/5: Resolving platform-specific Hermes bundle...")
+        print("\n[*] Step 1/5: Preparing React Native Hermes analysis input...")
         bundle_path = _extract_hermes_bundle(binary_path, architecture, output_dir)
         if bundle_path:
             decompiled_path = _decompile_hermes_bundle(bundle_path, output_dir)
         if bundle_path is None or decompiled_path is None:
             stages.append(
                 PipelineStage(
-                    "hermes_evidence",
+                    "input_preparation",
                     "FAILED",
                     "Selected Hermes pathway requires successful bundle extraction and analysis.",
                 )
@@ -866,7 +887,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             return 3
         stages.append(
             PipelineStage(
-                "hermes_evidence",
+                    "input_preparation",
                 "SUCCEEDED",
                 "Platform-specific bundle extracted and converted to an analysis view.",
                 (str(bundle_path), str(decompiled_path)),
@@ -893,14 +914,47 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 flush=True,
             )
     else:
-        print("\n[*] Step 1/5: No Hermes bundle extraction required.")
+        print("\n[*] Step 1/5: Preparing pathway-specific analysis inputs...")
+        if architecture.package_type == "metadata-directory":
+            print(
+                "[+] Using pre-generated IL2CPP metadata directly; "
+                "no package extraction is required."
+            )
+        else:
+            print(
+                "[+] Selected pathway consumes the supplied binary or metadata "
+                "directly; no package extraction is required."
+            )
         stages.append(
             PipelineStage(
-                "hermes_evidence",
+                "input_preparation",
                 "SKIPPED",
-                "Selected pathway does not require a Hermes bundle.",
+                "No package-specific extraction was required for the selected pathway.",
             )
         )
+
+    if architecture.pathway_id == 0:
+        print(
+            "[!] The metadata proves Unity IL2CPP but does not prove its target "
+            "platform. Re-run with --platform ios, --platform android, or "
+            "--platform windows."
+        )
+        stages.append(
+            PipelineStage(
+                "platform_resolution",
+                "FAILED",
+                "Metadata-only IL2CPP platform remained unresolved.",
+            )
+        )
+        _write_pipeline_manifest(
+            output_dir,
+            architecture,
+            stages,
+            exit_code=2,
+            candidate_count=0,
+            modified_bundle=None,
+        )
+        return 2
 
     print("\n[*] Step 2/5: Loading metadata and discovering candidates...")
     from re_agent.cli.cmd_batch import cmd_batch
@@ -915,6 +969,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         binary=str(binary_path) if binary_path else None,
         metadata=getattr(args, "metadata", None),
         metadata_dir=effective_metadata_dir,
+        platform=getattr(args, "platform", None),
         output_dir=str(output_dir),
         limit=50,
         _return_matches=True,

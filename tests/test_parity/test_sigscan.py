@@ -35,6 +35,15 @@ def test_match_signature_no_match() -> None:
     assert matches == []
 
 
+def test_match_signature_alignment() -> None:
+    # 8 bytes buffer, match starts at index 2 (unaligned for 4-byte boundary)
+    data = bytes([0x00, 0x00, 0x55, 0x48, 0x89, 0xE5, 0x00, 0x00])
+    unaligned_matches = match_signature(data, "55 48 89 E5", alignment=1)
+    aligned_4byte_matches = match_signature(data, "55 48 89 E5", alignment=4)
+    assert unaligned_matches == [2]
+    assert aligned_4byte_matches == []
+
+
 def test_generate_signature() -> None:
     instructions = [
         {"bytes": "55 48 89 e5", "is_relocated": False},
@@ -42,10 +51,3 @@ def test_generate_signature() -> None:
     ]
     sig = generate_signature(instructions, mask_relocations=True)
     assert sig == "55 48 89 E5 ?? ?? ?? ?? ??"
-
-
-def test_match_signature_alignment() -> None:
-    # 0xAA 0xBB 0xCC 0xDD placed at unaligned offset 1 vs 4-byte aligned offset 4
-    data = bytes([0x00, 0xAA, 0xBB, 0xCC, 0xAA, 0xBB, 0xCC, 0xDD])
-    matches = match_signature(data, "AA BB CC", alignment=4)
-    assert matches == [4]

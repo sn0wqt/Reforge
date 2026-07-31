@@ -12,11 +12,18 @@ from typing import Any
 
 from re_agent.config.domain_keywords import (
     COLLISION_KEYWORDS,
+    CORE_CURRENCY_VALUE_KEYWORDS,
     CURRENCY_KEYWORDS,
     DOMAIN_EXPANSION_GROUPS,
     MODEL_HINTS,
+    MOVEMENT_KEYWORDS,
+    NON_RUNTIME_CLASS_HINTS,
     UI_PENALTY_HINTS,
     filter_entity_terms,
+    has_economy_data_context,
+    identifier_tokens,
+    is_balance_value_member,
+    is_contextual_currency_match,
     is_entity_keyword,
     matches_identifier_keyword,
 )
@@ -29,6 +36,7 @@ from re_agent.utils.paths import safe_filename
 from re_agent.utils.vtable import generate_vtable_header
 
 logger = logging.getLogger(__name__)
+MAX_OFFSET_INVENTORY_FILES = 50
 
 
 def _method_activation_facts(
@@ -100,6 +108,58 @@ def _match_keyword(keyword: str, candidate: str) -> bool:
     return matches_identifier_keyword(keyword, candidate)
 
 
+def _match_candidate_keyword(
+    keyword: str,
+    class_name: str,
+    member_name: str,
+) -> bool:
+    """Match one entity while rejecting overloaded framework terminology."""
+    return _match_keyword(keyword, member_name) and (
+        keyword not in CURRENCY_KEYWORDS
+        or is_contextual_currency_match(keyword, class_name, member_name)
+    )
+
+
+def _is_scalar_currency_field_type(type_name: object) -> bool:
+    """Accept only scalar numeric storage, never delegates or collections."""
+    normalized = re.sub(r"\s+", "", str(type_name)).casefold()
+    return normalized in {
+        "byte",
+        "double",
+        "float",
+        "int",
+        "int16",
+        "int16_t",
+        "int32",
+        "int32_t",
+        "int64",
+        "int64_t",
+        "long",
+        "safeint",
+        "safelong",
+        "sbyte",
+        "short",
+        "system.byte",
+        "system.double",
+        "system.int16",
+        "system.int32",
+        "system.int64",
+        "system.sbyte",
+        "system.single",
+        "system.uint16",
+        "system.uint32",
+        "system.uint64",
+        "uint",
+        "uint16",
+        "uint16_t",
+        "uint32",
+        "uint32_t",
+        "uint64",
+        "uint64_t",
+        "ulong",
+    }
+
+
 def group_methods_by_class(methods: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     """Group IL2CPP script.json methods by class name using DotNetSignature, Group, or Name."""
     classes: dict[str, list[dict[str, Any]]] = {}
@@ -139,9 +199,47 @@ def group_methods_by_class(methods: list[dict[str, Any]]) -> dict[str, list[dict
     return classes
 
 
+def _merge_dump_method_evidence(
+    script_methods: list[dict[str, Any]],
+    dump_methods: list[dict[str, Any]],
+) -> None:
+    """Merge dump.cs evidence without collapsing same-name overloads."""
+    existing_by_name: dict[str, list[dict[str, Any]]] = {}
+    for method in script_methods:
+        method_name = str(method.get("method_name", method.get("name", "")))
+        existing_by_name.setdefault(method_name, []).append(method)
+
+    merged_counts: dict[str, int] = {}
+    evidence_keys = (
+        "return_type",
+        "is_event",
+        "rva",
+        "address",
+        "address_kind",
+        "args",
+        "parameter_types",
+        "parameters",
+    )
+    for dump_method in dump_methods:
+        method_name = str(
+            dump_method.get("method_name", dump_method.get("name", ""))
+        )
+        matches = existing_by_name.get(method_name, [])
+        match_index = merged_counts.get(method_name, 0)
+        if match_index >= len(matches):
+            script_methods.append(dump_method)
+            continue
+        destination = matches[match_index]
+        merged_counts[method_name] = match_index + 1
+        for key in evidence_keys:
+            if key in dump_method:
+                destination[key] = dump_method[key]
+
+
 def rank_classes_by_relevance(
     candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]],
     keywords: list[str],
+    direct_keywords: list[str] | None = None,
 ) -> list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]]:
     """Rank candidate classes by keyword relevance with structural heuristics.
 
@@ -156,15 +254,18 @@ def rank_classes_by_relevance(
     ) -> int:
         cls_name, methods, fields = entry
         score = 0
+        direct_terms = set(direct_keywords or ())
+        class_tokens = identifier_tokens(cls_name)
 
         matched_kw_count = 0
         for kw in keywords:
+            if not _match_candidate_keyword(kw, cls_name, cls_name):
+                continue
             if kw.casefold() == cls_name.casefold():
-                score += 80
-                matched_kw_count += 1
-            elif _match_keyword(kw, cls_name):
-                score += 30
-                matched_kw_count += 1
+                score += 100 if kw in direct_terms else 80
+            else:
+                score += 50 if kw in direct_terms else 30
+            matched_kw_count += 1
 
         # Multi-keyword match bonus: classes matching MULTIPLE target keywords (e.g., Character + Collision)
         if matched_kw_count > 1:
@@ -173,14 +274,30 @@ def rank_classes_by_relevance(
         # Keyword matches on member fields
         for f in fields:
             f_name = str(f.get("name", ""))
-            if any(_match_keyword(kw, f_name) for kw in keywords):
-                score += 10
+            matches = [
+                kw
+                for kw in keywords
+                if _match_candidate_keyword(kw, cls_name, f_name)
+            ]
+            if matches:
+                score += 20 if any(kw in direct_terms for kw in matches) else 10
 
         # Keyword matches on method names
         for m in methods:
-            m_name = str(m.get("name", ""))
-            if any(_match_keyword(kw, m_name) for kw in keywords):
-                score += 5
+            m_name = str(m.get("method_name", m.get("name", "")))
+            matches = [
+                kw
+                for kw in keywords
+                if _match_candidate_keyword(kw, cls_name, m_name)
+            ]
+            if matches:
+                score += 15 if any(kw in direct_terms for kw in matches) else 7
+
+        if (
+            any(keyword in CURRENCY_KEYWORDS for keyword in keywords)
+            and has_economy_data_context(cls_name)
+        ):
+            score += 100
 
         # Boost core data-model & engine physics classes
         if any(_match_keyword(hint, cls_name) for hint in MODEL_HINTS):
@@ -213,6 +330,8 @@ def rank_classes_by_relevance(
         )
         if penalty_count > 0:
             score -= 100 * penalty_count
+        if class_tokens & NON_RUNTIME_CLASS_HINTS:
+            score -= 250
 
         return score
 
@@ -244,7 +363,10 @@ def cmd_batch(
     # Detect engine type to route metadata loading correctly
     from re_agent.core.engine_detector import detect_architecture_from_path
 
-    architecture = detect_architecture_from_path(binary_arg)
+    architecture = detect_architecture_from_path(
+        binary_arg,
+        platform_hint=getattr(args, "platform", None),
+    )
     engine_type = architecture.engine_type
 
     # Only scan for IL2CPP metadata if engine is Unity IL2CPP or metadata was explicitly provided
@@ -275,12 +397,20 @@ def cmd_batch(
             )
 
     structs_map: dict[str, list[dict[str, Any]]] = {}
+    struct_display_names: dict[str, str] = {}
     for s in structs_list:
-        structs_map[s.get("name", "").lower()] = s.get("fields", [])
+        struct_name = str(s.get("name", ""))
+        normalized_name = struct_name.casefold()
+        structs_map[normalized_name] = s.get("fields", [])
+        if struct_name:
+            struct_display_names.setdefault(normalized_name, struct_name)
     for c in dump_cs_classes:
-        c_name = c.get("name", "").lower()
+        display_name = str(c.get("name", ""))
+        c_name = display_name.casefold()
         if c.get("fields"):
             structs_map[c_name] = c.get("fields", [])
+        if display_name:
+            struct_display_names[c_name] = display_name
 
     goal_prompt = getattr(args, "goal", None)
     direct_goal_keywords = extract_entity_keywords(goal_prompt) if goal_prompt else []
@@ -350,20 +480,22 @@ def cmd_batch(
             if c_name not in class_map or not class_map[c_name]:
                 class_map[c_name] = c_methods
             else:
-                # Merge return_type and is_event into existing method entries
-                existing = {m.get("method_name", m.get("name", "")): m for m in class_map[c_name]}
-                for dm in c_methods:
-                    dm_name = dm.get("method_name", dm.get("name", ""))
-                    if dm_name in existing:
-                        existing[dm_name]["return_type"] = dm.get("return_type", "int32_t")
-                        existing[dm_name]["is_event"] = dm.get("is_event", False)
-                    else:
-                        class_map[c_name].append(dm)
+                _merge_dump_method_evidence(class_map[c_name], c_methods)
 
         # Also include struct names from il2cpp.h / dump.cs in class_map
-        for s_name in structs_map:
-            if s_name not in class_map:
-                class_map[s_name] = []
+        class_names_casefold = {
+            class_name.casefold()
+            for class_name in class_map
+        }
+        for normalized_name in structs_map:
+            if normalized_name in class_names_casefold:
+                continue
+            display_name = struct_display_names.get(
+                normalized_name,
+                normalized_name,
+            )
+            class_map[display_name] = []
+            class_names_casefold.add(normalized_name)
 
         cls_label = "Java/Kotlin" if engine_type in ["android-java-dex", "react-native-hermes"] else "C++"
         print(f"[+] Discovered {len(class_map)} {cls_label} classes/structs.")
@@ -412,15 +544,36 @@ def cmd_batch(
             cls_fields = structs_map.get(cls_name.lower(), [])
 
             if target_classes:
-
-                def _match_kw(kw: str, text: str) -> bool:
-                    return _match_keyword(kw, text)
-
-                name_match = any(_match_kw(tc, cls_name) for tc in target_classes)
-                field_match = any(any(_match_kw(tc, f.get("name", "")) for tc in target_classes) for f in cls_fields)
+                name_match = any(
+                    _match_candidate_keyword(term, cls_name, cls_name)
+                    for term in target_classes
+                )
+                field_match = any(
+                    any(
+                        _match_candidate_keyword(
+                            term,
+                            cls_name,
+                            str(field.get("name", "")),
+                        )
+                        for term in target_classes
+                    )
+                    for field in cls_fields
+                )
                 method_match = any(
-                    any(_match_kw(tc, m.get("method_name", m.get("name", ""))) for tc in target_classes)
-                    for m in cls_methods
+                    any(
+                        _match_candidate_keyword(
+                            term,
+                            cls_name,
+                            str(
+                                method.get(
+                                    "method_name",
+                                    method.get("name", ""),
+                                )
+                            ),
+                        )
+                        for term in target_classes
+                    )
+                    for method in cls_methods
                 )
                 if not name_match and not field_match and not method_match:
                     continue
@@ -435,13 +588,47 @@ def cmd_batch(
         # Keep the complete locally discovered inventory. The user-facing
         # ``limit`` bounds only the external-model semantic shortlist; it must
         # never discard deterministic candidates from the expanded summary.
-        ranked_candidates = rank_classes_by_relevance(raw_candidates, target_classes)
+        ranked_candidates = rank_classes_by_relevance(
+            raw_candidates,
+            target_classes,
+            direct_goal_keywords,
+        )
         semantic_shortlist = ranked_candidates[:limit]
 
         # Structural Type-Signature Analysis (Obfuscation-Proof Layer)
         from re_agent.core.structural_analysis import analyze_structures
 
         struct_hits = analyze_structures(ranked_candidates)
+        goal_tokens = set(re.findall(r"\b\w+\b", (goal_prompt or "").lower()))
+        is_currency_goal = bool(goal_tokens & CURRENCY_KEYWORDS)
+        is_collision_goal = bool(goal_tokens & COLLISION_KEYWORDS)
+        is_movement_goal = bool(goal_tokens & MOVEMENT_KEYWORDS)
+        allowed_structural_categories: set[str] = set()
+        if is_currency_goal:
+            allowed_structural_categories.add("currency_getter")
+        if is_collision_goal:
+            allowed_structural_categories.add("damage_check")
+        if is_movement_goal:
+            allowed_structural_categories.update(
+                {"position_getter", "speed_getter"}
+            )
+        struct_hits = [
+            hit
+            for hit in struct_hits
+            if hit.category in allowed_structural_categories
+            and (
+                hit.category != "currency_getter"
+                or any(
+                    _match_candidate_keyword(
+                        keyword,
+                        hit.class_name,
+                        hit.target_name,
+                    )
+                    for keyword in goal_keywords
+                    if keyword in CURRENCY_KEYWORDS
+                )
+            )
+        ]
         if struct_hits:
             print(f"[+] Structural Type Analysis identified {len(struct_hits)} candidates matching method signatures.")
 
@@ -463,7 +650,11 @@ def cmd_batch(
                 ("return_override", "int32_t", "999999999"),
             )
             direct_relevance = not direct_goal_keywords or any(
-                _match_keyword(term, f"{hit.class_name} {hit.target_name}")
+                _match_candidate_keyword(
+                    term,
+                    hit.class_name,
+                    hit.target_name,
+                )
                 for term in direct_goal_keywords
             )
             structural_confidence = (
@@ -526,6 +717,45 @@ def cmd_batch(
                     semantic_shortlist,
                     raise_on_provider_error=True,
                 )
+                if is_currency_goal:
+                    for target in llm_targets:
+                        direct_match = any(
+                            _match_candidate_keyword(
+                                keyword,
+                                target.class_name,
+                                target.target,
+                            )
+                            for keyword in direct_goal_keywords
+                            if keyword in CURRENCY_KEYWORDS
+                        )
+                        core_value_match = any(
+                            _match_candidate_keyword(
+                                keyword,
+                                target.class_name,
+                                target.target,
+                            )
+                            for keyword in CORE_CURRENCY_VALUE_KEYWORDS
+                        )
+                        broad_currency_match = any(
+                            _match_candidate_keyword(
+                                keyword,
+                                target.class_name,
+                                target.target,
+                            )
+                            for keyword in goal_keywords
+                            if keyword in CURRENCY_KEYWORDS
+                        )
+                        if (
+                            core_value_match
+                            and has_economy_data_context(target.class_name)
+                        ):
+                            target.confidence = max(target.confidence, 96)
+                        elif direct_match:
+                            target.confidence = max(target.confidence, 90)
+                        elif broad_currency_match:
+                            target.confidence = min(target.confidence, 78)
+                        else:
+                            target.confidence = min(target.confidence, 69)
                 elapsed = time.monotonic() - analysis_started
                 metadata = getattr(provider, "last_metadata", {})
                 selected_provider = (
@@ -561,14 +791,19 @@ def cmd_batch(
                     flush=True,
                 )
 
-        # Synthesize structural targets and merge with LLM targets
+        # Synthesize structural targets and merge with LLM targets.
+        synthesis_started = time.monotonic()
+        print(
+            "[*] Combining configured-provider results with local structural "
+            "and field evidence...",
+            flush=True,
+        )
         fallback_targets: list[AnalyzedTarget] = []
         if goal_prompt:
-            goal_tokens = set(re.findall(r"\b\w+\b", goal_prompt.lower()))
-            is_currency_goal = bool(goal_tokens & CURRENCY_KEYWORDS)
-            is_collision_goal = bool(goal_tokens & COLLISION_KEYWORDS)
             currency_terms = [
-                keyword for keyword in goal_keywords if keyword in CURRENCY_KEYWORDS
+                keyword
+                for keyword in goal_keywords
+                if keyword in CORE_CURRENCY_VALUE_KEYWORDS
             ]
             direct_currency_terms = [
                 keyword
@@ -640,13 +875,17 @@ def cmd_batch(
             }
 
             for cls_name, cls_methods, cls_fields in ranked_candidates:
-                if cls_name in skip_classes or any(
-                    matches_identifier_keyword(
-                        hint,
-                        cls_name,
-                        min_keyword_length=1,
+                if (
+                    cls_name in skip_classes
+                    or identifier_tokens(cls_name) & NON_RUNTIME_CLASS_HINTS
+                    or any(
+                        matches_identifier_keyword(
+                            hint,
+                            cls_name,
+                            min_keyword_length=1,
+                        )
+                        for hint in UI_PENALTY_HINTS
                     )
-                    for hint in UI_PENALTY_HINTS
                 ):
                     continue
 
@@ -660,14 +899,21 @@ def cmd_batch(
                         if not isinstance(f_off, int) or f_off < 0:
                             continue
                         f_lower = f_name.lower()
-                        f_type = f.get("type", "int32_t").lower().strip()
-                        if f_type not in primitive_numeric_types and "int" not in f_type:
+                        f_type = str(f.get("type", "int32_t")).lower().strip()
+                        if (
+                            not _is_scalar_currency_field_type(f_type)
+                            or not is_balance_value_member(f_name)
+                        ):
                             continue
                         matched_kw = next(
                             (
                                 keyword
                                 for keyword in currency_terms
-                                if _match_keyword(keyword, f_name)
+                                if _match_candidate_keyword(
+                                    keyword,
+                                    cls_name,
+                                    f_name,
+                                )
                             ),
                             None,
                         )
@@ -675,8 +921,16 @@ def cmd_batch(
                             if any(ig in f_lower for ig in ignored_key_patterns):
                                 continue
                             direct_match = any(
-                                _match_keyword(keyword, f_name)
+                                _match_candidate_keyword(
+                                    keyword,
+                                    cls_name,
+                                    f_name,
+                                )
                                 for keyword in direct_currency_terms
+                            )
+                            contextual_value_match = (
+                                matched_kw in CORE_CURRENCY_VALUE_KEYWORDS
+                                and has_economy_data_context(cls_name)
                             )
                             c_label = matched_kw.capitalize()
                             fallback_targets.append(
@@ -687,7 +941,13 @@ def cmd_batch(
                                     hook_type="memory_patch",
                                     return_value="999999",
                                     return_type="int32_t",
-                                    confidence=90 if direct_match else 74,
+                                    confidence=(
+                                        96
+                                        if contextual_value_match
+                                        else 90
+                                        if direct_match
+                                        else 74
+                                    ),
                                     reason=(
                                         f"{'Direct goal' if direct_match else 'Indirect domain'} "
                                         f"structural match: {c_label} field in {cls_name}"
@@ -704,6 +964,8 @@ def cmd_batch(
                             continue
                         if any(ig in m_lower for ig in ignored_key_patterns):
                             continue
+                        if not is_balance_value_member(m_name):
+                            continue
                         if any(ig in m_ret for ig in ignored_return_types) or "*" in m_ret:
                             continue
 
@@ -711,26 +973,38 @@ def cmd_batch(
                         if not is_bool and m_ret not in primitive_numeric_types:
                             # Skip custom C# class objects (Product, CurrencyType, etc.)
                             continue
+                        if is_bool and not m_lower.startswith(("has_", "has")):
+                            continue
 
                         matched_kw = next(
                             (
                                 keyword
                                 for keyword in currency_terms
-                                if _match_keyword(keyword, m_name)
+                                if _match_candidate_keyword(
+                                    keyword,
+                                    cls_name,
+                                    m_name,
+                                )
                             ),
                             None,
                         )
                         if (
-                            m_lower.startswith(
-                                ("get_", "get", "is_", "is", "has_", "has")
-                            )
+                            m_lower.startswith(("get_", "get", "has_", "has"))
                             and matched_kw
                         ):
                             ret_type = "bool" if is_bool else "int32_t"
                             ret_val = "true" if is_bool else "999999999"
                             direct_match = any(
-                                _match_keyword(keyword, m_name)
+                                _match_candidate_keyword(
+                                    keyword,
+                                    cls_name,
+                                    m_name,
+                                )
                                 for keyword in direct_currency_terms
+                            )
+                            contextual_value_match = (
+                                matched_kw in CORE_CURRENCY_VALUE_KEYWORDS
+                                and has_economy_data_context(cls_name)
                             )
                             c_label = matched_kw.capitalize()
 
@@ -741,7 +1015,15 @@ def cmd_batch(
                                     hook_type="return_override",
                                     return_value=ret_val,
                                     return_type=ret_type,
-                                    confidence=85 if direct_match else 74,
+                                    confidence=(
+                                        93
+                                        if contextual_value_match and is_bool
+                                        else 96
+                                        if contextual_value_match
+                                        else 90
+                                        if direct_match
+                                        else 74
+                                    ),
                                     reason=(
                                         f"{'Direct goal' if direct_match else 'Indirect domain'} "
                                         f"structural match: {c_label} getter in {cls_name}"
@@ -860,78 +1142,68 @@ def cmd_batch(
                                     )
                                 )
 
-        candidate_targets = list(rank_candidates(llm_targets + fallback_targets + structural_targets))
-
-        dumped_count = 0
+        candidate_targets = list(
+            rank_candidates(llm_targets + fallback_targets + structural_targets)
+        )
         matched_offsets_summary: list[str] = []
         discovered_targets: list[tuple[str, str, int]] = []
+        class_fields_by_name: dict[str, list[dict[str, Any]]] = {}
 
         for cls_name, _cls_methods, cls_fields in ranked_candidates:
-            # Method RVAs are not vtable slot offsets. Do not manufacture a
-            # vtable layout unless metadata explicitly provides slot evidence.
-            vtable_entries: list[dict[str, Any]] = []
-
-            if cls_fields:
-                field_offsets = cls_fields
-                # Suffixes/patterns indicating object pointers rather than scalar numeric values
-                pointer_field_hints = {
-                    "model",
-                    "manager",
-                    "ptr",
-                    "ref",
-                    "controller",
-                    "system",
-                    "adapter",
-                    "instance",
-                    "service",
-                    "handler",
-                    "provider",
-                    "context",
-                }
-                for f in cls_fields:
-                    f_name = f.get("name", "")
-                    f_off = f.get("offset")
-                    if not isinstance(f_off, int) or f_off < 0:
-                        continue
-                    f_name_lower = f_name.lower()
-
-                    # Skip fields that are object reference pointers (e.g. _walletModel, playerPtr)
-                    if any(f_name_lower.endswith(hint) or f"_{hint}" in f_name_lower for hint in pointer_field_hints):
-                        continue
-
-                    if goal_keywords and any(
-                        _match_keyword(kw, f_name) for kw in goal_keywords
-                    ):
-                        matched_offsets_summary.append(f"  . {cls_name}::{f_name} -> Offset: 0x{f_off:X}")
-                        discovered_targets.append((cls_name, f_name, f_off))
-            else:
-                field_offsets = []
-
-            # Dump C++ headers only for native C++/IL2CPP/Unreal engines (skip for pure Java/Kotlin/Hermes)
-            from re_agent.core.engine_detector import detect_engine_type_from_path
-
-            e_type = detect_engine_type_from_path(getattr(args, "binary", None) or meta_dir)
-            if e_type not in ["android-java-dex", "react-native-hermes"]:
-                header_code = generate_vtable_header(cls_name, vtable_entries, field_offsets)
-                header_file = output_dir / safe_filename(cls_name, suffix=".h")
-                header_file.write_text(header_code, encoding="utf-8")
-
-                dumped_count += 1
-                if dumped_count <= 50:
-                    logger.info("[+] Dumped evidence-backed offset inventory %s: %s", cls_name, header_file)
-
-        if matched_offsets_summary:
-            print("\n[+] MATCHED FIELD OFFSETS:")
-            for summary_line in matched_offsets_summary[:15]:
-                print(summary_line)
-
-        if dumped_count > 0:
-            print(
-                f"\n[DONE] Wrote {dumped_count} evidence-backed C++ offset inventories "
-                f"into '{output_dir}'."
-            )
-        else:
-            print("\n[DONE] Successfully ingested Android Java/Kotlin class metadata.")
+            class_fields_by_name[cls_name] = cls_fields
+            if not cls_fields:
+                continue
+            # Suffixes/patterns indicating object pointers rather than scalar
+            # numeric values.
+            pointer_field_hints = {
+                "model",
+                "manager",
+                "ptr",
+                "ref",
+                "controller",
+                "system",
+                "adapter",
+                "instance",
+                "service",
+                "handler",
+                "provider",
+                "context",
+            }
+            for field in cls_fields:
+                field_name = str(field.get("name", ""))
+                field_offset = field.get("offset")
+                if not isinstance(field_offset, int) or field_offset < 0:
+                    continue
+                if (
+                    identifier_tokens(cls_name)
+                    & (NON_RUNTIME_CLASS_HINTS | UI_PENALTY_HINTS)
+                    or not _is_scalar_currency_field_type(field.get("type", ""))
+                    or not is_balance_value_member(field_name)
+                ):
+                    continue
+                field_name_lower = field_name.lower()
+                if any(
+                    field_name_lower.endswith(hint)
+                    or f"_{hint}" in field_name_lower
+                    for hint in pointer_field_hints
+                ):
+                    continue
+                offset_keywords = direct_goal_keywords or goal_keywords
+                if offset_keywords and any(
+                    _match_candidate_keyword(
+                        keyword,
+                        cls_name,
+                        field_name,
+                    )
+                    for keyword in offset_keywords
+                ):
+                    matched_offsets_summary.append(
+                        f"  . {cls_name}::{field_name} -> "
+                        f"Offset: 0x{field_offset:X}"
+                    )
+                    discovered_targets.append(
+                        (cls_name, field_name, field_offset)
+                    )
 
         raw_targets = [
             AnalyzedTarget(
@@ -947,6 +1219,80 @@ def cmd_batch(
             for class_name, field_name, offset in discovered_targets
         ]
         candidate_targets = list(rank_candidates(candidate_targets + raw_targets))
+        print(
+            f"[+] Candidate synthesis completed in "
+            f"{time.monotonic() - synthesis_started:.1f}s; retained "
+            f"{len(candidate_targets)} evidence-ranked target(s).",
+            flush=True,
+        )
+
+        dumped_count = 0
+        if engine_type not in {"android-java-dex", "react-native-hermes"}:
+            selected_inventory_classes: list[str] = []
+            selected_names: set[str] = set()
+            for target in candidate_targets:
+                class_name = target.class_name
+                if (
+                    class_name in class_fields_by_name
+                    and class_fields_by_name[class_name]
+                    and class_name.casefold() not in selected_names
+                ):
+                    selected_inventory_classes.append(class_name)
+                    selected_names.add(class_name.casefold())
+                if (
+                    len(selected_inventory_classes)
+                    >= MAX_OFFSET_INVENTORY_FILES
+                ):
+                    break
+
+            if selected_inventory_classes:
+                print(
+                    f"[*] Writing {len(selected_inventory_classes)} relevant "
+                    "C++ offset inventories (bounded artifact set)...",
+                    flush=True,
+                )
+            used_filenames: set[str] = set()
+            for class_name in selected_inventory_classes:
+                header_code = generate_vtable_header(
+                    class_name,
+                    [],
+                    class_fields_by_name[class_name],
+                )
+                base_name = safe_filename(class_name, suffix=".h")
+                header_name = base_name
+                collision_index = 2
+                while header_name.casefold() in used_filenames:
+                    stem = Path(base_name).stem
+                    header_name = f"{stem}_{collision_index}.h"
+                    collision_index += 1
+                used_filenames.add(header_name.casefold())
+                header_file = output_dir / header_name
+                header_file.write_text(header_code, encoding="utf-8")
+                dumped_count += 1
+                logger.info(
+                    "[+] Dumped evidence-backed offset inventory %s: %s",
+                    class_name,
+                    header_file,
+                )
+
+        if matched_offsets_summary:
+            print("\n[+] MATCHED FIELD OFFSETS:")
+            for summary_line in matched_offsets_summary[:15]:
+                print(summary_line)
+
+        if dumped_count > 0:
+            print(
+                f"\n[DONE] Wrote {dumped_count} evidence-backed C++ offset inventories "
+                f"into '{output_dir}'."
+            )
+        elif engine_type in {"android-java-dex", "react-native-hermes"}:
+            print("\n[DONE] Successfully ingested Android Java/Kotlin class metadata.")
+        else:
+            print(
+                "\n[DONE] Metadata ingestion completed; no relevant per-class "
+                "offset inventory was required."
+            )
+
         if not getattr(args, "_suppress_candidate_display", False):
             print("\n[+] UNIVERSAL CANDIDATE SELECTION")
             print_candidate_summary(candidate_targets, stream=sys.stdout)

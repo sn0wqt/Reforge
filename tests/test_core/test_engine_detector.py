@@ -167,6 +167,52 @@ def test_detect_unity_il2cpp_ios(tmp_path: Path) -> None:
     assert detection.platform == "ios"
 
 
+def test_detect_ios_il2cpp_dumper_directory_before_generated_dummy_dlls(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "script.json").write_text('{"ScriptMethod": []}', encoding="utf-8")
+    (tmp_path / "dump.cs").write_text(
+        "// Image 1: Assembly-CSharp.dll\n"
+        "// Image 2: Unity.Notifications.iOS.dll\n"
+        "// Image 3: UnityEngine.AndroidJNIModule.dll\n",
+        encoding="utf-8",
+    )
+    dummy_dll = tmp_path / "DummyDll" / "Assembly-CSharp.dll"
+    dummy_dll.parent.mkdir()
+    dummy_dll.write_bytes(b"MZ\x00\x00")
+
+    detection = detect_architecture_from_path(tmp_path)
+
+    assert detection.pathway_id == 4
+    assert detection.platform == "ios"
+    assert detection.engine_type == "unity-il2cpp"
+    assert detection.package_type == "metadata-directory"
+    assert any(
+        "Unity.Notifications.iOS.dll" in note
+        for note in detection.detection_notes
+    )
+
+
+def test_metadata_only_il2cpp_platform_can_be_explicitly_resolved(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "script.json").write_text('{"ScriptMethod": []}', encoding="utf-8")
+    (tmp_path / "dump.cs").write_text(
+        "// Image 1: Assembly-CSharp.dll\n",
+        encoding="utf-8",
+    )
+
+    unresolved = detect_architecture_from_path(tmp_path)
+    resolved = detect_architecture_from_path(tmp_path, platform_hint="ios-arm64")
+
+    assert unresolved.pathway_id == 0
+    assert unresolved.platform == "unknown"
+    assert unresolved.engine_type == "unity-il2cpp"
+    assert resolved.pathway_id == 4
+    assert resolved.platform == "ios"
+    assert "explicit --platform ios-arm64" in resolved.detection_notes
+
+
 def test_detect_flutter_from_extracted_directory(tmp_path: Path) -> None:
     library = tmp_path / "lib" / "arm64-v8a" / "libapp.so"
     library.parent.mkdir(parents=True)

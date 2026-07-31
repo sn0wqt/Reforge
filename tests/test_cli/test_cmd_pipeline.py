@@ -434,6 +434,216 @@ def test_cmd_pipeline_unity_package_runs_explicit_dumper_and_uses_sidecars(
     assert (output_dir / "Hook_Goal.cpp").is_file()
 
 
+def test_cmd_pipeline_ipa_extracts_unityframework_binary(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
+    ipa_path = tmp_path / "game.ipa"
+    with zipfile.ZipFile(ipa_path, "w") as archive:
+        archive.writestr(
+            "Payload/Game.app/Frameworks/UnityFramework.framework/Info.plist",
+            b"<xml>metadata</xml>",
+        )
+        archive.writestr(
+            "Payload/Game.app/Frameworks/UnityFramework.framework/UnityFramework",
+            b"macho-binary-executable",
+        )
+        archive.writestr(
+            "Payload/Game.app/Data/Managed/Metadata/global-metadata.dat",
+            b"global-metadata-bytes",
+        )
+
+    dumper_path = tmp_path / "il2cpp_dumper.exe"
+    dumper_path.write_bytes(b"trusted test executable")
+    observed: dict[str, object] = {}
+
+    def fake_dumper(binary, metadata, output, *, dumper_path=None):
+        observed["binary_bytes"] = Path(binary).read_bytes()
+        observed["metadata_bytes"] = Path(metadata).read_bytes()
+        Path(output, "dump.cs").write_text("// evidence", encoding="utf-8")
+        return {"success": True, "output_dir": str(output)}
+
+    def fake_batch(args):
+        target = AnalyzedTarget(
+            class_name="Wallet",
+            target="get_Coins",
+            hook_type="return_override",
+            return_value="999999",
+            return_type="int32_t",
+            confidence=90,
+            reason="Test dumper evidence",
+        )
+        return 0, [], [target]
+
+    monkeypatch.setattr(
+        "re_agent.core.il2cpp_parser.run_il2cpp_dumper_cli",
+        fake_dumper,
+    )
+    monkeypatch.setattr("re_agent.cli.cmd_batch.cmd_batch", fake_batch)
+
+    output_dir = tmp_path / "ipa-output"
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "pipeline",
+            "--binary",
+            ipa_path.as_posix(),
+            "--il2cpp-dumper",
+            dumper_path.as_posix(),
+            "--goal",
+            "grant unlimited coins",
+            "--no-repack",
+            "--output-dir",
+            output_dir.as_posix(),
+        ]
+    )
+
+    assert result == 0
+    assert observed["binary_bytes"] == b"macho-binary-executable"
+    assert observed["metadata_bytes"] == b"global-metadata-bytes"
+
+
+def test_cmd_pipeline_windows_gameassembly_extracts_dll(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
+    zip_path = tmp_path / "windows_game.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr(
+            "Game_Data/Plugins/x86_64/GameAssembly.dll",
+            b"pe-windows-binary-executable",
+        )
+        archive.writestr(
+            "Game_Data/StreamingAssets/config.plist",
+            b"<xml>ignore</xml>",
+        )
+        archive.writestr(
+            "Game_Data/il2cpp_data/Metadata/global-metadata.dat",
+            b"windows-metadata-bytes",
+        )
+
+    dumper_path = tmp_path / "il2cpp_dumper.exe"
+    dumper_path.write_bytes(b"trusted test executable")
+    observed: dict[str, object] = {}
+
+    def fake_dumper(binary, metadata, output, *, dumper_path=None):
+        observed["binary_bytes"] = Path(binary).read_bytes()
+        observed["metadata_bytes"] = Path(metadata).read_bytes()
+        Path(output, "dump.cs").write_text("// evidence", encoding="utf-8")
+        return {"success": True, "output_dir": str(output)}
+
+    def fake_batch(args):
+        target = AnalyzedTarget(
+            class_name="PlayerWallet",
+            target="AddMoney",
+            hook_type="return_override",
+            return_value="999999",
+            return_type="void",
+            confidence=90,
+            reason="Windows dumper evidence",
+        )
+        return 0, [], [target]
+
+    monkeypatch.setattr(
+        "re_agent.core.il2cpp_parser.run_il2cpp_dumper_cli",
+        fake_dumper,
+    )
+    monkeypatch.setattr("re_agent.cli.cmd_batch.cmd_batch", fake_batch)
+
+    output_dir = tmp_path / "windows-output"
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "pipeline",
+            "--binary",
+            zip_path.as_posix(),
+            "--il2cpp-dumper",
+            dumper_path.as_posix(),
+            "--goal",
+            "grant unlimited money",
+            "--no-repack",
+            "--output-dir",
+            output_dir.as_posix(),
+        ]
+    )
+
+    assert result == 0
+    assert observed["binary_bytes"] == b"pe-windows-binary-executable"
+    assert observed["metadata_bytes"] == b"windows-metadata-bytes"
+
+
+
+def test_metadata_only_ios_pipeline_uses_platform_neutral_input_stage(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
+    metadata_dir = tmp_path / "Dump0"
+    metadata_dir.mkdir()
+    (metadata_dir / "script.json").write_text(
+        '{"ScriptMethod": []}',
+        encoding="utf-8",
+    )
+    (metadata_dir / "dump.cs").write_text(
+        "// Image 0: Assembly-CSharp.dll\n"
+        "// Image 1: Unity.Notifications.iOS.dll\n",
+        encoding="utf-8",
+    )
+    target = AnalyzedTarget(
+        class_name="Wallet",
+        target="get_Coins",
+        hook_type="return_override",
+        return_value="999999",
+        return_type="int32_t",
+        confidence=90,
+        reason="Synthetic test evidence",
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.cmd_batch",
+        lambda _args: (0, [], [target]),
+    )
+
+    output_dir = tmp_path / "output"
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "pipeline",
+            "--metadata-dir",
+            metadata_dir.as_posix(),
+            "--goal",
+            "give infinite coins",
+            "--output-dir",
+            output_dir.as_posix(),
+            "--no-repack",
+        ]
+    )
+
+    terminal = capsys.readouterr().out
+    manifest = json.loads(
+        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert result == 0
+    assert "Pathway 4/8: Unity IL2CPP (iOS)" in terminal
+    assert "Preparing pathway-specific analysis inputs" in terminal
+    assert "Hermes" not in terminal
+    assert manifest["pathway"]["platform"] == "ios"
+    assert any(
+        "Unity.Notifications.iOS.dll" in note
+        for note in manifest["pathway"]["detection_notes"]
+    )
+    assert (output_dir / "Hook_Goal.cpp").is_file()
+
+
 def test_javascript_property_scan_skips_comments_strings_and_templates() -> None:
     source = """
 // {"coins": 1}

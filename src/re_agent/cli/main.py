@@ -76,6 +76,18 @@ def build_parser() -> argparse.ArgumentParser:
     batch_p.add_argument("--class", dest="class_name", help="Target class name")
     batch_p.add_argument("--binary", help="APK, IPA, DEX, native binary, ZIP, or extracted directory")
     batch_p.add_argument("--metadata-dir", help="Path to metadata directory (containing script.json, il2cpp.h, etc.)")
+    batch_p.add_argument(
+        "--platform",
+        choices=[
+            "android",
+            "android-arm64",
+            "ios",
+            "ios-arm64",
+            "windows",
+            "windows-x64",
+        ],
+        help="Resolve a metadata-only target when its platform cannot be inferred safely",
+    )
     batch_p.add_argument("--game-name", help="Optional game title for bundled knowledge matching")
     batch_p.add_argument(
         "--limit",
@@ -116,6 +128,18 @@ def build_parser() -> argparse.ArgumentParser:
     pipe_p.add_argument("--binary", help="Path to executable binary (e.g. GameAssembly.dll, libil2cpp.so, etc.)")
     pipe_p.add_argument("--metadata", help="Path to global-metadata.dat file")
     pipe_p.add_argument("--metadata-dir", help="Path to metadata directory (containing script.json, il2cpp.h, etc.)")
+    pipe_p.add_argument(
+        "--platform",
+        choices=[
+            "android",
+            "android-arm64",
+            "ios",
+            "ios-arm64",
+            "windows",
+            "windows-x64",
+        ],
+        help="Resolve a metadata-only target when its platform cannot be inferred safely",
+    )
     pipe_p.add_argument(
         "--il2cpp-dumper",
         help="Explicitly trusted Il2CppDumper executable for Unity extraction",
