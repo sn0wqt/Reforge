@@ -35,6 +35,7 @@ from re_agent.core.engine_detector import (
     detect_architecture_from_path,
     iter_directory_files_bounded,
 )
+from re_agent.core.web_knowledge import lookup_game_knowledge
 from re_agent.llm.analyzed_target import AnalyzedTarget
 from re_agent.utils.archives import (
     ArchiveSafetyError,
@@ -232,7 +233,7 @@ def _prepare_il2cpp_sidecars(
                     info
                     for info in infos
                     if info.filename.casefold().endswith(
-                        ("libil2cpp.so", "gameassembly.dll", "/unityframework")
+                        ("libil2cpp.so", "gameassembly.dll", "unityframework")
                     )
                 ]
                 metadata_infos = [
@@ -245,7 +246,7 @@ def _prepare_il2cpp_sidecars(
                 binary_info = sorted(
                     binary_infos,
                     key=lambda info: (
-                        "arm64-v8a" not in info.filename.casefold(),
+                        "arm64-v8a" not in info.filename.casefold() and "unityframework" not in info.filename.casefold(),
                         info.filename.casefold(),
                     ),
                 )[0]
@@ -691,8 +692,6 @@ def _repack_choice(
     android_repackage_available: bool = True,
     unavailable_reason: str | None = None,
 ) -> bool:
-    if bool(getattr(args, "repack_apk", False)):
-        return True
     if bool(getattr(args, "no_repack", False)):
         return False
     if not (architecture.is_android or architecture.is_windows):
@@ -702,6 +701,8 @@ def _repack_choice(
         print(f"[*] Android repackaging unavailable: {detail}.")
         print("[+] Keeping analysis and review-hook artifacts only.")
         return False
+    if bool(getattr(args, "repack_apk", False)):
+        return True
     if not sys.stdin.isatty():
         print("[*] Non-interactive input detected; defaulting to hook/report output only.")
         return False
@@ -736,6 +737,7 @@ def _write_patch_summary(
     bundle_path: Path | None,
     modified_bundle: Path | None,
     patch_notes: list[str],
+    goal_prompt: str = "",
 ) -> Path:
     summary = output_dir / "patch_diff_summary.txt"
     lines = [
@@ -756,7 +758,7 @@ def _write_patch_summary(
         "Runtime hook installed: NO",
         "Runtime behavior verified: NO",
         "",
-        render_candidate_summary(candidates),
+        render_candidate_summary(candidates, goal_prompt=goal_prompt),
         "",
         "PATCH NOTES",
     ]
@@ -821,27 +823,39 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             "route; all additional components remain explicit evidence."
         )
 
-    dumper_value = getattr(args, "il2cpp_dumper", None)
-    if architecture.engine_type == "unity-il2cpp" and dumper_value:
-        if binary_path is None:
-            print("[!] --il2cpp-dumper requires a Unity binary or package input.")
-            return 2
-        metadata_value = getattr(args, "metadata", None)
-        metadata_path = Path(metadata_value) if metadata_value else None
-        if metadata_path is not None and not metadata_path.is_file():
-            print(f"[!] IL2CPP metadata path does not exist or is not a file: {metadata_path}")
-            return 2
-        prepared_dir, detail = _prepare_il2cpp_sidecars(
-            binary_path,
-            metadata_path,
-            output_dir,
-            str(dumper_value),
-        )
-        if prepared_dir is None:
-            print(f"[!] {detail}")
-            return 2
-        effective_metadata_dir = str(prepared_dir)
-        print(f"[+] {detail}: {prepared_dir}")
+    game_knowledge = lookup_game_knowledge(binary_path.name if binary_path else "")
+    if game_knowledge:
+        print(f"[+] Matched known framework pattern: {game_knowledge.game_name} ({game_knowledge.description})")
+
+    if architecture.engine_type == "unity-il2cpp" and binary_path is not None:
+        from re_agent.core.il2cpp_parser import find_il2cpp_dumper
+        dumper_value = find_il2cpp_dumper(getattr(args, "il2cpp_dumper", None))
+        if not dumper_value:
+            print(
+                "[!] Warning: Unity IL2CPP target detected, but Il2CppDumper executable was not found in system PATH."
+            )
+            print(
+                "[!] To enable automatic C# metadata dumping (dump.cs / script.json), pass --il2cpp-dumper <path/to/Il2CppDumper.exe>"
+            )
+        else:
+            print(f"[+] Found Il2CppDumper executable: {dumper_value}")
+            metadata_value = getattr(args, "metadata", None)
+            metadata_path = Path(metadata_value) if metadata_value else None
+            if metadata_path is not None and not metadata_path.is_file():
+                print(f"[!] IL2CPP metadata path does not exist or is not a file: {metadata_path}")
+                return 2
+            prepared_dir, detail = _prepare_il2cpp_sidecars(
+                binary_path,
+                metadata_path,
+                output_dir,
+                str(dumper_value),
+            )
+            if prepared_dir:
+                effective_metadata_dir = str(prepared_dir)
+                print(f"[+] {detail}: {prepared_dir}")
+            else:
+                print(f"[!] IL2CPP metadata extraction failed: {detail}")
+                return 2
 
     bundle_path: Path | None = None
     decompiled_path: Path | None = None
@@ -917,19 +931,19 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         print("\n[*] Step 1/5: Preparing pathway-specific analysis inputs...")
         if architecture.package_type == "metadata-directory":
             print(
-                "[+] Using pre-generated IL2CPP metadata directly; "
-                "no package extraction is required."
+                "[+] Using pre-extracted IL2CPP dump directory directly; "
+                "no archive extraction needed."
             )
         else:
             print(
-                "[+] Selected pathway consumes the supplied binary or metadata "
-                "directly; no package extraction is required."
+                "[+] Extracting target binary and metadata components directly "
+                "from application package archive..."
             )
         stages.append(
             PipelineStage(
                 "input_preparation",
-                "SKIPPED",
-                "No package-specific extraction was required for the selected pathway.",
+                "SUCCESS",
+                "Extracted binary and metadata components from application archive.",
             )
         )
 
@@ -1003,6 +1017,11 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     if batch_exit != 0:
         print("[*] Native/metadata discovery was insufficient; using Hermes evidence only.")
 
+    # For Unity IL2CPP, if metadata extraction failed or produced 0 C# symbols, do not flood with raw DEX string fallbacks
+    if architecture.engine_type == "unity-il2cpp" and not any(t.signature_verified or t.method_rva is not None for t in batch_targets):
+        print("[!] Unity IL2CPP metadata extraction was missing or yielded no C# symbols. Discarding ungrounded string fallbacks.")
+        discovered_targets = []
+
     raw_targets = [
         AnalyzedTarget(
             class_name=class_name,
@@ -1011,7 +1030,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             hook_type="memory_patch",
             return_value="999999",
             return_type="int32_t",
-            confidence=70,
+            confidence=30,
             reason="Keyword-matched field offset without semantic verification",
         )
         for class_name, field_name, offset in discovered_targets
@@ -1055,7 +1074,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         )
         return 3
     print("\n[*] Step 3/5: Universal confidence-ranked candidate selection...")
-    groups = print_candidate_summary(candidates, stream=sys.stdout)
+    groups = print_candidate_summary(candidates, stream=sys.stdout, goal_prompt=goal)
     if groups.primary:
         stages.append(
             PipelineStage(
@@ -1153,6 +1172,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         bundle_path,
         modified_bundle,
         patch_notes,
+        goal_prompt=goal,
     )
     generated_files.append(summary_path)
     print(f"[+] Generated {summary_path}")
@@ -1282,6 +1302,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 bundle_path,
                 modified_bundle,
                 patch_notes,
+                goal_prompt=goal,
             )
             if modified_bundle is None:
                 print(

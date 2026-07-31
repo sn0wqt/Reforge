@@ -20,6 +20,49 @@ PRIMARY_CONFIDENCE_THRESHOLD = 85
 PRIMARY_CANDIDATE_LIMIT = 5
 
 
+def target_activation_facts(
+    target: Any,
+    *,
+    engine_type: str = "",
+    hook_type: str = "",
+    evidence: dict[str, Any] | None = None,
+) -> dict[str, bool]:
+    """Centralized activation readiness validation across IL2CPP and DEX pathways."""
+    ev = evidence or {}
+    h_type = hook_type or str(getattr(target, "hook_type", ""))
+    offset = getattr(target, "offset", None) or ev.get("offset")
+    method_rva = getattr(target, "method_rva", None) or ev.get("rva")
+    descriptor = getattr(target, "method_descriptor", None) or ev.get("descriptor")
+
+    exact_java_override = (
+        h_type == "return_override"
+        and ev.get("is_declared") is True
+        and ev.get("is_executable") is True
+        and ev.get("is_constructor") is False
+        and isinstance(ev.get("is_static"), bool)
+        and bool(descriptor)
+    )
+    il2cpp_method_verified = (
+        h_type in {"return_override", "skip_call", "nop", "speed_modify"}
+        and isinstance(method_rva, int)
+        and not isinstance(method_rva, bool)
+        and method_rva > 0
+    )
+    il2cpp_field_verified = (
+        engine_type.startswith("unity-il2cpp")
+        and h_type in {"memory_patch", "multi_memory_patch"}
+        and isinstance(offset, int)
+        and not isinstance(offset, bool)
+        and offset >= 0
+    )
+    verified = exact_java_override or il2cpp_method_verified or il2cpp_field_verified
+    return {
+        "signature_verified": verified,
+        "address_verified": verified,
+        "implementation_ready": verified,
+    }
+
+
 @dataclass(frozen=True)
 class CandidateGroups:
     """Ranked primary and secondary hook candidates."""
@@ -51,8 +94,6 @@ def _semantic_priority(target: AnalyzedTarget) -> int:
     member_tokens = identifier_tokens(target.target)
     score = 0
 
-    if "wallet" in class_tokens:
-        score += 120
     score += 45 * len(
         class_tokens
         & (ECONOMY_DATA_HINTS - frozenset({"model", "runner", "state"}))
@@ -90,6 +131,8 @@ def _semantic_priority(target: AnalyzedTarget) -> int:
         score += 10
     if target.implementation_ready:
         score += 10
+    if target.parameter_types:
+        score -= 30
     return score
 
 
@@ -181,18 +224,46 @@ def rank_candidates(
     )
 
 
+def _extract_entity_concept(target: AnalyzedTarget) -> str:
+    """Extract the primary domain entity concept (e.g., coins, keys) for entity disambiguation."""
+    tokens = identifier_tokens(target.target) | identifier_tokens(target.class_name)
+    currency_hits = tokens & CORE_CURRENCY_VALUE_KEYWORDS
+    if currency_hits:
+        return sorted(currency_hits)[0]
+    return f"{target.class_name.casefold()}::{target.target.casefold()}"
+
+
 def split_candidates(
     targets: Iterable[AnalyzedTarget],
     *,
     confidence_threshold: int = PRIMARY_CONFIDENCE_THRESHOLD,
     primary_limit: int = PRIMARY_CANDIDATE_LIMIT,
+    goal_prompt: str | None = None,
 ) -> CandidateGroups:
-    """Select up to five active high-confidence targets and retain every remainder."""
+    """Select 1 primary state target per distinct entity concept up to primary_limit, retaining remainder in secondary."""
     ranked = rank_candidates(targets)
-    primary = tuple(target for target in ranked if target.confidence >= confidence_threshold)[:primary_limit]
+    high_conf = [t for t in ranked if t.confidence >= confidence_threshold]
+
+    primary: list[AnalyzedTarget] = []
+    seen_entities: set[str] = set()
+    specific_entities = {"coins", "keys", "gems"}
+    has_specific_currency_targets = any(
+        _extract_entity_concept(t) in specific_entities for t in high_conf
+    )
+
+    for target in high_conf:
+        entity = _extract_entity_concept(target)
+        if has_specific_currency_targets and entity not in specific_entities:
+            continue
+        if entity not in seen_entities:
+            seen_entities.add(entity)
+            primary.append(target)
+            if len(primary) >= primary_limit:
+                break
+
     primary_ids = {id(target) for target in primary}
     secondary = tuple(target for target in ranked if id(target) not in primary_ids)
-    return CandidateGroups(primary=primary, secondary=secondary)
+    return CandidateGroups(primary=tuple(primary), secondary=secondary)
 
 
 def format_candidate(target: AnalyzedTarget) -> str:
@@ -229,6 +300,7 @@ def render_candidate_summary(
     *,
     confidence_threshold: int = PRIMARY_CONFIDENCE_THRESHOLD,
     primary_limit: int = PRIMARY_CANDIDATE_LIMIT,
+    goal_prompt: str | None = None,
 ) -> str:
     """Render primary targets and the complete expanded-candidate remainder."""
     groups = split_candidates(
@@ -259,6 +331,7 @@ def print_candidate_summary(
     stream: TextIO,
     confidence_threshold: int = PRIMARY_CONFIDENCE_THRESHOLD,
     primary_limit: int = PRIMARY_CANDIDATE_LIMIT,
+    goal_prompt: str | None = None,
 ) -> CandidateGroups:
     """Print the universal terminal candidate display and return its grouping."""
     target_list = list(targets)
@@ -267,6 +340,7 @@ def print_candidate_summary(
             target_list,
             confidence_threshold=confidence_threshold,
             primary_limit=primary_limit,
+            goal_prompt=goal_prompt,
         ),
         file=stream,
     )
@@ -274,4 +348,5 @@ def print_candidate_summary(
         target_list,
         confidence_threshold=confidence_threshold,
         primary_limit=primary_limit,
+        goal_prompt=goal_prompt,
     )

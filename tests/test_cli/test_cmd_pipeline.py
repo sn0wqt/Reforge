@@ -360,7 +360,7 @@ def test_pipeline_fails_when_requested_static_patch_is_ambiguous(
     assert patch_stage["status"] == "FAILED"
 
 
-def test_cmd_pipeline_unity_package_runs_explicit_dumper_and_uses_sidecars(
+def test_cmd_pipeline_android_apk_extracts_il2cpp_so(
     tmp_path: Path,
     monkeypatch,
 ) -> None:

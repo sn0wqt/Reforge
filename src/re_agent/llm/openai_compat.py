@@ -34,7 +34,7 @@ class OpenAIProvider:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         base_url: str | None = None,
-        timeout_s: int = 1800,
+        timeout_s: int = 600,
     ) -> None:
         self._client = openai.OpenAI(
             api_key=api_key,

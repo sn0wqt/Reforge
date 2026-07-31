@@ -13,6 +13,25 @@ from typing import Any
 MAX_METADATA_TEXT_BYTES = 268_435_456
 
 
+def find_il2cpp_dumper(explicit_path: str | Path | None = None) -> str | None:
+    """Single source of truth for resolving the Il2CppDumper CLI executable path."""
+    if explicit_path:
+        p = Path(explicit_path).expanduser()
+        if p.is_file():
+            return str(explicit_path)
+    cargo_bin = Path.home() / ".cargo" / "bin" / "il2cpp_dumper.exe"
+    if cargo_bin.exists():
+        return str(cargo_bin.resolve())
+    return (
+        shutil.which("il2cpp_dumper")
+        or shutil.which("il2cpp_dumper.exe")
+        or shutil.which("il2cpp-dumper")
+        or shutil.which("il2cpp-dumper.exe")
+        or shutil.which("Il2CppDumper")
+        or shutil.which("Il2CppDumper.exe")
+    )
+
+
 def run_il2cpp_dumper_cli(
     binary_path: str | Path,
     metadata_path: str | Path,
@@ -45,19 +64,7 @@ def run_il2cpp_dumper_cli(
             "output_dir": str(out_p),
         }
 
-    explicit_dumper = Path(dumper_path).expanduser() if dumper_path else None
-    if explicit_dumper is not None:
-        dumper_bin = str(explicit_dumper.resolve()) if explicit_dumper.is_file() else None
-    else:
-        cargo_bin = Path.home() / ".cargo" / "bin" / "il2cpp_dumper.exe"
-        dumper_bin = (
-            (str(cargo_bin) if cargo_bin.exists() else None)
-            or shutil.which("il2cpp_dumper")
-            or shutil.which("il2cpp_dumper.exe")
-            or shutil.which("Il2CppDumper")
-            or shutil.which("Il2CppDumper.exe")
-        )
-
+    dumper_bin = find_il2cpp_dumper(dumper_path)
     if not dumper_bin:
         return {
             "success": False,
@@ -69,55 +76,64 @@ def run_il2cpp_dumper_cli(
         out_p / name
         for name in ("script.json", "dump.cs", "il2cpp.h", "static_metadata.json")
     )
-    artifact_states_before = {
-        candidate: (candidate.stat().st_size, candidate.stat().st_mtime_ns)
-        for candidate in artifact_paths
-        if candidate.is_file()
-    }
 
     try:
-        cmd = [
-            dumper_bin,
-            "--binary",
-            str(bin_p),
-            "--metadata",
-            str(meta_p),
-            "--output",
-            str(out_p),
-            "--dump-static-metadata",
+        import shutil
+
+        def _cleanup_dump_subdirs():
+            if out_p.exists():
+                for d in list(out_p.iterdir()):
+                    if d.is_dir() and d.name.startswith("Dump"):
+                        if (d / "dump.cs").exists():
+                            for item in d.iterdir():
+                                dest = out_p / item.name
+                                if dest.exists():
+                                    if dest.is_dir():
+                                        shutil.rmtree(dest)
+                                    else:
+                                        dest.unlink()
+                                shutil.move(str(item), str(dest))
+                        shutil.rmtree(d, ignore_errors=True)
+
+        _cleanup_dump_subdirs()
+
+        for stale_file in artifact_paths:
+            stale_file.unlink(missing_ok=True)
+
+        commands_to_try = [
+            # Rust dumper
+            [dumper_bin, "-b", str(bin_p), "-m", str(meta_p), "-o", str(out_p)],
+            # Standard C# dumper
+            [dumper_bin, str(bin_p), str(meta_p), str(out_p)],
         ]
-        res = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout_s,
-            check=False,
-        )
-        if res.returncode != 0:
-            cmd_pos = [dumper_bin, str(bin_p), str(meta_p), str(out_p)]
+
+        artifacts = ()
+        res = None
+        for cmd in commands_to_try:
             res = subprocess.run(
-                cmd_pos,
+                cmd,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout_s,
                 check=False,
             )
+            _cleanup_dump_subdirs()
+            artifacts = tuple(
+                candidate
+                for candidate in artifact_paths
+                if candidate.is_file() and candidate.stat().st_size > 0
+            )
+            if res.returncode == 0 and bool(artifacts):
+                break
 
-        artifacts = tuple(
-            candidate
-            for candidate in artifact_paths
-            if candidate.is_file()
-            and candidate.stat().st_size > 0
-            and artifact_states_before.get(candidate)
-            != (candidate.stat().st_size, candidate.stat().st_mtime_ns)
-        )
-        success = res.returncode == 0 and bool(artifacts)
+        success = bool(artifacts)
         if success:
             error = None
-        elif res.returncode == 0:
-            error = "Il2CppDumper exited without producing a new supported metadata sidecar."
         else:
-            error = f"Il2CppDumper failed with exit code {res.returncode}."
+            output_msg = (res.stderr or res.stdout or "").strip()
+            detail = f": {output_msg[:500]}" if output_msg else ""
+            error = f"Il2CppDumper exited without producing a new supported metadata sidecar{detail}."
         return {
             "success": success,
             "stdout": res.stdout,
@@ -260,7 +276,7 @@ def parse_dump_cs(content: str) -> list[dict[str, Any]]:
         body = splits[i + 1]
         fields: list[dict[str, Any]] = []
         seen_fields: set[tuple[str, int]] = set()
-        for f_match in leading_field_pattern.finditer(body[:12000]):
+        for f_match in leading_field_pattern.finditer(body):
             field_key = (f_match.group(3).strip(), int(f_match.group(1), 16))
             seen_fields.add(field_key)
             fields.append(
@@ -271,7 +287,7 @@ def parse_dump_cs(content: str) -> list[dict[str, Any]]:
                     "address_kind": "field_offset",
                 }
             )
-        for f_match in trailing_field_pattern.finditer(body[:12000]):
+        for f_match in trailing_field_pattern.finditer(body):
             field_key = (f_match.group(2).strip(), int(f_match.group(3), 16))
             if field_key in seen_fields:
                 continue
@@ -286,7 +302,7 @@ def parse_dump_cs(content: str) -> list[dict[str, Any]]:
             )
 
         methods: list[dict[str, Any]] = []
-        for m_match in method_pattern.finditer(body[:20000]):
+        for m_match in method_pattern.finditer(body):
             ret_t = m_match.group(2).strip()
             m_name = m_match.group(3).strip()
             args = m_match.group(4).strip()

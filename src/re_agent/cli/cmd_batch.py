@@ -39,39 +39,21 @@ logger = logging.getLogger(__name__)
 MAX_OFFSET_INVENTORY_FILES = 50
 
 
+from re_agent.core.candidates import rank_candidates, target_activation_facts
+
+
 def _method_activation_facts(
     engine_type: str,
     evidence: dict[str, Any],
     hook_type: str,
 ) -> dict[str, bool]:
-    """Prove the narrow Java return-override path; all others fail closed."""
-    dex_return_types = {
-        "boolean",
-        "byte",
-        "char",
-        "double",
-        "float",
-        "int",
-        "long",
-        "short",
-    }
-    exact_java_override = (
-        engine_type in {"android-java-dex", "react-native-hermes"}
-        and hook_type == "return_override"
-        and evidence.get("is_declared") is True
-        and evidence.get("is_executable") is True
-        and evidence.get("is_constructor") is False
-        and isinstance(evidence.get("is_static"), bool)
-        and isinstance(evidence.get("descriptor"), str)
-        and bool(evidence.get("descriptor"))
-        and str(evidence.get("return_type", "")).casefold()
-        in dex_return_types
+    """Prove activation readiness using centralized candidate facts."""
+    return target_activation_facts(
+        target=None,
+        engine_type=engine_type,
+        hook_type=hook_type,
+        evidence=evidence,
     )
-    return {
-        "signature_verified": exact_java_override,
-        "address_verified": exact_java_override,
-        "implementation_ready": exact_java_override,
-    }
 
 
 def resolve_goal_keywords(goal_text: str, provider: Any = None) -> list[str]:
@@ -80,13 +62,11 @@ def resolve_goal_keywords(goal_text: str, provider: Any = None) -> list[str]:
     Optionally uses the configured provider for goal expansion, then applies
     deterministic domain expansions and filtering.
     """
-    from re_agent.utils.goal_parser import extract_entity_keywords
-
     keywords = extract_entity_keywords(goal_text)
     known_domain_goal = any(is_entity_keyword(keyword) for keyword in keywords)
     if provider is not None and not known_domain_goal:
         try:
-            from re_agent.llm.gemini_analyzer import expand_goal_keywords_with_llm
+            from re_agent.llm.semantic_analyzer import expand_goal_keywords_with_llm
 
             expanded = expand_goal_keywords_with_llm(goal_text, provider=provider)
             if expanded:
@@ -414,8 +394,11 @@ def cmd_batch(
 
     goal_prompt = getattr(args, "goal", None)
     direct_goal_keywords = extract_entity_keywords(goal_prompt) if goal_prompt else []
+    known_domain_goal = any(is_entity_keyword(keyword) for keyword in direct_goal_keywords) if goal_prompt else False
     provider = None
-    if goal_prompt:
+
+    # Only attempt LLM keyword expansion if the goal is an unrecognized custom prompt AND an LLM flag/key is set
+    if goal_prompt and not known_domain_goal and getattr(args, "llm", None):
         try:
             from re_agent.config.policy import require_provider_allowed
             from re_agent.llm.registry import create_provider
@@ -427,7 +410,7 @@ def cmd_batch(
             )
             provider = create_provider(config.llm)
         except Exception as exc:
-            logger.warning("Configured LLM provider is unavailable: %s", exc)
+            logger.debug("Optional LLM expansion unavailable: %s", exc)
 
     if goal_prompt:
         known_domain_goal = any(
@@ -703,7 +686,7 @@ def cmd_batch(
         if goal_prompt and provider is not None:
             analysis_started = time.monotonic()
             try:
-                from re_agent.llm.gemini_analyzer import analyze_metadata_with_llm
+                from re_agent.llm.semantic_analyzer import analyze_metadata_with_llm
 
                 print(
                     f"[+] Running {config.llm.provider} semantic analysis on "
@@ -1213,7 +1196,7 @@ def cmd_batch(
                 hook_type="memory_patch",
                 return_value="999999",
                 return_type="int32_t",
-                confidence=70,
+                confidence=30,
                 reason="Keyword-matched field offset without semantic verification",
             )
             for class_name, field_name, offset in discovered_targets

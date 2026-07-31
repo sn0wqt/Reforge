@@ -18,7 +18,7 @@ class AntigravityCLIProvider(BaseLLMProvider):
     def __init__(
         self,
         model: str = "gemini-3.6-flash",
-        timeout_s: int = 1800,
+        timeout_s: int = 600,
         agy_bin: str = "agy",
     ) -> None:
         super().__init__()
@@ -28,14 +28,6 @@ class AntigravityCLIProvider(BaseLLMProvider):
 
     def send(self, messages: list[Message], **kwargs: Any) -> str:
         prompt = self._render_messages(messages)
-        if "JSON" in prompt.upper():
-            prompt = (
-                "[SYSTEM INSTRUCTION - CRITICAL OUTPUT MANDATE]\n"
-                "You are an automated backend JSON API. You MUST output ONLY a valid raw JSON array.\n"
-                "Do NOT say hello, introduce yourself, ask how to help, "
-                "or output conversational text.\n"
-                "OUTPUT ONLY RAW JSON:\n\n"
-            ) + prompt
 
         try:
             with tempfile.TemporaryDirectory(prefix="re-agent-agy-") as work_dir:

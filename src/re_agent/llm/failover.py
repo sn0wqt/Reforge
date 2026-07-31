@@ -90,6 +90,7 @@ _RATE_LIMIT_MARKERS = (
     "quota exceeded",
     "quota exhausted",
     "usage limit",
+    "hit your usage limit",
     "capacity",
 )
 _TRANSIENT_MARKERS = (

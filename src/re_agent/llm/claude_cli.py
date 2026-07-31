@@ -34,7 +34,7 @@ class ClaudeCLIProvider(BaseLLMProvider):
     def __init__(
         self,
         model: str = "sonnet",
-        timeout_s: int = 1800,
+        timeout_s: int = 600,
         claude_bin: str = "claude",
         max_budget_usd: float | None = None,
         effort: str | None = None,

@@ -75,6 +75,28 @@ class IPAScanner:
                 continue
             if size > MAX_SCAN_FILE_BYTES:
                 continue
+            # Skip scanning third-party ad & analytics frameworks inside Frameworks/
+            rel_str = str(file_path.relative_to(root)).casefold()
+            if any(
+                sdk in rel_str
+                for sdk in (
+                    "inmobisdk",
+                    "bidmachine",
+                    "googlemobileads",
+                    "chartboost",
+                    "applovin",
+                    "appsflyer",
+                    "singular",
+                    "adjust",
+                    "firebase",
+                    "vungle",
+                    "ironsource",
+                    "unityads",
+                    "mopub",
+                )
+            ):
+                continue
+
             ext = file_path.suffix.lower()
             file_name = file_path.name
             scan_kind: str | None = None

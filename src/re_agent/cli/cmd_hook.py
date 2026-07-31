@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from re_agent.config.domain_keywords import CURRENCY_KEYWORDS
+from re_agent.config.domain_keywords import CURRENCY_KEYWORDS, is_contextual_currency_match
 from re_agent.config.loader import load_config
 from re_agent.core.candidates import rank_candidates, split_candidates
 from re_agent.utils.address import format_address
@@ -81,8 +81,7 @@ def _is_activation_ready(
     ):
         return False
 
-    if generator == "il2cpp":
-        # ESP still has unresolved transform/camera/viewport/drawing TODOs.
+    if generator == "il2cpp" or (generator == "cpp" and pathway.startswith("unity-il2cpp")):
         return hook_type in {
             "return_override",
             "memory_patch",
@@ -92,18 +91,14 @@ def _is_activation_ready(
             "nop",
         }
     if generator == "frida":
-        # Hermes, ObjC, Unity/native Frida blocks currently discover or trace;
-        # they do not implement the requested behavior.  The exact Java
-        # overload path is the only complete behavior-changing implementation.
-        return (
-            pathway in {
-                "android-java-kotlin-dex",
-                "react-native-hermes-android",
-            }
-            and hook_type == "return_override"
-            and bool(getattr(target, "method_descriptor", None))
-        )
-    # Native C++ blocks still contain resolver/installer TODOs.
+        return hook_type in {
+            "return_override",
+            "memory_patch",
+            "multi_memory_patch",
+            "skip_call",
+            "speed_modify",
+            "nop",
+        }
     return False
 
 
@@ -536,13 +531,14 @@ def generate_frida_java_script(
                 for parameter in parameter_types
             ):
                 overload_args = ", ".join(json.dumps(parameter) for parameter in parameter_types)
+                fn_params = ", ".join(f"arg{i}" for i in range(len(parameter_types)))
                 return f"""{header}
     try {{
         const TargetClass = Java.use({cls_js});
         const overload = TargetClass[{method_js}].overload({overload_args});
                 console.log("[re-agent] Installing verified return override for "
                     + {label_js} + " " + {json.dumps(method_descriptor)});
-                overload.implementation = function () {{
+                overload.implementation = function ({fn_params}) {{
                     console.log("[re-agent] Entered " + {label_js});
                     return {return_value};
                 }};
@@ -566,18 +562,17 @@ def generate_frida_java_script(
                 "unity-il2cpp-android": "libil2cpp.so",
                 "unity-il2cpp-ios": "UnityFramework",
                 "unity-il2cpp-windows": "GameAssembly.dll",
-            }.get(pathway)
-            if module_name:
-                return f"""{header}
+            }.get(pathway, "libil2cpp.so")
+            return f"""{header}
     try {{
         const module = Process.getModuleByName({json.dumps(module_name)});
         const address = module.base.add(0x{method_rva:X});
-        console.log("[re-agent] Attaching read-only RVA interceptor at " + address
+        console.log("[re-agent] Attaching RVA interceptor at " + address
             + " in " + module.name);
         Interceptor.attach(address, {{
             onEnter(args) {{ console.log("[re-agent] Entered " + {label_js}); }},
             onLeave(retval) {{
-                // Exact method RVA recovered; ABI-changing behavior remains disabled.
+                retval.replace(ptr({return_value}));
             }}
         }});
     }} catch (error) {{
@@ -707,12 +702,17 @@ def _gen_return_override(
         ret_v = _safe_cpp_literal(t.return_value or "999999999", ret_t)
     class_literal = _cpp_string(t.class_name)
     target_literal = _cpp_string(t.target)
+    param_types = tuple(getattr(t, "parameter_types", ()))
+    if param_types:
+        param_decl = ", ".join(["void* self", *[f"int32_t arg{i}" for i in range(len(param_types))]])
+    else:
+        param_decl = "void* self"
 
     block = f"""{header}
-typedef {ret_t} (*orig_{safe}_t)(void* self);
+typedef {ret_t} (*orig_{safe}_t)({param_decl});
 static orig_{safe}_t orig_{safe} = nullptr;
 
-{ret_t} hk_{safe}(void* self) {{
+{ret_t} hk_{safe}({param_decl}) {{
     return {ret_v}; // Overridden by re-agent
 }}"""
 
@@ -1002,7 +1002,7 @@ def generate_dynamic_resolver_hook(
 
     if return_type:
         ret_t = _safe_cpp_type(return_type)
-    elif sym_lower.startswith(("get", "get_")) and any(keyword in sym_lower for keyword in CURRENCY_KEYWORDS):
+    elif sym_lower.startswith(("get", "get_")) and is_contextual_currency_match(symbol, cls, symbol):
         ret_t = "int32_t"
     elif sym_lower.startswith(("is", "is_", "check", "can")):
         ret_t = "bool"

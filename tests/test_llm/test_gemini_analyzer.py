@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from re_agent.llm.analyzed_target import AnalyzedTarget
-from re_agent.llm.gemini_analyzer import (
+from re_agent.llm.semantic_analyzer import (
     _build_metadata_summary,
     _parse_llm_response,
     analyze_metadata_with_llm,

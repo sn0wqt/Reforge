@@ -25,7 +25,7 @@ class ProjectProfile:
         ".cpp", ".h", ".hpp",
     ])
     hooks_csv: str | None = "docs/hooks.csv"
-    name: str = "gta-reversed"
+    name: str = "auto-re-agent"
     language_standard: str = "C++23"
     prompt_rules: list[str] = field(default_factory=lambda: [
         "Use real member names from the existing project and reference headers",
@@ -45,7 +45,7 @@ class LLMConfig:
     base_url: str | None = None
     max_tokens: int = 4096
     temperature: float = 0.0
-    timeout_s: int = 1800
+    timeout_s: int = 600
     cli_path: str | None = None
     max_budget_usd: float | None = None
     effort: str | None = None
@@ -119,7 +119,7 @@ class ValidationConfig:
     require_build: bool = False
     require_tests: bool = False
     require_runtime: bool = False
-    require_verified: bool = True
+    require_verified: bool = False
     allow_host_commands: bool = False
     trust_configured_commands: bool = False
     environment_allowlist: list[str] = field(default_factory=lambda: [

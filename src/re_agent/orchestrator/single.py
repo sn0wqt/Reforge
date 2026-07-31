@@ -84,10 +84,8 @@ def reverse_single(
                     f"definition ({locations})"
                 )
             original_source = indexer.find_by_address(target.address)
-            if original_source is None:
-                original_source = matches[0] if matches else indexer.find(
-                    target.class_name, target.function_name
-                )
+            if original_source is None and matches:
+                original_source = matches[0]
             candidate_file = create_candidate_overlay(
                 target,
                 result.code,
