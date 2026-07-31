@@ -80,7 +80,7 @@ def run_il2cpp_dumper_cli(
     try:
         import shutil
 
-        def _cleanup_dump_subdirs():
+        def _cleanup_dump_subdirs() -> None:
             if out_p.exists():
                 for d in list(out_p.iterdir()):
                     if d.is_dir() and d.name.startswith("Dump"):
@@ -107,8 +107,8 @@ def run_il2cpp_dumper_cli(
             [dumper_bin, str(bin_p), str(meta_p), str(out_p)],
         ]
 
-        artifacts = ()
-        res = None
+        artifacts: tuple[Path, ...] = ()
+        res: subprocess.CompletedProcess[str] | None = None
         for cmd in commands_to_try:
             res = subprocess.run(
                 cmd,
@@ -128,16 +128,18 @@ def run_il2cpp_dumper_cli(
                 break
 
         success = bool(artifacts)
+        stdout = res.stdout if res is not None else ""
+        stderr = res.stderr if res is not None else ""
         if success:
             error = None
         else:
-            output_msg = (res.stderr or res.stdout or "").strip()
+            output_msg = (stderr or stdout or "").strip()
             detail = f": {output_msg[:500]}" if output_msg else ""
             error = f"Il2CppDumper exited without producing a new supported metadata sidecar{detail}."
         return {
             "success": success,
-            "stdout": res.stdout,
-            "stderr": res.stderr,
+            "stdout": stdout,
+            "stderr": stderr,
             "output_dir": str(out_p),
             "artifacts": [str(artifact) for artifact in artifacts],
             "error": error,

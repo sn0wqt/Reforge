@@ -53,7 +53,7 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
 
         return ClaudeProvider(
             api_key=config.api_key,
-            model=config.model,
+            model=config.model or "claude-sonnet-4-5-20250929",
             max_tokens=config.max_tokens,
             temperature=config.temperature,
             timeout_s=config.timeout_s,
@@ -63,7 +63,7 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
         from re_agent.llm.claude_cli import ClaudeCLIProvider
 
         return ClaudeCLIProvider(
-            model=config.model,
+            model=config.model or "sonnet",
             timeout_s=config.timeout_s,
             claude_bin=config.cli_path or "claude",
             max_budget_usd=config.max_budget_usd,
@@ -85,7 +85,7 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
 
         return OpenAIProvider(
             api_key=config.api_key,
-            model=config.model,
+            model=config.model or "gpt-4o",
             max_tokens=config.max_tokens,
             temperature=config.temperature,
             base_url=config.base_url,
@@ -97,7 +97,7 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
 
         return GeminiProvider(
             api_key=config.api_key,
-            model=config.model,
+            model=config.model or "gemini-2.5-flash",
             max_tokens=config.max_tokens,
             temperature=config.temperature,
             base_url=config.base_url,
@@ -110,7 +110,7 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
         from re_agent.llm.antigravity_cli import AntigravityCLIProvider
 
         return AntigravityCLIProvider(
-            model=config.model,
+            model=config.model or "gemini-3.6-flash",
             timeout_s=config.timeout_s,
             agy_bin=config.cli_path or "agy",
         )
