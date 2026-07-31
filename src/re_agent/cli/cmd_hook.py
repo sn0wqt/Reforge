@@ -95,7 +95,10 @@ def _is_activation_ready(
         # they do not implement the requested behavior.  The exact Java
         # overload path is the only complete behavior-changing implementation.
         return (
-            pathway == "android-java-kotlin-dex"
+            pathway in {
+                "android-java-kotlin-dex",
+                "react-native-hermes-android",
+            }
             and hook_type == "return_override"
             and bool(getattr(target, "method_descriptor", None))
         )
@@ -122,12 +125,30 @@ def _partition_for_activation(
     ]
     ready_groups = split_candidates(ready)
     active = list(ready_groups.primary)
-    active_ids = {id(target) for target in active}
+    active_keys = {
+        (
+            target.class_name.casefold(),
+            target.target.casefold(),
+            target.hook_type,
+            target.offset,
+            target.method_rva,
+            target.parameter_types,
+        )
+        for target in active
+    }
     review_only = list(
         rank_candidates(
             target
             for target in ranked
-            if id(target) not in active_ids
+            if (
+                target.class_name.casefold(),
+                target.target.casefold(),
+                target.hook_type,
+                target.offset,
+                target.method_rva,
+                target.parameter_types,
+            )
+            not in active_keys
         )
     )
     return active, review_only
@@ -474,7 +495,10 @@ def generate_frida_java_script(
         console.log("[!] Hermes candidate failed: " + error);
     }}"""
 
-        if pathway == "android-java-kotlin-dex":
+        if pathway in {
+            "android-java-kotlin-dex",
+            "react-native-hermes-android",
+        }:
             if method_descriptor and all(
                 isinstance(parameter, str) and parameter
                 for parameter in parameter_types

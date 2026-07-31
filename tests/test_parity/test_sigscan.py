@@ -42,3 +42,10 @@ def test_generate_signature() -> None:
     ]
     sig = generate_signature(instructions, mask_relocations=True)
     assert sig == "55 48 89 E5 ?? ?? ?? ?? ??"
+
+
+def test_match_signature_alignment() -> None:
+    # 0xAA 0xBB 0xCC 0xDD placed at unaligned offset 1 vs 4-byte aligned offset 4
+    data = bytes([0x00, 0xAA, 0xBB, 0xCC, 0xAA, 0xBB, 0xCC, 0xDD])
+    matches = match_signature(data, "AA BB CC", alignment=4)
+    assert matches == [4]

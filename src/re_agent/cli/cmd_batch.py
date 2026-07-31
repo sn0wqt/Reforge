@@ -6,6 +6,7 @@ import argparse
 import logging
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +48,7 @@ def _method_activation_facts(
         "short",
     }
     exact_java_override = (
-        engine_type == "android-java-dex"
+        engine_type in {"android-java-dex", "react-native-hermes"}
         and hook_type == "return_override"
         and evidence.get("is_declared") is True
         and evidence.get("is_executable") is True
@@ -509,26 +510,56 @@ def cmd_batch(
         # Optional configured-provider semantic refinement step.
         llm_targets: list[AnalyzedTarget] = []
         if goal_prompt and provider is not None:
+            analysis_started = time.monotonic()
             try:
                 from re_agent.llm.gemini_analyzer import analyze_metadata_with_llm
 
                 print(
                     f"[+] Running {config.llm.provider} semantic analysis on "
                     f"{len(semantic_shortlist)} of {len(ranked_candidates)} "
-                    "locally discovered candidates..."
+                    "locally discovered candidates...",
+                    flush=True,
                 )
                 llm_targets = analyze_metadata_with_llm(
                     provider,
                     goal_prompt,
                     semantic_shortlist,
+                    raise_on_provider_error=True,
+                )
+                elapsed = time.monotonic() - analysis_started
+                metadata = getattr(provider, "last_metadata", {})
+                selected_provider = (
+                    metadata.get("provider")
+                    if isinstance(metadata, dict)
+                    else None
+                )
+                route_text = (
+                    f" via {selected_provider}"
+                    if isinstance(selected_provider, str) and selected_provider
+                    else ""
                 )
                 if llm_targets:
                     print(
-                        f"[+] Configured-provider analysis identified "
-                        f"{len(llm_targets)} candidate hook targets."
+                        f"[+] Configured-provider analysis{route_text} identified "
+                        f"{len(llm_targets)} exact metadata-grounded hook target(s) "
+                        f"in {elapsed:.1f}s.",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[!] Configured-provider analysis{route_text} completed "
+                        f"in {elapsed:.1f}s but returned no exact metadata-grounded "
+                        "hook targets; continuing with local evidence only.",
+                        flush=True,
                     )
             except Exception as e:
-                print(f"[!] LLM semantic analysis skipped: {e}")
+                elapsed = time.monotonic() - analysis_started
+                detail = " ".join(str(e).split())[:500] or type(e).__name__
+                print(
+                    f"[!] Configured-provider analysis failed after {elapsed:.1f}s; "
+                    f"continuing with local evidence only: {detail}",
+                    flush=True,
+                )
 
         # Synthesize structural targets and merge with LLM targets
         fallback_targets: list[AnalyzedTarget] = []

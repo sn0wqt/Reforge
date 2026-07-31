@@ -4,6 +4,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
+STACK_STORE_PATTERN = re.compile(
+    r"(?:mov|str|movb|movl|movw)\b.*"
+    r"\[(?:rsp|rbp|sp|x\d+|r\d+)\s*[\+\-]\s*"
+    r"(0x[0-9a-fA-F]+|\d+)\]\s*,\s*(0x[0-9a-fA-F]+|\d+)",
+    re.IGNORECASE,
+)
+
 
 def detect_xor_loops(pcode_lines: list[str]) -> list[dict[str, Any]]:
     """Scan P-code lines for XOR decryption loop patterns (e.g., XOR, INT_XOR operations in loops)."""
@@ -23,25 +30,47 @@ def detect_xor_loops(pcode_lines: list[str]) -> list[dict[str, Any]]:
     return results
 
 
-def detect_stack_strings(assembly_lines: list[str]) -> list[dict[str, Any]]:
-    """Scan assembly lines for stack string construction (e.g. MOV [RBP+...], byte/dword)."""
-    stack_string_entries: list[dict[str, Any]] = []
-    mov_stack_pattern = re.compile(
-        r"(?:mov|str|movb|movl|movw)\b.*"
-        r"\[(?:rsp|rbp|sp|x\d+|r\d+)\s*[\+\-]\s*"
-        r"(?:0x[0-9a-fA-F]+|\d+)\],\s*(0x[0-9a-fA-F]+|\d+)",
-        re.IGNORECASE,
-    )
+def detect_stack_strings(assembly: list[str]) -> list[dict[str, Any]]:
+    """Detect stack string construction patterns in assembly.
 
-    for idx, line in enumerate(assembly_lines):
-        match = mov_stack_pattern.search(line)
+    Finds instructions that move immediate bytes onto stack offsets.
+    """
+    entries: list[dict[str, Any]] = []
+    for line in assembly:
+        match = STACK_STORE_PATTERN.search(line)
         if match:
-            stack_string_entries.append({
-                "line_index": idx,
-                "line": line.strip(),
-                "value": match.group(1),
-            })
-    return stack_string_entries
+            entries.append(
+                {
+                    "offset": match.group(1),
+                    "value": match.group(2),
+                    "line": line.strip(),
+                }
+            )
+    return entries
+
+
+def reconstruct_stack_strings(assembly: list[str]) -> str:
+    """Reconstruct ASCII strings assembled piece-by-piece on the stack."""
+    chars: list[tuple[int, str]] = []
+    for line in assembly:
+        match = STACK_STORE_PATTERN.search(line)
+        if match:
+            try:
+                offset = int(match.group(1), 16) if match.group(1).startswith("0x") else int(match.group(1))
+                raw_val = match.group(2)
+                val = int(raw_val, 16) if raw_val.startswith("0x") else int(raw_val)
+                # Unpack 32-bit dword packed ASCII integers if present
+                if val > 255 and val <= 0xFFFFFFFF:
+                    packed_bytes = val.to_bytes(4, byteorder="little", signed=False)
+                    for idx, b in enumerate(packed_bytes):
+                        if 32 <= b <= 126:
+                            chars.append((offset + idx, chr(b)))
+                elif 32 <= val <= 126:
+                    chars.append((offset, chr(val)))
+            except ValueError:
+                continue
+    chars.sort(key=lambda x: x[0])
+    return "".join(c[1] for c in chars)
 
 
 def deobfuscate_xor_buffer(data: bytes | bytearray, key: bytes | bytearray) -> bytes:

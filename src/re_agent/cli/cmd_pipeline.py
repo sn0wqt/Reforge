@@ -24,6 +24,7 @@ from re_agent.config.domain_keywords import (
     identifier_tokens,
     matches_identifier_keyword,
 )
+from re_agent.core.app_identity import default_pipeline_output_dir
 from re_agent.core.candidates import (
     print_candidate_summary,
     rank_candidates,
@@ -682,12 +683,23 @@ def _prepare_windows_package(
     return package_dir
 
 
-def _repack_choice(args: argparse.Namespace, architecture: ArchitectureDetection) -> bool:
+def _repack_choice(
+    args: argparse.Namespace,
+    architecture: ArchitectureDetection,
+    *,
+    android_repackage_available: bool = True,
+    unavailable_reason: str | None = None,
+) -> bool:
     if bool(getattr(args, "repack_apk", False)):
         return True
     if bool(getattr(args, "no_repack", False)):
         return False
     if not (architecture.is_android or architecture.is_windows):
+        return False
+    if architecture.is_android and not android_repackage_available:
+        detail = unavailable_reason or "no deployable Android modification was produced"
+        print(f"[*] Android repackaging unavailable: {detail}.")
+        print("[+] Keeping analysis and review-hook artifacts only.")
         return False
     if not sys.stdin.isatty():
         print("[*] Non-interactive input detected; defaulting to hook/report output only.")
@@ -757,7 +769,12 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         return 2
 
     architecture = detect_architecture_from_path(detection_target)
-    output_dir = Path(getattr(args, "output_dir", None) or "output")
+    configured_output_dir = getattr(args, "output_dir", None)
+    output_dir = (
+        Path(configured_output_dir)
+        if configured_output_dir
+        else default_pipeline_output_dir(detection_target)
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     goal = getattr(args, "goal", None) or ""
     effective_metadata_dir = metadata_dir
@@ -772,6 +789,8 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     print("==========================================================")
     print("[*] re-agent Universal Analysis Pipeline")
     print("==========================================================")
+    if not configured_output_dir:
+        print(f"[+] Default output directory: {output_dir.resolve()}")
     print(f"[+] Pathway {architecture.pathway_id}/8: {architecture.display_name} ({architecture.pathway})")
     if architecture.detected_components:
         print(f"[+] Detected components: {', '.join(architecture.detected_components)}")
@@ -980,16 +999,30 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             modified_bundle=None,
         )
         return 3
-    stages.append(
-        PipelineStage(
-            "candidate_discovery",
-            "SUCCEEDED",
-            f"Retained {len(candidates)} evidence-ranked candidates.",
-        )
-    )
-
     print("\n[*] Step 3/5: Universal confidence-ranked candidate selection...")
     groups = print_candidate_summary(candidates, stream=sys.stdout)
+    if groups.primary:
+        stages.append(
+            PipelineStage(
+                "candidate_discovery",
+                "SUCCEEDED",
+                (
+                    f"Retained {len(candidates)} evidence-ranked candidates, "
+                    f"including {len(groups.primary)} high-confidence target(s)."
+                ),
+            )
+        )
+    else:
+        stages.append(
+            PipelineStage(
+                "candidate_discovery",
+                "PARTIAL",
+                (
+                    f"Retained {len(candidates)} review-only candidates, but none "
+                    "met the high-confidence activation threshold."
+                ),
+            )
+        )
 
     modified_bundle: Path | None = None
     patch_notes: list[str] = []
@@ -1097,8 +1130,57 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         print(f"[!] Static patch request was not fulfilled; see {manifest}.")
         return 4
 
+    if not groups.primary:
+        print(
+            "\n[!] INSUFFICIENT_EVIDENCE: no candidate met the >=85% "
+            "high-confidence threshold. Generated hooks are review-only; "
+            "no modification can be truthfully packaged."
+        )
+        stages.append(
+            PipelineStage(
+                "packaging",
+                "SKIPPED",
+                "No high-confidence deployable target was available.",
+            )
+        )
+        manifest = _write_pipeline_manifest(
+            output_dir,
+            architecture,
+            stages,
+            exit_code=3,
+            candidate_count=len(candidates),
+            modified_bundle=modified_bundle,
+        )
+        print(f"[+] Review artifacts retained in: {output_dir.resolve()}")
+        print(f"[+] Capability manifest: {manifest}")
+        return 3
+
     print("\n[*] Step 5/5: Packaging decision...")
-    should_repack = _repack_choice(args, architecture)
+    can_attempt_textual_patch = (
+        architecture.is_android
+        and bundle_path is not None
+        and _read_text_bundle(bundle_path) is not None
+        and bool(groups.primary)
+    )
+    android_repackage_available = (
+        modified_bundle is not None or can_attempt_textual_patch
+    )
+    if architecture.is_android and not android_repackage_available:
+        if bundle_path is not None and _read_text_bundle(bundle_path) is None:
+            unavailable_reason = (
+                "the Hermes bundle is compiled bytecode and no verified runtime "
+                "injection strategy was installed"
+            )
+        else:
+            unavailable_reason = "no verified static or runtime modification was produced"
+    else:
+        unavailable_reason = None
+    should_repack = _repack_choice(
+        args,
+        architecture,
+        android_repackage_available=android_repackage_available,
+        unavailable_reason=unavailable_reason,
+    )
     package_artifact: str | None = None
     if should_repack and architecture.is_android:
         if binary_path is None or binary_path.suffix.lower() != ".apk":
@@ -1115,6 +1197,53 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 modified_bundle=modified_bundle,
             )
             return 2
+        if modified_bundle is None and can_attempt_textual_patch:
+            assert bundle_path is not None
+            modified_bundle, patch_notes = _patch_textual_bundle(
+                bundle_path,
+                list(groups.primary),
+                output_dir,
+                int(getattr(args, "max_patches", 5)),
+            )
+            replacement_stage = PipelineStage(
+                "static_patch",
+                "SUCCEEDED" if modified_bundle is not None else "FAILED",
+                (
+                    "Interactive repackaging selected; a textual bundle patch "
+                    "was created and syntax-checked where Node.js was available."
+                    if modified_bundle is not None
+                    else "Interactive repackaging selected, but no unambiguous patch was produced."
+                ),
+                (str(modified_bundle),) if modified_bundle is not None else (),
+            )
+            for stage_index, stage in enumerate(stages):
+                if stage.name == "static_patch":
+                    stages[stage_index] = replacement_stage
+                    break
+            _write_patch_summary(
+                output_dir,
+                architecture,
+                candidates,
+                bundle_path,
+                modified_bundle,
+                patch_notes,
+            )
+            if modified_bundle is None:
+                print(
+                    "[!] Repackaging was selected, but no verified static "
+                    "bundle modification could be produced."
+                )
+                manifest = _write_pipeline_manifest(
+                    output_dir,
+                    architecture,
+                    stages,
+                    exit_code=4,
+                    candidate_count=len(candidates),
+                    modified_bundle=None,
+                )
+                print(f"[+] Capability manifest: {manifest}")
+                return 4
+            print(f"[+] Created deployable bundle patch: {modified_bundle}")
         if modified_bundle is None:
             print(
                 "[!] Refusing to label an APK as modded: no verified static bundle "
