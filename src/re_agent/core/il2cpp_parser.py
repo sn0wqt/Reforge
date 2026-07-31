@@ -249,17 +249,12 @@ def _parse_csharp_parameter_types(arguments: str) -> tuple[str, ...]:
 def parse_dump_cs(content: str) -> list[dict[str, Any]]:
     """Parse Il2CppDumper dump.cs for class definitions, fields, and method signatures."""
     classes: list[dict[str, Any]] = []
-    leading_field_pattern = re.compile(
-        r"^[ \t]*//[ \t]*(0x[0-9a-fA-F]+)[ \t]*\r?\n"
-        r"[ \t]*(?:public|private|protected|internal)?[ \t]*"
-        r"(?:(?:const|readonly|static|virtual)[ \t]+)*"
-        r"([\w<>.,\[\]* \t]+?)[ \t]+(\w+);",
-        re.MULTILINE,
-    )
-    trailing_field_pattern = re.compile(
-        r"^[ \t]*(?:public|private|protected|internal)?[ \t]*"
-        r"(?:(?:const|readonly|static|volatile)[ \t]+)*"
-        r"([\w<>.,\[\]* \t]+?)[ \t]+(\w+);[ \t]*//[ \t]*(0x[0-9a-fA-F]+)[ \t]*$",
+    field_pattern = re.compile(
+        r"(?:^[ \t]*//[ \t]*(0x[0-9a-fA-F]+)[ \t]*\r?\n[ \t]*|^[ \t]*)"
+        r"(?:public|private|protected|internal)?[ \t]*"
+        r"(?:(?:const|readonly|static|virtual|volatile)[ \t]+)*"
+        r"([\w<>.,\[\]* \t]+?)[ \t]+(\w+);"
+        r"(?:[ \t]*//[ \t]*(0x[0-9a-fA-F]+))?",
         re.MULTILINE,
     )
     method_pattern = re.compile(
@@ -276,25 +271,17 @@ def parse_dump_cs(content: str) -> list[dict[str, Any]]:
         body = splits[i + 1]
         fields: list[dict[str, Any]] = []
         seen_fields: set[tuple[str, int]] = set()
-        for f_match in leading_field_pattern.finditer(body):
-            field_key = (f_match.group(3).strip(), int(f_match.group(1), 16))
-            seen_fields.add(field_key)
-            fields.append(
-                {
-                    "type": f_match.group(2).strip(),
-                    "name": field_key[0],
-                    "offset": field_key[1],
-                    "address_kind": "field_offset",
-                }
-            )
-        for f_match in trailing_field_pattern.finditer(body):
-            field_key = (f_match.group(2).strip(), int(f_match.group(3), 16))
+        for f_match in field_pattern.finditer(body):
+            offset_str = f_match.group(1) or f_match.group(4)
+            if not offset_str:
+                continue
+            field_key = (f_match.group(3).strip(), int(offset_str, 16))
             if field_key in seen_fields:
                 continue
             seen_fields.add(field_key)
             fields.append(
                 {
-                    "type": f_match.group(1).strip(),
+                    "type": f_match.group(2).strip(),
                     "name": field_key[0],
                     "offset": field_key[1],
                     "address_kind": "field_offset",

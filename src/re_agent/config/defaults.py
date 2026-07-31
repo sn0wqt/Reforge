@@ -5,10 +5,10 @@ from typing import Any
 
 DEFAULT_CONFIG_YAML: str = """\
 # re-agent configuration
-# See: https://github.com/dryxio/auto-re-agent for documentation.
+# See: https://github.com/sn0wqt/auto-re-agent for documentation.
 
 project_profile:
-  name: "gta-reversed"
+  name: "auto-re-agent"
   language_standard: "C++23"
   prompt_rules:
     - "Use real member names from the existing project and reference headers"
@@ -32,38 +32,50 @@ project_profile:
   hooks_csv: "docs/hooks.csv"
 
 llm:
-  provider: "claude"
-  model: "claude-sonnet-4-5-20250929"
-  # api_key: null  # Set via RE_AGENT_LLM_API_KEY env var
-  # base_url: null  # Set via RE_AGENT_LLM_BASE_URL env var
-  max_tokens: 4096
-  temperature: 0.0
-  timeout_s: 1800
-  max_retries: 1
-  retry_base_delay_s: 1.0
-  # Ordered, opt-in cross-provider failover. Authorize every route below in
-  # data_handling.allowed_providers before enabling it.
-  # fallbacks:
-  #   - provider: "codex"
-  #     model: "gpt-5.6-sol"
-  #     effort: "high"
-  #     max_retries: 0
-  #   - provider: "antigravity"
-  #     model: "gemini-3.6-flash"
-  #     max_retries: 0
-  input_cost_per_million: 0.0
-  output_cost_per_million: 0.0
+  provider: "codex"
+  model: "gpt-5.6-sol"
+  cli_path: "codex"
+  effort: "high"
+  timeout_s: 600
+  max_retries: 0
+  fallbacks:
+    - provider: "gemini"
+      model: "gemini-3.6-flash"
+      service_account_file: "credentials/vertex-sa.json"
+      timeout_s: 600
+    - provider: "antigravity"
+      model: "gemini-3.6-flash"
+      cli_path: "agy"
 
-# Optional role-specific overrides. Omit a role to inherit the llm block.
-# agents:
-#   reverser:
-#     provider: "claude-cli"
-#     model: "sonnet"
-#     max_budget_usd: 1.0
-#   checker:
-#     provider: "codex"
-#     model: "gpt-5.6-sol"
-#     effort: "high"
+agents:
+  reverser:
+    provider: "gemini"
+    model: "gemini-3.6-flash"
+    service_account_file: "credentials/vertex-sa.json"
+    timeout_s: 600
+    fallbacks:
+      - provider: "codex"
+        model: "gpt-5.6-sol"
+        cli_path: "codex"
+        effort: "high"
+      - provider: "antigravity"
+        model: "gemini-3.6-flash"
+        cli_path: "agy"
+
+  checker:
+    provider: "codex"
+    model: "gpt-5.6-sol"
+    cli_path: "codex"
+    effort: "high"
+    timeout_s: 600
+    fallbacks:
+      - provider: "gemini"
+        model: "gemini-3.6-flash"
+        service_account_file: "credentials/vertex-sa.json"
+        timeout_s: 600
+      - provider: "antigravity"
+        model: "gemini-3.6-flash"
+        cli_path: "agy"
 
 backend:
   type: "ghidra-bridge"
@@ -124,9 +136,17 @@ validation:
   keep_project_copy: false
 
 data_handling:
-  # Reverse-engineering evidence may contain proprietary or sensitive code.
-  allow_external_llm: false
-  allowed_providers: []
+  allow_external_llm: true
+  allowed_providers:
+    - "gemini"
+    - "google-gemini"
+    - "codex"
+    - "codex-cli"
+    - "antigravity"
+    - "antigravity-cli"
+    - "claude"
+    - "claude-cli"
+    - "openai"
   allow_prompt_logging: false
   allow_evidence_persistence: false
   max_prompt_chars: 120000

@@ -12,10 +12,7 @@ from re_agent.utils.templates import render_template
 from re_agent.utils.untrusted import quote_untrusted
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-VERDICT_RE = re.compile(r"VERDICT:\s*(PASS|FAIL)", re.I)
-SUMMARY_RE = re.compile(r"SUMMARY:\s*(.+)")
-ISSUES_RE = re.compile(r"ISSUES:\s*\n((?:\s*-\s*.+\n?)+)", re.I)
-FIX_RE = re.compile(r"FIX_INSTRUCTIONS:\s*\n((?:\s*-\s*.+\n?)+)", re.I)
+
 
 
 class CheckerAgent:
@@ -77,40 +74,11 @@ class CheckerAgent:
         json_verdict = CheckerAgent._parse_json_verdict(response)
         if json_verdict is not None:
             return json_verdict
-
-        # Preserve legacy FAIL as fail-closed compatibility. Never accept a
-        # regex PASS because arbitrary evidence can contain that substring.
-        verdict_match = VERDICT_RE.search(response)
-        verdict = (
-            Verdict.FAIL
-            if verdict_match and verdict_match.group(1).upper() == "FAIL"
-            else Verdict.UNKNOWN
-        )
-
-        summary_match = SUMMARY_RE.search(response)
-        summary = summary_match.group(1).strip() if summary_match else ""
-
-        issues: list[str] = []
-        issues_match = ISSUES_RE.search(response)
-        if issues_match:
-            for line in issues_match.group(1).strip().splitlines():
-                item = line.strip().lstrip("- ").strip()
-                if item and item.lower() != "none":
-                    issues.append(item)
-
-        fix_instructions: list[str] = []
-        fix_match = FIX_RE.search(response)
-        if fix_match:
-            for line in fix_match.group(1).strip().splitlines():
-                item = line.strip().lstrip("- ").strip()
-                if item and item.lower() != "none":
-                    fix_instructions.append(item)
-
         return CheckerVerdict(
-            verdict=verdict,
-            summary=summary,
-            issues=issues,
-            fix_instructions=fix_instructions,
+            verdict=Verdict.UNKNOWN,
+            summary="Invalid JSON response",
+            issues=["Failed to parse checker response."],
+            fix_instructions=[],
         )
 
     @staticmethod

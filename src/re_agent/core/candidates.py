@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from typing import TextIO
+from typing import Any, TextIO
 
 from re_agent.config.domain_keywords import (
     CORE_CURRENCY_VALUE_KEYWORDS,
@@ -21,7 +21,7 @@ PRIMARY_CANDIDATE_LIMIT = 5
 
 
 def target_activation_facts(
-    target: Any,
+    target: AnalyzedTarget | None = None,
     *,
     engine_type: str = "",
     hook_type: str = "",
@@ -29,10 +29,10 @@ def target_activation_facts(
 ) -> dict[str, bool]:
     """Centralized activation readiness validation across IL2CPP and DEX pathways."""
     ev = evidence or {}
-    h_type = hook_type or str(getattr(target, "hook_type", ""))
-    offset = getattr(target, "offset", None) or ev.get("offset")
-    method_rva = getattr(target, "method_rva", None) or ev.get("rva")
-    descriptor = getattr(target, "method_descriptor", None) or ev.get("descriptor")
+    h_type = hook_type or (target.hook_type if target is not None else "")
+    offset = (target.offset if target is not None and target.offset is not None else None) or ev.get("offset")
+    method_rva = (target.method_rva if target is not None and target.method_rva is not None else None) or ev.get("rva")
+    descriptor = (target.method_descriptor if target is not None and target.method_descriptor is not None else None) or ev.get("descriptor")
 
     exact_java_override = (
         h_type == "return_override"
