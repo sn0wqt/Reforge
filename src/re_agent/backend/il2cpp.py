@@ -8,7 +8,14 @@ from typing import Any
 
 from re_agent.backend.protocol import BackendCapabilities, REBackend
 from re_agent.core.il2cpp_parser import find_il2cpp_metadata_in_dir
-from re_agent.core.models import DecompileResult, EnumDef, FunctionEntry, StructDef, XRef
+from re_agent.core.models import (
+    DecompileResult,
+    EnumDef,
+    FunctionEntry,
+    StructDef,
+    StructField,
+    XRef,
+)
 
 
 class IL2CPPBackend(REBackend):
@@ -16,7 +23,8 @@ class IL2CPPBackend(REBackend):
 
     def __init__(self, metadata_dir: str | Path) -> None:
         self.metadata_dir = Path(metadata_dir)
-        self.parsed = find_il2cpp_metadata_in_dir(self.metadata_dir)
+        parsed = find_il2cpp_metadata_in_dir(self.metadata_dir)
+        self.parsed: dict[str, Any] = parsed if isinstance(parsed, dict) else {}
         self._capabilities = BackendCapabilities(
             has_decompile=True,
             has_asm=False,
@@ -129,10 +137,20 @@ class IL2CPPBackend(REBackend):
         structs = self.parsed.get("structs", {})
         if name in structs:
             fields = structs[name]
+            struct_fields: list[StructField] = []
+            for field in fields:
+                struct_fields.append(
+                    StructField(
+                        name=str(field.get("name", "")),
+                        offset=int(field.get("offset", 0)),
+                        type_str=str(field.get("type", "")),
+                        size=0,
+                    )
+                )
             return StructDef(
                 name=name,
                 size=0,
-                fields=[(str(f.get("type")), str(f.get("name")), int(f.get("offset", 0))) for f in fields],
+                fields=struct_fields,
             )
         return None
 

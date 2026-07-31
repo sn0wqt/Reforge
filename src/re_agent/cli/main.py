@@ -111,7 +111,10 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
 
     if hasattr(args, "func"):
-        return args.func(args)
+        handler = args.func
+        if callable(handler):
+            return _normalize_exit_code(handler(args))
+        return 1
 
     if args.command == "init":
         from re_agent.cli.cmd_init import cmd_init
@@ -135,7 +138,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.command == "batch":
         from re_agent.cli.cmd_batch import cmd_batch
-        return cmd_batch(args)
+        return _normalize_exit_code(cmd_batch(args))
 
     if args.command == "hook":
         from re_agent.cli.cmd_hook import cmd_hook
@@ -150,6 +153,14 @@ def _main(argv: list[str] | None = None) -> int:
         return cmd_pipeline(args)
 
     parser.print_help()
+    return 1
+
+
+def _normalize_exit_code(result: object) -> int:
+    if isinstance(result, int):
+        return result
+    if isinstance(result, tuple) and result and isinstance(result[0], int):
+        return result[0]
     return 1
 
 

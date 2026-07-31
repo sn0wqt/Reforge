@@ -362,8 +362,9 @@ def generate_cpp_hook_for_pathway(
             f"{target.class_name}_{target.target}",
         ).strip("_")
         sig_comment = ""
-        if getattr(target, "instructions", None):
-            sig = generate_signature(target.instructions)
+        instructions = getattr(target, "instructions", None)
+        if instructions:
+            sig = generate_signature(instructions)
             if sig:
                 sig_comment = f"\n// Pattern signature: {sig}"
 
