@@ -1,4 +1,5 @@
 """Tests for the subscription-backed Codex CLI provider."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,10 +26,12 @@ def test_codex_cli_uses_safe_noninteractive_mode_and_stdin(monkeypatch) -> None:
         return CompletedProcess(command, 0, stdout="generated code\n", stderr="")
 
     with patch("re_agent.llm.codex_cli.subprocess.run", side_effect=complete) as run:
-        result = provider.send([
-            Message(role="system", content="Follow the evidence."),
-            Message(role="user", content="Reverse this function."),
-        ])
+        result = provider.send(
+            [
+                Message(role="system", content="Follow the evidence."),
+                Message(role="user", content="Reverse this function."),
+            ]
+        )
 
     assert result == "generated code"
     command = run.call_args.args[0]
@@ -39,9 +42,7 @@ def test_codex_cli_uses_safe_noninteractive_mode_and_stdin(monkeypatch) -> None:
     assert "--skip-git-repo-check" in command
     assert command[command.index("--model") + 1] == "gpt-5.6-sol"
     assert 'model_reasoning_effort="high"' in command
-    assert run.call_args.kwargs["input"] == (
-        "[SYSTEM]\nFollow the evidence.\n\n[USER]\nReverse this function."
-    )
+    assert run.call_args.kwargs["input"] == ("[SYSTEM]\nFollow the evidence.\n\n[USER]\nReverse this function.")
     assert "GEMINI_API_KEY" not in run.call_args.kwargs["env"]
 
 

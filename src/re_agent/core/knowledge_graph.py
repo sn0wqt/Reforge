@@ -1,4 +1,5 @@
 """Persistent binary knowledge graph built from backend evidence bundles."""
+
 from __future__ import annotations
 
 import json

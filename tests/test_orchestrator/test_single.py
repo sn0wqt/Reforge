@@ -1,4 +1,5 @@
 """Tests for single function orchestrator."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,13 +56,9 @@ def test_candidate_parity_is_blocking_and_uses_generated_body(tmp_path: Path) ->
     config.orchestrator.max_review_rounds = 1
     config.orchestrator.investigation_enabled = False
 
-    reverser = _LLM(
-        "```cpp\nvoid CTest::Foo() { NOTSA_UNREACHABLE(); }\n```\n"
-        "REVERSED_FUNCTION: CTest::Foo (0x100)"
-    )
+    reverser = _LLM("```cpp\nvoid CTest::Foo() { NOTSA_UNREACHABLE(); }\n```\nREVERSED_FUNCTION: CTest::Foo (0x100)")
     checker = _LLM(
-        '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}'
-        "FIX_INSTRUCTIONS:\n- none"
+        '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}FIX_INSTRUCTIONS:\n- none'
     )
     result = reverse_single(
         FunctionTarget("0x100", "CTest", "Foo"),
@@ -98,8 +95,7 @@ def test_unknown_validation_blocks_acceptance_by_default(tmp_path: Path) -> None
         StubBackend(),
         _LLM("```cpp\nvoid CTest::Foo() { NewImplementation(); }\n```"),
         checker_llm=_LLM(
-            '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}'
-            "FIX_INSTRUCTIONS:\n- none"
+            '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}FIX_INSTRUCTIONS:\n- none'
         ),
     )
 
@@ -126,11 +122,9 @@ def test_explicitly_disabled_validation_does_not_block(tmp_path: Path) -> None:
         FunctionTarget("0x100", "CTest", "Foo"),
         config,
         StubBackend(),
-            _LLM("```cpp\nvoid CTest::Foo() {}\n```"),
-            checker_llm=_LLM(
-                '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}'
-            ),
-        )
+        _LLM("```cpp\nvoid CTest::Foo() {}\n```"),
+        checker_llm=_LLM('{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}'),
+    )
 
     assert result.validation_verdict is not None
     assert result.validation_verdict.verdict == Verdict.UNKNOWN

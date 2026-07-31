@@ -134,10 +134,7 @@ def _binary_android_manifest_identity(data: bytes) -> tuple[str | None, str | No
         if chunk_type == _RES_STRING_POOL_TYPE and strings is None:
             strings = _parse_string_pool(data, offset)
         elif (
-            chunk_type == _RES_XML_START_ELEMENT_TYPE
-            and strings is not None
-            and header_size >= 16
-            and chunk_size >= 36
+            chunk_type == _RES_XML_START_ELEMENT_TYPE and strings is not None and header_size >= 16 and chunk_size >= 36
         ):
             element_name = _pool_string(strings, _u32(data, offset + 20))
             attribute_start = _u16(data, offset + 24)
@@ -161,12 +158,7 @@ def _binary_android_manifest_identity(data: bytes) -> tuple[str | None, str | No
                     value = _pool_string(strings, typed_value)
                 if element_name == "manifest" and name == "package" and value:
                     package_name = value
-                elif (
-                    element_name == "application"
-                    and name == "label"
-                    and value
-                    and not value.startswith("@")
-                ):
+                elif element_name == "application" and name == "label" and value and not value.startswith("@"):
                     display_name = value
         offset += chunk_size
     return display_name, package_name
@@ -192,11 +184,7 @@ def _android_archive_identity(path: Path) -> tuple[str | None, str | None]:
         with zipfile.ZipFile(path, "r") as archive:
             infos = inspect_archive(archive)
             manifest = next(
-                (
-                    info
-                    for info in infos
-                    if info.filename.replace("\\", "/").casefold() == "androidmanifest.xml"
-                ),
+                (info for info in infos if info.filename.replace("\\", "/").casefold() == "androidmanifest.xml"),
                 None,
             )
             if manifest is None:

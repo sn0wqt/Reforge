@@ -1,4 +1,5 @@
 """Conservative C++ offset-inventory generation from binary evidence."""
+
 from __future__ import annotations
 
 from typing import Any

@@ -60,24 +60,15 @@ def _metadata_member_relevance(
     class_name: str,
 ) -> int:
     """Score members so the bounded LLM summary keeps goal-relevant evidence."""
-    name = str(
-        member.get("method_name", member.get("name", ""))
-        if method
-        else member.get("name", "")
-    )
+    name = str(member.get("method_name", member.get("name", "")) if method else member.get("name", ""))
     score = 0
     for term in entity_terms:
         if not matches_identifier_keyword(term, name):
             continue
-        if (
-            term in CURRENCY_KEYWORDS
-            and not is_contextual_currency_match(term, class_name, name)
-        ):
+        if term in CURRENCY_KEYWORDS and not is_contextual_currency_match(term, class_name, name):
             continue
         score += 100
-    if method and name.casefold().startswith(
-        ("get_", "get", "has_", "has", "is_", "is", "can")
-    ):
+    if method and name.casefold().startswith(("get_", "get", "has_", "has", "is_", "is", "can")):
         score += 20
     return score
 
@@ -153,9 +144,7 @@ def _build_metadata_summary(
                     "address_kind": str(method.get("address_kind", "unknown"))[:32],
                     "return_type": str(method.get("return_type", ""))[:128],
                     "parameter_types": [
-                        str(parameter)[:128]
-                        for parameter in parameter_types
-                        if isinstance(parameter, str)
+                        str(parameter)[:128] for parameter in parameter_types if isinstance(parameter, str)
                     ][:64]
                     if isinstance(parameter_types, (list, tuple))
                     else [],
@@ -323,11 +312,7 @@ def _parse_llm_response(raw_text: str) -> list[AnalyzedTarget]:
             elif isinstance(raw_offset, str):
                 cleaned_offset = raw_offset.strip()
                 try:
-                    val = (
-                        int(cleaned_offset, 16)
-                        if cleaned_offset.casefold().startswith("0x")
-                        else int(cleaned_offset)
-                    )
+                    val = int(cleaned_offset, 16) if cleaned_offset.casefold().startswith("0x") else int(cleaned_offset)
                     if val >= 0:
                         offset = val
                 except ValueError:
@@ -365,6 +350,7 @@ def analyze_metadata(
         try:
             from re_agent.config.loader import load_config
             from re_agent.llm.registry import create_provider
+
             config_path = Path("re-agent.yaml")
             if config_path.exists():
                 cfg = load_config(config_path)
@@ -484,8 +470,7 @@ def _ground_targets(
                 continue
             parameter_types = evidence.get("parameter_types", ())
             if isinstance(parameter_types, (list, tuple)) and all(
-                isinstance(parameter, str) and parameter
-                for parameter in parameter_types
+                isinstance(parameter, str) and parameter for parameter in parameter_types
             ):
                 target.parameter_types = tuple(parameter_types)
             descriptor = evidence.get("descriptor")
@@ -519,9 +504,7 @@ def _ground_targets(
                 and evidence_type.casefold() in _DEX_RETURN_TYPES
             )
             il2cpp_method_verified = (
-                target.hook_type == "return_override"
-                and isinstance(target.method_rva, int)
-                and target.method_rva > 0
+                target.hook_type == "return_override" and isinstance(target.method_rva, int) and target.method_rva > 0
             )
             il2cpp_field_verified = (
                 target.hook_type in {"memory_patch", "multi_memory_patch"}
@@ -539,10 +522,7 @@ def _ground_targets(
 
 def _target_score(t: AnalyzedTarget) -> float:
     score = float(t.confidence)
-    if any(
-        matches_identifier_keyword(pattern, t.class_name)
-        for pattern in MODEL_HINTS
-    ):
+    if any(matches_identifier_keyword(pattern, t.class_name) for pattern in MODEL_HINTS):
         score += 50.0
     if t.hook_type == "memory_patch" and t.offset is not None:
         score += 20.0

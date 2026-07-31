@@ -68,9 +68,7 @@ class AntigravityCLIProvider(BaseLLMProvider):
             raise RuntimeError(f"Antigravity CLI could not be started: {self._agy_bin}") from exc
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout).strip()
-            raise RuntimeError(
-                f"agy --print failed with exit code {proc.returncode}\n{detail}"
-            )
+            raise RuntimeError(f"agy --print failed with exit code {proc.returncode}\n{detail}")
         response = proc.stdout.strip()
         if not response:
             raise RuntimeError("agy --print completed without a response")
@@ -96,6 +94,5 @@ class AntigravityCLIProvider(BaseLLMProvider):
         if status.returncode != 0:
             detail = (status.stderr or status.stdout).strip()
             raise RuntimeError(
-                "Antigravity CLI is unavailable or not authenticated"
-                + (f": {detail}" if detail else "")
+                "Antigravity CLI is unavailable or not authenticated" + (f": {detail}" if detail else "")
             )

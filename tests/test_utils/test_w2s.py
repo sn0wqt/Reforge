@@ -1,4 +1,5 @@
 """Unit tests for World-to-Screen (W2S) matrix projection utility."""
+
 from __future__ import annotations
 
 from re_agent.utils.w2s import Matrix4x4, Vector3, generate_w2s_cpp_helper, world_to_screen
@@ -6,12 +7,14 @@ from re_agent.utils.w2s import Matrix4x4, Vector3, generate_w2s_cpp_helper, worl
 
 def test_world_to_screen_center() -> None:
     # Identity view matrix
-    identity_matrix = Matrix4x4((
-        (1.0, 0.0, 0.0, 0.0),
-        (0.0, 1.0, 0.0, 0.0),
-        (0.0, 0.0, 1.0, 0.0),
-        (0.0, 0.0, 0.0, 1.0),
-    ))
+    identity_matrix = Matrix4x4(
+        (
+            (1.0, 0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0, 1.0),
+        )
+    )
 
     # Point at origin (0, 0, 0) clip_w = 1.0, NDC = (0, 0)
     screen_pos = world_to_screen(
@@ -26,12 +29,14 @@ def test_world_to_screen_center() -> None:
 
 
 def test_world_to_screen_behind_camera() -> None:
-    identity_matrix = Matrix4x4((
-        (1.0, 0.0, 0.0, 0.0),
-        (0.0, 1.0, 0.0, 0.0),
-        (0.0, 0.0, 1.0, 0.0),
-        (0.0, 0.0, 0.0, -1.0), # clip_w < 0
-    ))
+    identity_matrix = Matrix4x4(
+        (
+            (1.0, 0.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0, -1.0),  # clip_w < 0
+        )
+    )
 
     screen_pos = world_to_screen(
         world_pos=Vector3(0.0, 0.0, 0.0),

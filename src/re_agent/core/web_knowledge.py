@@ -3,6 +3,7 @@
 Provides generic architectural patterns across mobile and desktop app frameworks
 (Unity, React Native, Native Android DEX, iOS, and Unreal Engine).
 """
+
 from __future__ import annotations
 
 import logging

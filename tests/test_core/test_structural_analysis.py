@@ -1,4 +1,5 @@
 """Unit tests for structural_analysis module."""
+
 from __future__ import annotations
 
 from re_agent.core.structural_analysis import analyze_structures

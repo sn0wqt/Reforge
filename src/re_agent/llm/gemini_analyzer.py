@@ -60,24 +60,15 @@ def _metadata_member_relevance(
     class_name: str,
 ) -> int:
     """Score members so the bounded LLM summary keeps goal-relevant evidence."""
-    name = str(
-        member.get("method_name", member.get("name", ""))
-        if method
-        else member.get("name", "")
-    )
+    name = str(member.get("method_name", member.get("name", "")) if method else member.get("name", ""))
     score = 0
     for term in entity_terms:
         if not matches_identifier_keyword(term, name):
             continue
-        if (
-            term in CURRENCY_KEYWORDS
-            and not is_contextual_currency_match(term, class_name, name)
-        ):
+        if term in CURRENCY_KEYWORDS and not is_contextual_currency_match(term, class_name, name):
             continue
         score += 100
-    if method and name.casefold().startswith(
-        ("get_", "get", "has_", "has", "is_", "is", "can")
-    ):
+    if method and name.casefold().startswith(("get_", "get", "has_", "has", "is_", "is", "can")):
         score += 20
     return score
 
@@ -153,9 +144,7 @@ def _build_metadata_summary(
                     "address_kind": str(method.get("address_kind", "unknown"))[:32],
                     "return_type": str(method.get("return_type", ""))[:128],
                     "parameter_types": [
-                        str(parameter)[:128]
-                        for parameter in parameter_types
-                        if isinstance(parameter, str)
+                        str(parameter)[:128] for parameter in parameter_types if isinstance(parameter, str)
                     ][:64]
                     if isinstance(parameter_types, (list, tuple))
                     else [],
@@ -169,10 +158,7 @@ def _build_metadata_summary(
                 "methods": safe_methods,
             }
         )
-    encoded_records = [
-        json.dumps(record, ensure_ascii=True, separators=(",", ":"))
-        for record in records
-    ]
+    encoded_records = [json.dumps(record, ensure_ascii=True, separators=(",", ":")) for record in records]
     included: list[str] = []
     encoded_size = 2
     for encoded_record in encoded_records:
@@ -483,8 +469,7 @@ def _ground_targets(
                 continue
             parameter_types = evidence.get("parameter_types", ())
             if isinstance(parameter_types, (list, tuple)) and all(
-                isinstance(parameter, str) and parameter
-                for parameter in parameter_types
+                isinstance(parameter, str) and parameter for parameter in parameter_types
             ):
                 target.parameter_types = tuple(parameter_types)
             descriptor = evidence.get("descriptor")
@@ -528,10 +513,7 @@ def _ground_targets(
 
 def _target_score(t: AnalyzedTarget) -> float:
     score = float(t.confidence)
-    if any(
-        matches_identifier_keyword(pattern, t.class_name)
-        for pattern in MODEL_HINTS
-    ):
+    if any(matches_identifier_keyword(pattern, t.class_name) for pattern in MODEL_HINTS):
         score += 50.0
     # Boost memory patches on field offsets
     if t.hook_type == "memory_patch" and t.offset is not None:

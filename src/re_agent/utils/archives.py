@@ -391,8 +391,6 @@ def extract_archive_bounded(
     return tuple(extracted)
 
 
-
-
 def read_member_bounded(
     archive: zipfile.ZipFile,
     info: zipfile.ZipInfo,

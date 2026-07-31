@@ -1,4 +1,5 @@
 """Tests for bounded review-only native evidence discovery."""
+
 from __future__ import annotations
 
 import zipfile
@@ -9,9 +10,7 @@ from re_agent.core.native_scanner import scan_native_evidence
 
 def test_scans_direct_native_symbols_as_review_only(tmp_path: Path) -> None:
     binary = tmp_path / "game.exe"
-    binary.write_bytes(
-        b"\x00noise\x00PlayerWallet::GetCoins\x00unrelated\x00"
-    )
+    binary.write_bytes(b"\x00noise\x00PlayerWallet::GetCoins\x00unrelated\x00")
 
     targets = scan_native_evidence(binary, ["coins", "wallet"])
 

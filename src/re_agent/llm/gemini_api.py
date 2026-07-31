@@ -182,9 +182,7 @@ class GeminiProvider(BaseLLMProvider):
         http_options: Any,
     ) -> Any:
         if not service_account_path.is_file():
-            raise RuntimeError(
-                f"Gemini service-account file does not exist: {service_account_path}"
-            )
+            raise RuntimeError(f"Gemini service-account file does not exist: {service_account_path}")
         try:
             from google.oauth2 import service_account
 
@@ -193,9 +191,7 @@ class GeminiProvider(BaseLLMProvider):
                 scopes=["https://www.googleapis.com/auth/cloud-platform"],
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"Could not load Gemini service-account credentials: {service_account_path}"
-            ) from exc
+            raise RuntimeError(f"Could not load Gemini service-account credentials: {service_account_path}") from exc
         project_id = os.environ.get("GOOGLE_CLOUD_PROJECT") or credentials.project_id
         if not project_id:
             raise RuntimeError("Gemini Vertex credentials do not identify a Google Cloud project")
@@ -207,5 +203,3 @@ class GeminiProvider(BaseLLMProvider):
             location=location,
             http_options=http_options,
         )
-
-

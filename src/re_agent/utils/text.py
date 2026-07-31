@@ -1,4 +1,5 @@
 """Text analysis utilities for C++ source and assembly."""
+
 from __future__ import annotations
 
 import re
@@ -80,6 +81,7 @@ FP_ASM_PREFIXES: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 # Functions
 # ---------------------------------------------------------------------------
+
 
 def strip_comments(text: str) -> str:
     """Remove both block (``/* ... */``) and line (``// ...``) comments from C++ source."""

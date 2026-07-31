@@ -1,4 +1,5 @@
 """Unit tests for Kotlin/DEX Smali parser and JADX bridge."""
+
 from __future__ import annotations
 
 from re_agent.core.jadx_parser import decompile_apk_or_dex, parse_smali_instructions

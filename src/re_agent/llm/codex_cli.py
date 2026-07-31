@@ -1,4 +1,5 @@
 """Codex CLI-backed LLM provider using saved Codex authentication."""
+
 from __future__ import annotations
 
 import json
@@ -78,15 +79,9 @@ class CodexCLIProvider(BaseLLMProvider):
                 raise RuntimeError(f"Could not run Codex CLI: {self._codex_bin}") from exc
             if proc.returncode != 0:
                 detail = proc.stderr.strip() or proc.stdout.strip() or "no error details"
-                raise RuntimeError(
-                    f"codex exec failed with exit code {proc.returncode}\n{detail}"
-                )
+                raise RuntimeError(f"codex exec failed with exit code {proc.returncode}\n{detail}")
 
-            response = (
-                out_path.read_text(encoding="utf-8").strip()
-                if out_path.is_file()
-                else ""
-            )
+            response = out_path.read_text(encoding="utf-8").strip() if out_path.is_file() else ""
             if not response:
                 response = proc.stdout.strip()
             if not response:

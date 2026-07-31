@@ -1,4 +1,5 @@
 """Configuration loader for re-agent."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -37,8 +38,7 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
         import yaml  # type: ignore[import-untyped]
     except ImportError as err:
         raise ImportError(
-            "PyYAML is required for loading YAML config files. "
-            "Install it with: pip install pyyaml"
+            "PyYAML is required for loading YAML config files. Install it with: pip install pyyaml"
         ) from err
     text = path.read_text(encoding="utf-8")
     data = yaml.safe_load(text)
@@ -146,9 +146,7 @@ def _build_with_coercion(cls: type[_T], data: dict[str, Any]) -> _T:
     known = {f.name: f for f in dataclasses.fields(cls)}  # type: ignore[arg-type]
     unknown = sorted(set(data) - set(known))
     if unknown:
-        raise ValueError(
-            f"Unknown config key(s) in {cls.__name__}: {', '.join(unknown)}"
-        )
+        raise ValueError(f"Unknown config key(s) in {cls.__name__}: {', '.join(unknown)}")
     filtered: dict[str, Any] = {}
     for k, v in data.items():
         ft = known[k].type
@@ -275,6 +273,7 @@ def _build_config(raw: dict[str, Any]) -> ReAgentConfig:
 
 def _validate_config(config: ReAgentConfig) -> None:
     """Reject unsafe or nonsensical numeric configuration values."""
+
     def validate_llm(value: LLMConfig, label: str) -> None:
         value.provider = value.provider.strip().casefold()
         if not value.provider:
@@ -314,17 +313,14 @@ def _validate_config(config: ReAgentConfig) -> None:
     if config.orchestrator.objective_call_count_tolerance < 0:
         raise ValueError("OrchestratorConfig.objective_call_count_tolerance may not be negative")
     if config.orchestrator.objective_control_flow_tolerance < 0:
-        raise ValueError(
-            "OrchestratorConfig.objective_control_flow_tolerance may not be negative"
-        )
+        raise ValueError("OrchestratorConfig.objective_control_flow_tolerance may not be negative")
     if config.orchestrator.selection_strategy not in {
         "dependency-order",
         "easiest-first",
         "high-impact",
     }:
         raise ValueError(
-            "OrchestratorConfig.selection_strategy must be dependency-order, "
-            "easiest-first, or high-impact"
+            "OrchestratorConfig.selection_strategy must be dependency-order, easiest-first, or high-impact"
         )
     if config.parity.call_count_warn_diff < 0:
         raise ValueError("ParityConfig.call_count_warn_diff may not be negative")
@@ -333,9 +329,7 @@ def _validate_config(config: ReAgentConfig) -> None:
     if config.data_handling.max_prompt_chars < 1_000:
         raise ValueError("DataHandlingConfig.max_prompt_chars must be at least 1000")
     config.data_handling.allowed_providers = [
-        provider.strip().casefold()
-        for provider in config.data_handling.allowed_providers
-        if provider.strip()
+        provider.strip().casefold() for provider in config.data_handling.allowed_providers if provider.strip()
     ]
 
 
@@ -346,6 +340,7 @@ def load_config(
     """Load configuration from YAML, environment variables, and CLI overrides."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv()
     except ImportError:
         pass

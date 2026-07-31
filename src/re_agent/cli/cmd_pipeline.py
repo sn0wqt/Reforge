@@ -47,9 +47,7 @@ from re_agent.utils.archives import (
 from re_agent.utils.goal_parser import extract_entity_keywords
 
 MAX_TEXT_BUNDLE_BYTES = 268_435_456
-_JS_PRIMITIVE_LITERAL = (
-    r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null"
-)
+_JS_PRIMITIVE_LITERAL = r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null"
 _JS_PROPERTY_OR_IGNORED_TOKEN = re.compile(
     rf"""
     (?P<double_property>
@@ -236,15 +234,9 @@ def _prepare_il2cpp_sidecars(
                 binary_infos = [
                     info
                     for info in infos
-                    if info.filename.casefold().endswith(
-                        ("libil2cpp.so", "gameassembly.dll", "unityframework")
-                    )
+                    if info.filename.casefold().endswith(("libil2cpp.so", "gameassembly.dll", "unityframework"))
                 ]
-                metadata_infos = [
-                    info
-                    for info in infos
-                    if info.filename.casefold().endswith("global-metadata.dat")
-                ]
+                metadata_infos = [info for info in infos if info.filename.casefold().endswith("global-metadata.dat")]
                 if not binary_infos or not metadata_infos:
                     return None, "Unity package lacks a binary/metadata member pair"
                 binary_info = sorted(
@@ -268,13 +260,10 @@ def _prepare_il2cpp_sidecars(
             binaries = sorted(
                 candidate
                 for candidate in directory_files
-                if candidate.name.casefold()
-                in {"libil2cpp.so", "gameassembly.dll", "unityframework"}
+                if candidate.name.casefold() in {"libil2cpp.so", "gameassembly.dll", "unityframework"}
             )
             metadata_files = sorted(
-                candidate
-                for candidate in directory_files
-                if candidate.name.casefold() == "global-metadata.dat"
+                candidate for candidate in directory_files if candidate.name.casefold() == "global-metadata.dat"
             )
             if not binaries or (global_metadata is None and not metadata_files):
                 return None, "Unity directory lacks a binary/metadata pair"
@@ -323,43 +312,26 @@ def _discover_hermes_candidates(
     replacement = "999999999" if is_currency_goal else "true"
 
     for property_name in sorted(occurrence_counts):
-        direct_matching_terms = [
-            term
-            for term in direct_terms
-            if matches_identifier_keyword(term, property_name)
-        ]
-        matching_terms = [
-            term
-            for term in terms
-            if matches_identifier_keyword(term, property_name)
-        ]
+        direct_matching_terms = [term for term in direct_terms if matches_identifier_keyword(term, property_name)]
+        matching_terms = [term for term in terms if matches_identifier_keyword(term, property_name)]
         if not matching_terms:
             continue
         if direct_matching_terms:
-            exact = any(
-                property_name.casefold() == term.casefold()
-                for term in direct_matching_terms
-            )
+            exact = any(property_name.casefold() == term.casefold() for term in direct_matching_terms)
             confidence = 95 if exact else 90
             relevance = "direct goal entity"
         else:
-            exact = any(
-                property_name.casefold() == term.casefold()
-                for term in matching_terms
-            )
+            exact = any(property_name.casefold() == term.casefold() for term in matching_terms)
             confidence = 78 if exact else 70
             relevance = "domain expansion"
 
         candidate_tokens = identifier_tokens(property_name)
-        direct_tokens = frozenset().union(
-            *(identifier_tokens(term) for term in direct_terms)
-        )
+        direct_tokens = frozenset().union(*(identifier_tokens(term) for term in direct_terms))
         ui_tokens = candidate_tokens & UI_PENALTY_HINTS
         if "badge" in candidate_tokens and "badge" not in direct_tokens:
             ui_tokens = ui_tokens | {"badge"}
-        framework_literal = (
-            "/" in property_name
-            or property_name.casefold().startswith(("application.", "application/"))
+        framework_literal = "/" in property_name or property_name.casefold().startswith(
+            ("application.", "application/")
         )
         penalty_reason = ""
         if framework_literal:
@@ -449,9 +421,7 @@ def _patch_textual_bundle(
             continue
         matches = [(start, end) for name, start, end in properties if name == target.target]
         if len(matches) != 1:
-            notes.append(
-                f"Skipped {target.target}: expected one syntax-aware property, found {len(matches)}."
-            )
+            notes.append(f"Skipped {target.target}: expected one syntax-aware property, found {len(matches)}.")
             continue
         start, end = matches[0]
         replacements.append((start, end, value, target))
@@ -578,8 +548,7 @@ def _repackage_android(
     if signer is None or not signer.is_file():
         return (
             False,
-            "Set RE_AGENT_APK_SIGNER_JAR to an explicitly trusted "
-            "uber-apk-signer JAR path.",
+            "Set RE_AGENT_APK_SIGNER_JAR to an explicitly trusted uber-apk-signer JAR path.",
         )
 
     signed_apk = output_dir / "modded_app-aligned-signed.apk"
@@ -663,8 +632,7 @@ def _repackage_android(
         if not ok:
             return (
                 False,
-                "APK signature/alignment verification failed:\n"
-                + verification_output[-2000:],
+                "APK signature/alignment verification failed:\n" + verification_output[-2000:],
             )
         shutil.copy2(signer_output, signed_apk)
 
@@ -754,11 +722,7 @@ def _write_patch_summary(
         f"Platform: {architecture.platform}",
         f"Engine: {architecture.engine_type}",
         "Detection evidence: "
-        + (
-            "; ".join(architecture.detection_notes)
-            if architecture.detection_notes
-            else "(none recorded)"
-        ),
+        + ("; ".join(architecture.detection_notes) if architecture.detection_notes else "(none recorded)"),
         f"Bundle member: {architecture.bundle_member or '(none)'}",
         f"Extracted bundle: {bundle_path or '(none)'}",
         f"Modified deployable bundle: {modified_bundle or '(none)'}",
@@ -789,11 +753,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         platform_hint=getattr(args, "platform", None),
     )
     configured_output_dir = getattr(args, "output_dir", None)
-    output_dir = (
-        Path(configured_output_dir)
-        if configured_output_dir
-        else default_pipeline_output_dir(detection_target)
-    )
+    output_dir = Path(configured_output_dir) if configured_output_dir else default_pipeline_output_dir(detection_target)
     output_dir.mkdir(parents=True, exist_ok=True)
     goal = getattr(args, "goal", None) or ""
     effective_metadata_dir = metadata_dir
@@ -811,15 +771,9 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     if not configured_output_dir:
         print(f"[+] Default output directory: {output_dir.resolve()}")
     if architecture.pathway_id:
-        print(
-            f"[+] Pathway {architecture.pathway_id}/8: "
-            f"{architecture.display_name} ({architecture.pathway})"
-        )
+        print(f"[+] Pathway {architecture.pathway_id}/8: {architecture.display_name} ({architecture.pathway})")
     else:
-        print(
-            f"[!] Pathway unresolved: {architecture.display_name} "
-            f"({architecture.pathway})"
-        )
+        print(f"[!] Pathway unresolved: {architecture.display_name} ({architecture.pathway})")
     if architecture.detected_components:
         print(f"[+] Detected components: {', '.join(architecture.detected_components)}")
     for note in architecture.detection_notes:
@@ -836,6 +790,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
 
     if architecture.engine_type == "unity-il2cpp" and binary_path is not None:
         from re_agent.core.il2cpp_parser import find_il2cpp_dumper
+
         dumper_value = find_il2cpp_dumper(getattr(args, "il2cpp_dumper", None))
         if not dumper_value:
             print(
@@ -909,7 +864,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             return 3
         stages.append(
             PipelineStage(
-                    "input_preparation",
+                "input_preparation",
                 "SUCCEEDED",
                 "Platform-specific bundle extracted and converted to an analysis view.",
                 (str(bundle_path), str(decompiled_path)),
@@ -938,15 +893,9 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     else:
         print("\n[*] Step 1/5: Preparing pathway-specific analysis inputs...")
         if architecture.package_type == "metadata-directory":
-            print(
-                "[+] Using pre-extracted IL2CPP dump directory directly; "
-                "no archive extraction needed."
-            )
+            print("[+] Using pre-extracted IL2CPP dump directory directly; no archive extraction needed.")
         else:
-            print(
-                "[+] Extracting target binary and metadata components directly "
-                "from application package archive..."
-            )
+            print("[+] Extracting target binary and metadata components directly from application package archive...")
         stages.append(
             PipelineStage(
                 "input_preparation",
@@ -1198,10 +1147,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         PipelineStage(
             "artifact_generation",
             "SUCCEEDED",
-            (
-                "Generated review artifacts. Hook files are not proof of installation "
-                "or runtime behavior."
-            ),
+            ("Generated review artifacts. Hook files are not proof of installation or runtime behavior."),
             tuple(str(path) for path in generated_files),
         )
     )
@@ -1250,14 +1196,11 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         and _read_text_bundle(bundle_path) is not None
         and bool(groups.primary)
     )
-    android_repackage_available = (
-        modified_bundle is not None or can_attempt_textual_patch
-    )
+    android_repackage_available = modified_bundle is not None or can_attempt_textual_patch
     if architecture.is_android and not android_repackage_available:
         if bundle_path is not None and _read_text_bundle(bundle_path) is None:
             unavailable_reason = (
-                "the Hermes bundle is compiled bytecode and no verified runtime "
-                "injection strategy was installed"
+                "the Hermes bundle is compiled bytecode and no verified runtime injection strategy was installed"
             )
         else:
             unavailable_reason = "no verified static or runtime modification was produced"
@@ -1273,9 +1216,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     if should_repack and architecture.is_android:
         if binary_path is None or binary_path.suffix.lower() != ".apk":
             print("[!] Android repackaging requires an APK input.")
-            stages.append(
-                PipelineStage("packaging", "FAILED", "Android packaging requires an APK input.")
-            )
+            stages.append(PipelineStage("packaging", "FAILED", "Android packaging requires an APK input."))
             _write_pipeline_manifest(
                 output_dir,
                 architecture,
@@ -1318,10 +1259,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 goal_prompt=goal,
             )
             if modified_bundle is None:
-                print(
-                    "[!] Repackaging was selected, but no verified static "
-                    "bundle modification could be produced."
-                )
+                print("[!] Repackaging was selected, but no verified static bundle modification could be produced.")
                 manifest = _write_pipeline_manifest(
                     output_dir,
                     architecture,

@@ -1,4 +1,5 @@
 """JSON-backed persistent session state for tracking reversal progress."""
+
 from __future__ import annotations
 
 import importlib
@@ -52,9 +53,7 @@ class Session:
             if not isinstance(functions, dict) or not isinstance(runs, list):
                 raise ValueError("session functions/runs have invalid types")
             valid_functions = {
-                str(address): dict(entry)
-                for address, entry in functions.items()
-                if isinstance(entry, dict)
+                str(address): dict(entry) for address, entry in functions.items() if isinstance(entry, dict)
             }
             valid_runs = [dict(entry) for entry in runs if isinstance(entry, dict)]
             return {
@@ -65,9 +64,7 @@ class Session:
         except (json.JSONDecodeError, OSError, ValueError) as exc:
             logger.warning("Invalid session state in %s: %s", self.path, exc)
             if quarantine and self.path.exists():
-                quarantine_path = self.path.with_name(
-                    f"{self.path.name}.corrupt-{int(time.time() * 1000)}"
-                )
+                quarantine_path = self.path.with_name(f"{self.path.name}.corrupt-{int(time.time() * 1000)}")
                 try:
                     os.replace(self.path, quarantine_path)
                     logger.warning("Corrupt session quarantined as %s", quarantine_path)
@@ -148,20 +145,14 @@ class Session:
             "success": result.success,
             "rounds_used": result.rounds_used,
             "verdict": result.checker_verdict.verdict.value if result.checker_verdict else None,
-            "validation_verdict": (
-                result.validation_verdict.verdict.value if result.validation_verdict else None
-            ),
+            "validation_verdict": (result.validation_verdict.verdict.value if result.validation_verdict else None),
             "parity_status": result.parity_status.value if result.parity_status else None,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         with self._thread_lock, self._file_lock():
             # Merge against the latest on-disk state to avoid lost updates from
             # concurrent class/function workers.
-            self._data = (
-                self._read_data(quarantine=False)
-                if self.path.exists()
-                else self._empty_data()
-            )
+            self._data = self._read_data(quarantine=False) if self.path.exists() else self._empty_data()
             self._data["functions"][addr] = entry
             self._data["runs"].append(entry)
             self._save_unlocked()
@@ -180,9 +171,7 @@ class Session:
         """Return the number of recorded runs for an address."""
         addr = normalize_address(address)
         return sum(
-            1
-            for entry in self._data.get("runs", [])
-            if normalize_address(str(entry.get("address", ""))) == addr
+            1 for entry in self._data.get("runs", []) if normalize_address(str(entry.get("address", ""))) == addr
         )
 
     def get_class_summary(self, class_name: str) -> dict[str, int]:

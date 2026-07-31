@@ -31,13 +31,9 @@ def target_activation_facts(
     ev = evidence or {}
     h_type = hook_type or (target.hook_type if target is not None else "")
     offset = (target.offset if target is not None and target.offset is not None else None) or ev.get("offset")
-    method_rva = (
-        target.method_rva if target is not None and target.method_rva is not None else None
-    ) or ev.get("rva")
+    method_rva = (target.method_rva if target is not None and target.method_rva is not None else None) or ev.get("rva")
     descriptor = (
-        target.method_descriptor
-        if target is not None and target.method_descriptor is not None
-        else None
+        target.method_descriptor if target is not None and target.method_descriptor is not None else None
     ) or ev.get("descriptor")
 
     exact_java_override = (
@@ -100,10 +96,7 @@ def _semantic_priority(target: AnalyzedTarget) -> int:
     member_tokens = identifier_tokens(target.target)
     score = 0
 
-    score += 45 * len(
-        class_tokens
-        & (ECONOMY_DATA_HINTS - frozenset({"model", "runner", "state"}))
-    )
+    score += 45 * len(class_tokens & (ECONOMY_DATA_HINTS - frozenset({"model", "runner", "state"})))
     score += 20 * len(class_tokens & {"model", "runner", "state"})
 
     ignored_member_words = {
@@ -209,16 +202,14 @@ def rank_candidates(
         replace(
             target,
             confidence=min(target.confidence, PRIMARY_CONFIDENCE_THRESHOLD - 1),
-            reason=(
-                "Conflicting candidate strategies require manual resolution. "
-                + target.reason
-            ).strip(),
+            reason=("Conflicting candidate strategies require manual resolution. " + target.reason).strip(),
         )
         if (
             target.class_name.casefold(),
             target.target.casefold(),
             target.parameter_types,
-        ) in conflict_ids
+        )
+        in conflict_ids
         else target
         for target in exact_ranked
     ]
@@ -253,9 +244,7 @@ def split_candidates(
     primary: list[AnalyzedTarget] = []
     seen_entities: set[str] = set()
     specific_entities = {"coins", "keys", "gems"}
-    has_specific_currency_targets = any(
-        _extract_entity_concept(t) in specific_entities for t in high_conf
-    )
+    has_specific_currency_targets = any(_extract_entity_concept(t) in specific_entities for t in high_conf)
 
     for target in high_conf:
         entity = _extract_entity_concept(target)
@@ -280,11 +269,7 @@ def format_candidate(target: AnalyzedTarget) -> str:
         address = f" @ method RVA 0x{target.method_rva:X}"
     else:
         address = ""
-    signature = (
-        f"({', '.join(target.parameter_types)})"
-        if target.parameter_types
-        else ""
-    )
+    signature = f"({', '.join(target.parameter_types)})" if target.parameter_types else ""
     reason = f" -> {target.reason}" if target.reason else ""
     readiness = (
         " [ACTIVE-READY]"

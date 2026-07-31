@@ -128,9 +128,7 @@ project_profile:
     assert (out_dir / "index.android.bundle").exists()
     assert (out_dir / "Hook_Frida.js").exists()
     assert (out_dir / "patch_diff_summary.txt").exists()
-    manifest = json.loads(
-        (out_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((out_dir / "pipeline_manifest.json").read_text(encoding="utf-8"))
     assert manifest["capabilities"]["analysis_complete"] is True
     assert manifest["capabilities"]["runtime_hook_installed"] is False
     assert manifest["capabilities"]["runtime_behavior_verified"] is False
@@ -178,15 +176,9 @@ def test_pipeline_stops_before_packaging_when_all_candidates_are_review_only(
     )
 
     terminal = capsys.readouterr().out
-    manifest = json.loads(
-        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
-    )
-    discovery = next(
-        stage for stage in manifest["stages"] if stage["name"] == "candidate_discovery"
-    )
-    packaging = next(
-        stage for stage in manifest["stages"] if stage["name"] == "packaging"
-    )
+    manifest = json.loads((output_dir / "pipeline_manifest.json").read_text(encoding="utf-8"))
+    discovery = next(stage for stage in manifest["stages"] if stage["name"] == "candidate_discovery")
+    packaging = next(stage for stage in manifest["stages"] if stage["name"] == "packaging")
 
     assert result == 3
     assert "INSUFFICIENT_EVIDENCE" in terminal
@@ -261,13 +253,9 @@ def test_interactive_android_repack_applies_textual_patch_before_packaging(
         "unavailable_reason": None,
     }
     assert observed["modified_bytes"] == b'const state = {"coins": 999999999};'
-    manifest = json.loads(
-        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((output_dir / "pipeline_manifest.json").read_text(encoding="utf-8"))
     assert manifest["capabilities"]["static_patch_created"] is True
-    assert manifest["capabilities"]["package_artifact"].endswith(
-        "modded_app-aligned-signed.apk"
-    )
+    assert manifest["capabilities"]["package_artifact"].endswith("modded_app-aligned-signed.apk")
 
 
 def test_cmd_pipeline_ios_hermes_bundle_and_deployment_notes(
@@ -349,14 +337,10 @@ def test_pipeline_fails_when_requested_static_patch_is_ambiguous(
     )
 
     assert result == 4
-    manifest = json.loads(
-        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((output_dir / "pipeline_manifest.json").read_text(encoding="utf-8"))
     assert manifest["exit_code"] == 4
     assert manifest["capabilities"]["static_patch_created"] is False
-    patch_stage = next(
-        stage for stage in manifest["stages"] if stage["name"] == "static_patch"
-    )
+    patch_stage = next(stage for stage in manifest["stages"] if stage["name"] == "static_patch")
     assert patch_stage["status"] == "FAILED"
 
 
@@ -578,7 +562,6 @@ def test_cmd_pipeline_windows_gameassembly_extracts_dll(
     assert observed["metadata_bytes"] == b"windows-metadata-bytes"
 
 
-
 def test_metadata_only_ios_pipeline_uses_platform_neutral_input_stage(
     tmp_path: Path,
     monkeypatch,
@@ -593,8 +576,7 @@ def test_metadata_only_ios_pipeline_uses_platform_neutral_input_stage(
         encoding="utf-8",
     )
     (metadata_dir / "dump.cs").write_text(
-        "// Image 0: Assembly-CSharp.dll\n"
-        "// Image 1: Unity.Notifications.iOS.dll\n",
+        "// Image 0: Assembly-CSharp.dll\n// Image 1: Unity.Notifications.iOS.dll\n",
         encoding="utf-8",
     )
     target = AnalyzedTarget(
@@ -628,19 +610,14 @@ def test_metadata_only_ios_pipeline_uses_platform_neutral_input_stage(
     )
 
     terminal = capsys.readouterr().out
-    manifest = json.loads(
-        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((output_dir / "pipeline_manifest.json").read_text(encoding="utf-8"))
 
     assert result == 0
     assert "Pathway 4/8: Unity IL2CPP (iOS)" in terminal
     assert "Preparing pathway-specific analysis inputs" in terminal
     assert "Hermes" not in terminal
     assert manifest["pathway"]["platform"] == "ios"
-    assert any(
-        "Unity.Notifications.iOS.dll" in note
-        for note in manifest["pathway"]["detection_notes"]
-    )
+    assert any("Unity.Notifications.iOS.dll" in note for note in manifest["pathway"]["detection_notes"])
     assert (output_dir / "Hook_Goal.cpp").is_file()
 
 
@@ -661,11 +638,7 @@ const state = {"coins": 4, "balance": true};
 
 
 def test_hermes_candidate_occurrences_are_counted_once_per_property() -> None:
-    source = (
-        'const a = {"diamonds": 1}; '
-        'const b = {"diamonds": 2}; '
-        'const c = {"balance": true};'
-    )
+    source = 'const a = {"diamonds": 1}; const b = {"diamonds": 2}; const c = {"balance": true};'
 
     candidates = _discover_hermes_candidates(
         source,
@@ -699,7 +672,7 @@ def test_hermes_domain_expansions_and_ui_evidence_do_not_become_primary() -> Non
 
 def test_textual_bundle_patch_is_unambiguous_and_preserves_newlines(tmp_path: Path) -> None:
     bundle = tmp_path / "index.android.bundle"
-    bundle.write_bytes(b'// {\"coins\": 1}\r\nconst state = {\"coins\": 4};\r\n')
+    bundle.write_bytes(b'// {"coins": 1}\r\nconst state = {"coins": 4};\r\n')
     target = AnalyzedTarget(
         class_name="HermesBundle",
         target="coins",
@@ -711,7 +684,7 @@ def test_textual_bundle_patch_is_unambiguous_and_preserves_newlines(tmp_path: Pa
     modified, notes = _patch_textual_bundle(bundle, [target], tmp_path, 1)
 
     assert modified is not None
-    assert modified.read_bytes() == b'// {\"coins\": 1}\r\nconst state = {\"coins\": 999};\r\n'
+    assert modified.read_bytes() == b'// {"coins": 1}\r\nconst state = {"coins": 999};\r\n'
     assert any("Patched coins" in note for note in notes)
 
 

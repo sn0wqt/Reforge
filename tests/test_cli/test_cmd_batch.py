@@ -1,4 +1,5 @@
 """Unit tests for re-agent batch CLI command."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -366,9 +367,6 @@ def test_metadata_join_does_not_add_lowercase_class_aliases(
     )
 
     assert isinstance(result, tuple)
-    class_names = {
-        target.class_name
-        for target in result[2]
-    }
+    class_names = {target.class_name for target in result[2]}
     assert "EndRunSequence" in class_names
     assert "endrunsequence" not in class_names

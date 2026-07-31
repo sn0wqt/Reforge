@@ -42,6 +42,7 @@ from re_agent.utils.vtable import generate_vtable_header
 logger = logging.getLogger(__name__)
 MAX_OFFSET_INVENTORY_FILES = 50
 
+
 def _method_activation_facts(
     engine_type: str,
     evidence: dict[str, Any],
@@ -95,8 +96,7 @@ def _match_candidate_keyword(
 ) -> bool:
     """Match one entity while rejecting overloaded framework terminology."""
     return _match_keyword(keyword, member_name) and (
-        keyword not in CURRENCY_KEYWORDS
-        or is_contextual_currency_match(keyword, class_name, member_name)
+        keyword not in CURRENCY_KEYWORDS or is_contextual_currency_match(keyword, class_name, member_name)
     )
 
 
@@ -201,9 +201,7 @@ def _merge_dump_method_evidence(
         "parameters",
     )
     for dump_method in dump_methods:
-        method_name = str(
-            dump_method.get("method_name", dump_method.get("name", ""))
-        )
+        method_name = str(dump_method.get("method_name", dump_method.get("name", "")))
         matches = existing_by_name.get(method_name, [])
         match_index = merged_counts.get(method_name, 0)
         if match_index >= len(matches):
@@ -254,29 +252,18 @@ def rank_classes_by_relevance(
         # Keyword matches on member fields
         for f in fields:
             f_name = str(f.get("name", ""))
-            matches = [
-                kw
-                for kw in keywords
-                if _match_candidate_keyword(kw, cls_name, f_name)
-            ]
+            matches = [kw for kw in keywords if _match_candidate_keyword(kw, cls_name, f_name)]
             if matches:
                 score += 20 if any(kw in direct_terms for kw in matches) else 10
 
         # Keyword matches on method names
         for m in methods:
             m_name = str(m.get("method_name", m.get("name", "")))
-            matches = [
-                kw
-                for kw in keywords
-                if _match_candidate_keyword(kw, cls_name, m_name)
-            ]
+            matches = [kw for kw in keywords if _match_candidate_keyword(kw, cls_name, m_name)]
             if matches:
                 score += 15 if any(kw in direct_terms for kw in matches) else 7
 
-        if (
-            any(keyword in CURRENCY_KEYWORDS for keyword in keywords)
-            and has_economy_data_context(cls_name)
-        ):
+        if any(keyword in CURRENCY_KEYWORDS for keyword in keywords) and has_economy_data_context(cls_name):
             score += 100
 
         # Boost core data-model & engine physics classes
@@ -305,9 +292,7 @@ def rank_classes_by_relevance(
             score -= 200
 
         # Heavy penalty for UI / visual / audio / decor / wrapper classes
-        penalty_count = sum(
-            1 for hint in UI_PENALTY_HINTS if _match_keyword(hint, cls_name)
-        )
+        penalty_count = sum(1 for hint in UI_PENALTY_HINTS if _match_keyword(hint, cls_name))
         if penalty_count > 0:
             score -= 100 * penalty_count
         if class_tokens & NON_RUNTIME_CLASS_HINTS:
@@ -352,9 +337,7 @@ def cmd_batch(
     # Only scan for IL2CPP metadata if engine is Unity IL2CPP or metadata was explicitly provided
     explicit_metadata = getattr(args, "metadata", None) or getattr(args, "metadata_dir", None)
     il2cpp_meta = (
-        find_il2cpp_metadata_in_dir(metadata_source)
-        if engine_type == "unity-il2cpp" or explicit_metadata
-        else None
+        find_il2cpp_metadata_in_dir(metadata_source) if engine_type == "unity-il2cpp" or explicit_metadata else None
     )
     methods = il2cpp_meta.get("methods", []) if il2cpp_meta else []
     structs_list = il2cpp_meta.get("structs", []) if il2cpp_meta else []
@@ -413,9 +396,7 @@ def cmd_batch(
             logger.debug("Optional LLM expansion unavailable: %s", exc)
 
     if goal_prompt:
-        known_domain_goal = any(
-            is_entity_keyword(keyword) for keyword in direct_goal_keywords
-        )
+        known_domain_goal = any(is_entity_keyword(keyword) for keyword in direct_goal_keywords)
         route_description = (
             "local domain rules"
             if known_domain_goal
@@ -426,8 +407,7 @@ def cmd_batch(
             )
         )
         print(
-            f"[+] Resolving Natural Language Goal ({route_description}): "
-            f"'{goal_prompt}'",
+            f"[+] Resolving Natural Language Goal ({route_description}): '{goal_prompt}'",
             flush=True,
         )
     goal_keywords = resolve_goal_keywords(goal_prompt, provider=provider) if goal_prompt else []
@@ -466,10 +446,7 @@ def cmd_batch(
                 _merge_dump_method_evidence(class_map[c_name], c_methods)
 
         # Also include struct names from il2cpp.h / dump.cs in class_map
-        class_names_casefold = {
-            class_name.casefold()
-            for class_name in class_map
-        }
+        class_names_casefold = {class_name.casefold() for class_name in class_map}
         for normalized_name in structs_map:
             if normalized_name in class_names_casefold:
                 continue
@@ -527,10 +504,7 @@ def cmd_batch(
             cls_fields = structs_map.get(cls_name.lower(), [])
 
             if target_classes:
-                name_match = any(
-                    _match_candidate_keyword(term, cls_name, cls_name)
-                    for term in target_classes
-                )
+                name_match = any(_match_candidate_keyword(term, cls_name, cls_name) for term in target_classes)
                 field_match = any(
                     any(
                         _match_candidate_keyword(
@@ -592,9 +566,7 @@ def cmd_batch(
         if is_collision_goal:
             allowed_structural_categories.add("damage_check")
         if is_movement_goal:
-            allowed_structural_categories.update(
-                {"position_getter", "speed_getter"}
-            )
+            allowed_structural_categories.update({"position_getter", "speed_getter"})
         struct_hits = [
             hit
             for hit in struct_hits
@@ -640,21 +612,11 @@ def cmd_batch(
                 )
                 for term in direct_goal_keywords
             )
-            structural_confidence = (
-                hit.confidence if direct_relevance else min(hit.confidence, 74)
-            )
-            relevance_note = (
-                ""
-                if direct_relevance
-                else "Indirect domain expansion only; "
-            )
+            structural_confidence = hit.confidence if direct_relevance else min(hit.confidence, 74)
+            relevance_note = "" if direct_relevance else "Indirect domain expansion only; "
             evidence = method_evidence.get((hit.class_name, hit.target_name), {})
             parameter_types = evidence.get("parameter_types", ())
-            method_rva = (
-                evidence.get("rva")
-                if evidence.get("address_kind") == "method_rva"
-                else None
-            )
+            method_rva = evidence.get("rva") if evidence.get("address_kind") == "method_rva" else None
             structural_targets.append(
                 AnalyzedTarget(
                     class_name=hit.class_name,
@@ -665,14 +627,8 @@ def cmd_batch(
                     confidence=structural_confidence,
                     reason=f"{relevance_note}{hit.details}",
                     method_rva=method_rva if isinstance(method_rva, int) else None,
-                    parameter_types=tuple(parameter_types)
-                    if isinstance(parameter_types, (list, tuple))
-                    else (),
-                    method_descriptor=(
-                        str(evidence["descriptor"])
-                        if evidence.get("descriptor")
-                        else None
-                    ),
+                    parameter_types=tuple(parameter_types) if isinstance(parameter_types, (list, tuple)) else (),
+                    method_descriptor=(str(evidence["descriptor"]) if evidence.get("descriptor") else None),
                     **_method_activation_facts(
                         engine_type,
                         evidence,
@@ -728,10 +684,7 @@ def cmd_batch(
                             for keyword in goal_keywords
                             if keyword in CURRENCY_KEYWORDS
                         )
-                        if (
-                            core_value_match
-                            and has_economy_data_context(target.class_name)
-                        ):
+                        if core_value_match and has_economy_data_context(target.class_name):
                             target.confidence = max(target.confidence, 96)
                         elif direct_match:
                             target.confidence = max(target.confidence, 90)
@@ -741,15 +694,9 @@ def cmd_batch(
                             target.confidence = min(target.confidence, 69)
                 elapsed = time.monotonic() - analysis_started
                 metadata = getattr(provider, "last_metadata", {})
-                selected_provider = (
-                    metadata.get("provider")
-                    if isinstance(metadata, dict)
-                    else None
-                )
+                selected_provider = metadata.get("provider") if isinstance(metadata, dict) else None
                 route_text = (
-                    f" via {selected_provider}"
-                    if isinstance(selected_provider, str) and selected_provider
-                    else ""
+                    f" via {selected_provider}" if isinstance(selected_provider, str) and selected_provider else ""
                 )
                 if llm_targets:
                     print(
@@ -777,30 +724,15 @@ def cmd_batch(
         # Synthesize structural targets and merge with LLM targets.
         synthesis_started = time.monotonic()
         print(
-            "[*] Combining configured-provider results with local structural "
-            "and field evidence...",
+            "[*] Combining configured-provider results with local structural and field evidence...",
             flush=True,
         )
         fallback_targets: list[AnalyzedTarget] = []
         if goal_prompt:
-            currency_terms = [
-                keyword
-                for keyword in goal_keywords
-                if keyword in CORE_CURRENCY_VALUE_KEYWORDS
-            ]
-            direct_currency_terms = [
-                keyword
-                for keyword in direct_goal_keywords
-                if keyword in CURRENCY_KEYWORDS
-            ]
-            collision_terms = [
-                keyword for keyword in goal_keywords if keyword in COLLISION_KEYWORDS
-            ]
-            direct_collision_terms = [
-                keyword
-                for keyword in direct_goal_keywords
-                if keyword in COLLISION_KEYWORDS
-            ]
+            currency_terms = [keyword for keyword in goal_keywords if keyword in CORE_CURRENCY_VALUE_KEYWORDS]
+            direct_currency_terms = [keyword for keyword in direct_goal_keywords if keyword in CURRENCY_KEYWORDS]
+            collision_terms = [keyword for keyword in goal_keywords if keyword in COLLISION_KEYWORDS]
+            direct_collision_terms = [keyword for keyword in direct_goal_keywords if keyword in COLLISION_KEYWORDS]
             skip_classes = {
                 "Array",
                 "Dictionary",
@@ -883,10 +815,7 @@ def cmd_batch(
                             continue
                         f_lower = f_name.lower()
                         f_type = str(f.get("type", "int32_t")).lower().strip()
-                        if (
-                            not _is_scalar_currency_field_type(f_type)
-                            or not is_balance_value_member(f_name)
-                        ):
+                        if not _is_scalar_currency_field_type(f_type) or not is_balance_value_member(f_name):
                             continue
                         matched_kw = next(
                             (
@@ -912,8 +841,7 @@ def cmd_batch(
                                 for keyword in direct_currency_terms
                             )
                             contextual_value_match = (
-                                matched_kw in CORE_CURRENCY_VALUE_KEYWORDS
-                                and has_economy_data_context(cls_name)
+                                matched_kw in CORE_CURRENCY_VALUE_KEYWORDS and has_economy_data_context(cls_name)
                             )
                             c_label = matched_kw.capitalize()
                             fallback_targets.append(
@@ -924,13 +852,7 @@ def cmd_batch(
                                     hook_type="memory_patch",
                                     return_value="999999",
                                     return_type="int32_t",
-                                    confidence=(
-                                        96
-                                        if contextual_value_match
-                                        else 90
-                                        if direct_match
-                                        else 74
-                                    ),
+                                    confidence=(96 if contextual_value_match else 90 if direct_match else 74),
                                     reason=(
                                         f"{'Direct goal' if direct_match else 'Indirect domain'} "
                                         f"structural match: {c_label} field in {cls_name}"
@@ -971,10 +893,7 @@ def cmd_batch(
                             ),
                             None,
                         )
-                        if (
-                            m_lower.startswith(("get_", "get", "has_", "has"))
-                            and matched_kw
-                        ):
+                        if m_lower.startswith(("get_", "get", "has_", "has")) and matched_kw:
                             ret_type = "bool" if is_bool else "int32_t"
                             ret_val = "true" if is_bool else "999999999"
                             direct_match = any(
@@ -986,8 +905,7 @@ def cmd_batch(
                                 for keyword in direct_currency_terms
                             )
                             contextual_value_match = (
-                                matched_kw in CORE_CURRENCY_VALUE_KEYWORDS
-                                and has_economy_data_context(cls_name)
+                                matched_kw in CORE_CURRENCY_VALUE_KEYWORDS and has_economy_data_context(cls_name)
                             )
                             c_label = matched_kw.capitalize()
 
@@ -1013,18 +931,13 @@ def cmd_batch(
                                     ),
                                     method_rva=(
                                         m.get("rva")
-                                        if m.get("address_kind") == "method_rva"
-                                        and isinstance(m.get("rva"), int)
+                                        if m.get("address_kind") == "method_rva" and isinstance(m.get("rva"), int)
                                         else None
                                     ),
                                     parameter_types=tuple(m.get("parameter_types", ()))
                                     if isinstance(m.get("parameter_types"), (list, tuple))
                                     else (),
-                                    method_descriptor=(
-                                        str(m["descriptor"])
-                                        if m.get("descriptor")
-                                        else None
-                                    ),
+                                    method_descriptor=(str(m["descriptor"]) if m.get("descriptor") else None),
                                     **_method_activation_facts(
                                         engine_type,
                                         m,
@@ -1041,23 +954,15 @@ def cmd_batch(
                         if m.get("is_event") or m_lower.startswith(("add_", "remove_", "subscribe", "unsubscribe")):
                             continue
                         matched_collision = next(
-                            (
-                                keyword
-                                for keyword in collision_terms
-                                if _match_keyword(keyword, m_name)
-                            ),
+                            (keyword for keyword in collision_terms if _match_keyword(keyword, m_name)),
                             None,
                         )
                         direct_collision_match = any(
-                            _match_keyword(keyword, m_name)
-                            for keyword in direct_collision_terms
+                            _match_keyword(keyword, m_name) for keyword in direct_collision_terms
                         )
-                        collision_confidence = (
-                            85 if direct_collision_match else 74
-                        )
+                        collision_confidence = 85 if direct_collision_match else 74
                         if matched_collision and not any(
-                            _match_keyword(word, m_name)
-                            for word in ("anim", "effect", "particle", "sound", "theme")
+                            _match_keyword(word, m_name) for word in ("anim", "effect", "particle", "sound", "theme")
                         ):
                             if m_lower.startswith(("get_", "is_", "has_")):
                                 fallback_targets.append(
@@ -1075,18 +980,13 @@ def cmd_batch(
                                         ),
                                         method_rva=(
                                             m.get("rva")
-                                            if m.get("address_kind") == "method_rva"
-                                            and isinstance(m.get("rva"), int)
+                                            if m.get("address_kind") == "method_rva" and isinstance(m.get("rva"), int)
                                             else None
                                         ),
                                         parameter_types=tuple(m.get("parameter_types", ()))
                                         if isinstance(m.get("parameter_types"), (list, tuple))
                                         else (),
-                                        method_descriptor=(
-                                            str(m["descriptor"])
-                                            if m.get("descriptor")
-                                            else None
-                                        ),
+                                        method_descriptor=(str(m["descriptor"]) if m.get("descriptor") else None),
                                         **_method_activation_facts(
                                             engine_type,
                                             m,
@@ -1110,24 +1010,17 @@ def cmd_batch(
                                         ),
                                         method_rva=(
                                             m.get("rva")
-                                            if m.get("address_kind") == "method_rva"
-                                            and isinstance(m.get("rva"), int)
+                                            if m.get("address_kind") == "method_rva" and isinstance(m.get("rva"), int)
                                             else None
                                         ),
                                         parameter_types=tuple(m.get("parameter_types", ()))
                                         if isinstance(m.get("parameter_types"), (list, tuple))
                                         else (),
-                                        method_descriptor=(
-                                            str(m["descriptor"])
-                                            if m.get("descriptor")
-                                            else None
-                                        ),
+                                        method_descriptor=(str(m["descriptor"]) if m.get("descriptor") else None),
                                     )
                                 )
 
-        candidate_targets = list(
-            rank_candidates(llm_targets + fallback_targets + structural_targets)
-        )
+        candidate_targets = list(rank_candidates(llm_targets + fallback_targets + structural_targets))
         matched_offsets_summary: list[str] = []
         discovered_targets: list[tuple[str, str, int]] = []
         class_fields_by_name: dict[str, list[dict[str, Any]]] = {}
@@ -1158,17 +1051,14 @@ def cmd_batch(
                 if not isinstance(field_offset, int) or field_offset < 0:
                     continue
                 if (
-                    identifier_tokens(cls_name)
-                    & (NON_RUNTIME_CLASS_HINTS | UI_PENALTY_HINTS)
+                    identifier_tokens(cls_name) & (NON_RUNTIME_CLASS_HINTS | UI_PENALTY_HINTS)
                     or not _is_scalar_currency_field_type(field.get("type", ""))
                     or not is_balance_value_member(field_name)
                 ):
                     continue
                 field_name_lower = field_name.lower()
                 if any(
-                    field_name_lower.endswith(hint)
-                    or f"_{hint}" in field_name_lower
-                    for hint in pointer_field_hints
+                    field_name_lower.endswith(hint) or f"_{hint}" in field_name_lower for hint in pointer_field_hints
                 ):
                     continue
                 offset_keywords = direct_goal_keywords or goal_keywords
@@ -1180,13 +1070,8 @@ def cmd_batch(
                     )
                     for keyword in offset_keywords
                 ):
-                    matched_offsets_summary.append(
-                        f"  . {cls_name}::{field_name} -> "
-                        f"Offset: 0x{field_offset:X}"
-                    )
-                    discovered_targets.append(
-                        (cls_name, field_name, field_offset)
-                    )
+                    matched_offsets_summary.append(f"  . {cls_name}::{field_name} -> Offset: 0x{field_offset:X}")
+                    discovered_targets.append((cls_name, field_name, field_offset))
 
         raw_targets = [
             AnalyzedTarget(
@@ -1222,10 +1107,7 @@ def cmd_batch(
                 ):
                     selected_inventory_classes.append(class_name)
                     selected_names.add(class_name.casefold())
-                if (
-                    len(selected_inventory_classes)
-                    >= MAX_OFFSET_INVENTORY_FILES
-                ):
+                if len(selected_inventory_classes) >= MAX_OFFSET_INVENTORY_FILES:
                     break
 
             if selected_inventory_classes:
@@ -1264,17 +1146,11 @@ def cmd_batch(
                 print(summary_line)
 
         if dumped_count > 0:
-            print(
-                f"\n[DONE] Wrote {dumped_count} evidence-backed C++ offset inventories "
-                f"into '{output_dir}'."
-            )
+            print(f"\n[DONE] Wrote {dumped_count} evidence-backed C++ offset inventories into '{output_dir}'.")
         elif engine_type in {"android-java-dex", "react-native-hermes"}:
             print("\n[DONE] Successfully ingested Android Java/Kotlin class metadata.")
         else:
-            print(
-                "\n[DONE] Metadata ingestion completed; no relevant per-class "
-                "offset inventory was required."
-            )
+            print("\n[DONE] Metadata ingestion completed; no relevant per-class offset inventory was required.")
 
         if not getattr(args, "_suppress_candidate_display", False):
             print("\n[+] UNIVERSAL CANDIDATE SELECTION")
@@ -1292,10 +1168,7 @@ def cmd_batch(
 
         native_targets = list(scan_native_evidence(binary_arg, goal_keywords))
         if native_targets:
-            print(
-                f"[+] Retained {len(native_targets)} bounded native "
-                "string/symbol evidence candidates (review-only)."
-            )
+            print(f"[+] Retained {len(native_targets)} bounded native string/symbol evidence candidates (review-only).")
             if not getattr(args, "_suppress_candidate_display", False):
                 print("\n[+] UNIVERSAL CANDIDATE SELECTION")
                 print_candidate_summary(native_targets, stream=sys.stdout)

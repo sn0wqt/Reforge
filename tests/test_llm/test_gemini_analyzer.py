@@ -1,4 +1,5 @@
 """Unit tests for Gemini semantic analyzer and AnalyzedTarget."""
+
 from __future__ import annotations
 
 import json
@@ -123,38 +124,37 @@ def test_goal_relevant_method_survives_per_class_summary_limit() -> None:
         entity_terms=["coins", "currency", "wallet"],
     )
     payload = json.loads(summary)
-    selected_names = {
-        method["name"]
-        for method in payload[0]["methods"]
-    }
+    selected_names = {method["name"] for method in payload[0]["methods"]}
 
     assert "GetCurrency" in selected_names
     assert len(selected_names) == 12
 
 
 def test_parse_llm_response_json() -> None:
-    json_resp = json.dumps([
-        {
-            "class_name": "WalletModel",
-            "target": "GetCurrency",
-            "offset": None,
-            "hook_type": "return_override",
-            "return_value": "999999999",
-            "return_type": "int32_t",
-            "confidence": 95,
-            "reason": "Returns currency",
-        },
-        {
-            "class_name": "WalletOnRunModel",
-            "target": "Keys",
-            "offset": "0x30",
-            "hook_type": "memory_patch",
-            "return_value": "999999",
-            "return_type": "int32_t",
-            "confidence": 90,
-            "reason": "Direct field offset",
-        },
-    ])
+    json_resp = json.dumps(
+        [
+            {
+                "class_name": "WalletModel",
+                "target": "GetCurrency",
+                "offset": None,
+                "hook_type": "return_override",
+                "return_value": "999999999",
+                "return_type": "int32_t",
+                "confidence": 95,
+                "reason": "Returns currency",
+            },
+            {
+                "class_name": "WalletOnRunModel",
+                "target": "Keys",
+                "offset": "0x30",
+                "hook_type": "memory_patch",
+                "return_value": "999999",
+                "return_type": "int32_t",
+                "confidence": 90,
+                "reason": "Direct field offset",
+            },
+        ]
+    )
 
     targets = _parse_llm_response(json_resp)
     assert len(targets) == 2
@@ -185,16 +185,18 @@ def test_parse_llm_response_with_markdown_fences() -> None:
 
 
 def test_analyze_metadata_with_llm_mock() -> None:
-    mock_resp = json.dumps([
-        {
-            "class_name": "WalletModel",
-            "target": "GetCurrency",
-            "hook_type": "return_override",
-            "return_value": "999999999",
-            "confidence": 95,
-            "reason": "Currency getter",
-        }
-    ])
+    mock_resp = json.dumps(
+        [
+            {
+                "class_name": "WalletModel",
+                "target": "GetCurrency",
+                "hook_type": "return_override",
+                "return_value": "999999999",
+                "confidence": 95,
+                "reason": "Currency getter",
+            }
+        ]
+    )
     provider = MockLLMProvider(mock_resp)
     candidates = [
         (
@@ -238,10 +240,7 @@ def test_llm_target_after_first_twelve_members_is_still_grounded() -> None:
             }
         ]
     )
-    methods = [
-        {"method_name": f"Noise{index}", "return_type": "void"}
-        for index in range(20)
-    ]
+    methods = [{"method_name": f"Noise{index}", "return_type": "void"} for index in range(20)]
     methods.append(
         {
             "method_name": "GetCurrency",
@@ -358,8 +357,11 @@ def test_analyze_metadata_rejects_hallucinated_or_changed_offset() -> None:
         )
     ]
 
-    assert analyze_metadata_with_llm(
-        MockLLMProvider(response),
-        "infinite coins",
-        candidates,
-    ) == []
+    assert (
+        analyze_metadata_with_llm(
+            MockLLMProvider(response),
+            "infinite coins",
+            candidates,
+        )
+        == []
+    )

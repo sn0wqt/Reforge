@@ -1,4 +1,5 @@
 """Unit tests for vector and protocol type inference."""
+
 from __future__ import annotations
 
 from re_agent.utils.type_inference import generate_protocol_struct, infer_vector_types

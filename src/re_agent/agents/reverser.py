@@ -1,4 +1,5 @@
 """Reverser agent — gathers context and asks LLM to produce reversed C++ code."""
+
 from __future__ import annotations
 
 import json
@@ -56,9 +57,7 @@ class ReverserAgent:
         self._max_investigations = max(0, max_investigations)
         self._max_prompt_chars = max(1_000, max_prompt_chars)
         self._knowledge_graph = (
-            KnowledgeGraph(report_dir / "knowledge-graph.json")
-            if persist_evidence and report_dir is not None
-            else None
+            KnowledgeGraph(report_dir / "knowledge-graph.json") if persist_evidence and report_dir is not None else None
         )
         self.last_prompt: str = ""
         self.last_response: str = ""
@@ -86,8 +85,7 @@ class ReverserAgent:
                 if struct:
                     structs_text = f"{struct.name} (size: {struct.size})\n"
                     structs_text += "\n".join(
-                        f"  +0x{f.offset:X} {f.type_str} {f.name} (size: {f.size})"
-                        for f in struct.fields
+                        f"  +0x{f.offset:X} {f.type_str} {f.name} (size: {f.size})" for f in struct.fields
                     )
             except Exception:
                 structs_text = "Unavailable"
@@ -115,9 +113,7 @@ class ReverserAgent:
             project_rules=quote_untrusted(self._project_rules(), max_chars=evidence_limit),
         )
         if len(task_prompt) > self._max_prompt_chars:
-            raise ValueError(
-                "Reverser prompt exceeds data_handling.max_prompt_chars after evidence bounding"
-            )
+            raise ValueError("Reverser prompt exceeds data_handling.max_prompt_chars after evidence bounding")
 
         if self._conversation_id is None and self.llm.supports_conversations:
             self._conversation_id = self.llm.new_conversation(system_prompt)
@@ -295,9 +291,7 @@ class ReverserAgent:
         all_fix_instructions = list(fix_instructions)
         if objective_findings:
             all_issues.extend(f"objective verifier: {finding}" for finding in objective_findings)
-            all_fix_instructions.extend(
-                "Resolve objective mismatch: " + finding for finding in objective_findings
-            )
+            all_fix_instructions.extend("Resolve objective mismatch: " + finding for finding in objective_findings)
         fix_prompt = render_template(
             PROMPTS_DIR / "fix_instructions.md",
             checker_report=quote_untrusted(
@@ -314,9 +308,7 @@ class ReverserAgent:
             address=quote_untrusted(target.address, max_chars=128),
         )
         if len(fix_prompt) > self._max_prompt_chars:
-            raise ValueError(
-                "Fix prompt exceeds data_handling.max_prompt_chars after evidence bounding"
-            )
+            raise ValueError("Fix prompt exceeds data_handling.max_prompt_chars after evidence bounding")
 
         self.last_prompt = fix_prompt
 

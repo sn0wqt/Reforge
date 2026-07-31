@@ -1,4 +1,5 @@
 """CLI entry point for re-agent."""
+
 from __future__ import annotations
 
 import argparse
@@ -97,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # scan-strings
     from re_agent.cli.cmd_scan_strings import register_subparser as register_scan_strings
+
     register_scan_strings(sub)
 
     return parser
@@ -118,38 +120,47 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.command == "init":
         from re_agent.cli.cmd_init import cmd_init
+
         return cmd_init(args)
 
     if args.command == "reverse":
         from re_agent.cli.cmd_reverse import cmd_reverse
+
         return cmd_reverse(args)
 
     if args.command == "parity":
         from re_agent.cli.cmd_parity import cmd_parity
+
         return cmd_parity(args)
 
     if args.command == "status":
         from re_agent.cli.cmd_status import cmd_status
+
         return cmd_status(args)
 
     if args.command == "estimate":
         from re_agent.cli.cmd_estimate import cmd_estimate
+
         return cmd_estimate(args)
 
     if args.command == "batch":
         from re_agent.cli.cmd_batch import cmd_batch
+
         return _normalize_exit_code(cmd_batch(args))
 
     if args.command == "hook":
         from re_agent.cli.cmd_hook import cmd_hook
+
         return cmd_hook(args)
 
     if args.command == "trace":
         from re_agent.cli.cmd_trace import cmd_trace
+
         return cmd_trace(args)
 
     if args.command == "pipeline":
         from re_agent.cli.cmd_pipeline import cmd_pipeline
+
         return cmd_pipeline(args)
 
     parser.print_help()

@@ -33,8 +33,6 @@ class IPAScanner:
         self.min_length = min_length
         self.max_length = max_length
 
-
-
     def scan(self, search_query: str | None = None) -> list[dict[str, Any]]:
         """Recursively scan IPA directory for string matches."""
         results: list[dict[str, Any]] = []
@@ -48,11 +46,7 @@ class IPAScanner:
         scanned_files = 0
         remaining_bytes = MAX_SCAN_TOTAL_BYTES
         for file_path in iter_directory_files_bounded(root):
-            if (
-                len(results) >= MAX_SCAN_RESULTS
-                or scanned_files >= MAX_SCAN_FILES
-                or remaining_bytes <= 0
-            ):
+            if len(results) >= MAX_SCAN_RESULTS or scanned_files >= MAX_SCAN_FILES or remaining_bytes <= 0:
                 break
             try:
                 size = file_path.stat().st_size
@@ -89,18 +83,14 @@ class IPAScanner:
                 scan_kind = "plist"
             elif ext in (".db", ".sqlite", ".sqlite3"):
                 scan_kind = "sqlite"
-            elif (
-                ext
-                in (
-                    ".dylib",
-                    ".framework",
-                    ".so",
-                    ".assets",
-                    ".resource",
-                    ".unity3d",
-                )
-                or is_mach_o(file_path)
-            ):
+            elif ext in (
+                ".dylib",
+                ".framework",
+                ".so",
+                ".assets",
+                ".resource",
+                ".unity3d",
+            ) or is_mach_o(file_path):
                 scan_kind = "binary"
             if scan_kind is None or size > remaining_bytes:
                 continue
@@ -180,15 +170,9 @@ class IPAScanner:
                 if not self.min_length <= len(val) <= self.max_length:
                     continue
                 if query_lower is None or query_lower in val.lower():
-                    virtual_address = (
-                        macho_vm_address_for_file_offset(data, int(item["offset"]))
-                        if is_macho
-                        else None
-                    )
+                    virtual_address = macho_vm_address_for_file_offset(data, int(item["offset"])) if is_macho else None
                     address_text = (
-                        f"Unslid VM: {hex(virtual_address)}"
-                        if virtual_address is not None
-                        else "Unslid VM: unresolved"
+                        f"Unslid VM: {hex(virtual_address)}" if virtual_address is not None else "Unslid VM: unresolved"
                     )
                     results.append(
                         {
@@ -196,20 +180,11 @@ class IPAScanner:
                             "type": f"binary:{item['type']}",
                             "match": val,
                             "offset": hex(item["offset"]),
-                            "virtual_address": (
-                                hex(virtual_address)
-                                if virtual_address is not None
-                                else None
-                            ),
+                            "virtual_address": (hex(virtual_address) if virtual_address is not None else None),
                             "address_kind": (
-                                "unslid_macho_vmaddr"
-                                if virtual_address is not None
-                                else "file_offset_only"
+                                "unslid_macho_vmaddr" if virtual_address is not None else "file_offset_only"
                             ),
-                            "snippet": (
-                                f"{address_text} | "
-                                f"Offset: {hex(item['offset'])} | String: {val[:100]}"
-                            ),
+                            "snippet": (f"{address_text} | Offset: {hex(item['offset'])} | String: {val[:100]}"),
                         }
                     )
         except Exception:

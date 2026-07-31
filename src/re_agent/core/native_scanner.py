@@ -1,4 +1,5 @@
 """Bounded native string/symbol evidence discovery for review-only candidates."""
+
 from __future__ import annotations
 
 import zipfile
@@ -43,11 +44,7 @@ def _looks_like_native_member(name: str) -> bool:
 
 
 def _matched_terms(value: str, terms: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(
-        term
-        for term in terms
-        if matches_identifier_keyword(term, value)
-    )
+    return tuple(term for term in terms if matches_identifier_keyword(term, value))
 
 
 def _candidate_from_string(
@@ -60,11 +57,7 @@ def _candidate_from_string(
     matches = _matched_terms(value, terms)
     if not matches:
         return None
-    symbol_like = (
-        "::" in value
-        or value.startswith(("$s", "_$s", "_Z", "Java_"))
-        or "objc" in value.casefold()
-    )
+    symbol_like = "::" in value or value.startswith(("$s", "_$s", "_Z", "Java_")) or "objc" in value.casefold()
     confidence = 35 if symbol_like else 30
     safe_value = value[:240]
     return AnalyzedTarget(
@@ -131,13 +124,7 @@ def _scan_stream(
 
 
 def _normalized_terms(terms: Iterable[str]) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            term.strip().casefold()
-            for term in terms
-            if len(term.strip()) >= 3
-        )
-    )
+    return tuple(dict.fromkeys(term.strip().casefold() for term in terms if len(term.strip()) >= 3))
 
 
 def scan_native_evidence(

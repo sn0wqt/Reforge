@@ -1,4 +1,5 @@
 """Tests for durable session persistence."""
+
 from __future__ import annotations
 
 import json

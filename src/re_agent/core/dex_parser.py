@@ -1,4 +1,5 @@
 """Pure-Python Android DEX (.dex / .apk) parser for Java/Kotlin class and method recovery."""
+
 from __future__ import annotations
 
 import logging
@@ -105,9 +106,7 @@ def parse_dex_file(dex_bytes: bytes) -> list[dict[str, Any]]:
             (class_defs_size, class_defs_off, 32),
         )
         if any(
-            size > 2_000_000
-            or offset > len(dex_bytes)
-            or size * width > len(dex_bytes) - offset
+            size > 2_000_000 or offset > len(dex_bytes) or size * width > len(dex_bytes) - offset
             for size, offset, width in table_specs
         ):
             return []
@@ -291,10 +290,26 @@ def parse_dex_file(dex_bytes: bytes) -> list[dict[str, Any]]:
                 raw_cls_clean = raw_cls_clean[1:]
             clean_cls = raw_cls_clean.replace("/", ".")
             framework_prefixes = (
-                "android.", "java.", "javax.", "kotlin.", "kotlinx.", "androidx.",
-                "com.google.", "com.facebook.", "io.sentry.", "org.apache.", "org.json.",
-                "com.squareup.", "com.appsflyer.", "com.adjust.", "com.unity3d.", "com.android.",
-                "com.amazon.", "com.amplitude.", "com.braze.", "com.onesignal.",
+                "android.",
+                "java.",
+                "javax.",
+                "kotlin.",
+                "kotlinx.",
+                "androidx.",
+                "com.google.",
+                "com.facebook.",
+                "io.sentry.",
+                "org.apache.",
+                "org.json.",
+                "com.squareup.",
+                "com.appsflyer.",
+                "com.adjust.",
+                "com.unity3d.",
+                "com.android.",
+                "com.amazon.",
+                "com.amplitude.",
+                "com.braze.",
+                "com.onesignal.",
             )
             if not clean_cls or clean_cls.startswith(framework_prefixes):
                 continue
@@ -306,29 +321,15 @@ def parse_dex_file(dex_bytes: bytes) -> list[dict[str, Any]]:
                     "class_descriptor": raw_cls,
                     "raw_descriptor": prototype["descriptor"] if prototype else "",
                     "descriptor": prototype["descriptor"] if prototype else "",
-                    "parameter_types": (
-                        prototype["parameter_types"] if prototype else ()
-                    ),
+                    "parameter_types": (prototype["parameter_types"] if prototype else ()),
                     "return_type": prototype["return_type"] if prototype else "",
                     "is_declared": definition is not None,
-                    "is_executable": (
-                        bool(definition["is_executable"]) if definition else False
-                    ),
-                    "is_static": (
-                        bool(definition["is_static"]) if definition else None
-                    ),
-                    "is_native": (
-                        bool(definition["is_native"]) if definition else False
-                    ),
-                    "is_abstract": (
-                        bool(definition["is_abstract"]) if definition else False
-                    ),
-                    "is_constructor": (
-                        bool(definition["is_constructor"]) if definition else False
-                    ),
-                    "access_flags": (
-                        int(definition["access_flags"]) if definition else None
-                    ),
+                    "is_executable": (bool(definition["is_executable"]) if definition else False),
+                    "is_static": (bool(definition["is_static"]) if definition else None),
+                    "is_native": (bool(definition["is_native"]) if definition else False),
+                    "is_abstract": (bool(definition["is_abstract"]) if definition else False),
+                    "is_constructor": (bool(definition["is_constructor"]) if definition else False),
+                    "access_flags": (int(definition["access_flags"]) if definition else None),
                     "code_off": int(definition["code_off"]) if definition else None,
                 }
             )
@@ -371,10 +372,7 @@ def parse_apk_or_dex(target_path: str | Path) -> dict[str, Any]:
     # diagnostics, but expose only declared executable methods as candidates.
     method_references = list(all_methods)
     all_methods = [
-        method
-        for method in all_methods
-        if method.get("is_declared") is True
-        and method.get("is_executable") is True
+        method for method in all_methods if method.get("is_declared") is True and method.get("is_executable") is True
     ]
 
     # Group executable methods by class name.

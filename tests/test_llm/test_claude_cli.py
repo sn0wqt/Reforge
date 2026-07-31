@@ -1,4 +1,5 @@
 """Tests for the subscription-backed Claude Code CLI provider."""
+
 from __future__ import annotations
 
 import json
@@ -26,10 +27,12 @@ def test_claude_cli_send_parses_result_and_usage(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "must-not-leak")
     provider = ClaudeCLIProvider(model="sonnet", max_budget_usd=1.5, effort="high")
     with patch("re_agent.llm.claude_cli.subprocess.run", return_value=_completed()) as run:
-        result = provider.send([
-            Message(role="system", content="system"),
-            Message(role="user", content="reverse this"),
-        ])
+        result = provider.send(
+            [
+                Message(role="system", content="system"),
+                Message(role="user", content="reverse this"),
+            ]
+        )
 
     assert result == "generated code"
     assert provider.last_metadata.cost_usd == 0.12

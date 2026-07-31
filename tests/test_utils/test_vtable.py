@@ -1,4 +1,5 @@
 """Unit tests for vtable struct header generation."""
+
 from __future__ import annotations
 
 from re_agent.utils.vtable import generate_vtable_header

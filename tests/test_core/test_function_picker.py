@@ -1,4 +1,5 @@
 """Tests for function picker."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,10 +12,12 @@ from re_agent.core.session import Session
 
 def test_pick_next_returns_highest_caller(tmp_path: Path) -> None:
     session = Session(tmp_path / "progress.json")
-    backend = StubBackend(remaining_functions=[
-        FunctionEntry(address="0x100", name="Foo", class_name="CTest", caller_count=5),
-        FunctionEntry(address="0x200", name="Bar", class_name="CTest", caller_count=10),
-    ])
+    backend = StubBackend(
+        remaining_functions=[
+            FunctionEntry(address="0x100", name="Foo", class_name="CTest", caller_count=5),
+            FunctionEntry(address="0x200", name="Bar", class_name="CTest", caller_count=10),
+        ]
+    )
     result = pick_next("CTest", backend, session)
     assert result is not None
     assert result.function_name == "Bar"
@@ -26,16 +29,24 @@ def test_pick_next_skips_completed(tmp_path: Path) -> None:
 
     session = Session(tmp_path / "progress.json")
     # Record one as completed
-    session.record_result(ReversalResult(
-        target=FunctionTarget(address="0x200", class_name="CTest", function_name="Bar"),
-        code="", checker_verdict=None, parity_status=None,
-        parity_findings=[], rounds_used=1, success=True,
-    ))
+    session.record_result(
+        ReversalResult(
+            target=FunctionTarget(address="0x200", class_name="CTest", function_name="Bar"),
+            code="",
+            checker_verdict=None,
+            parity_status=None,
+            parity_findings=[],
+            rounds_used=1,
+            success=True,
+        )
+    )
 
-    backend = StubBackend(remaining_functions=[
-        FunctionEntry(address="0x100", name="Foo", class_name="CTest", caller_count=5),
-        FunctionEntry(address="0x200", name="Bar", class_name="CTest", caller_count=10),
-    ])
+    backend = StubBackend(
+        remaining_functions=[
+            FunctionEntry(address="0x100", name="Foo", class_name="CTest", caller_count=5),
+            FunctionEntry(address="0x200", name="Bar", class_name="CTest", caller_count=10),
+        ]
+    )
     result = pick_next("CTest", backend, session)
     assert result is not None
     assert result.function_name == "Foo"
@@ -50,10 +61,12 @@ def test_pick_next_returns_none_when_empty(tmp_path: Path) -> None:
 
 def test_pick_next_dependency_order_prefers_low_caller_count(tmp_path: Path) -> None:
     session = Session(tmp_path / "progress.json")
-    backend = StubBackend(remaining_functions=[
-        FunctionEntry(address="0x100", name="Leaf", class_name="CTest", caller_count=1),
-        FunctionEntry(address="0x200", name="Hub", class_name="CTest", caller_count=20),
-    ])
+    backend = StubBackend(
+        remaining_functions=[
+            FunctionEntry(address="0x100", name="Leaf", class_name="CTest", caller_count=1),
+            FunctionEntry(address="0x200", name="Hub", class_name="CTest", caller_count=20),
+        ]
+    )
     result = pick_next("CTest", backend, session, strategy="dependency-order")
     assert result is not None
     assert result.function_name == "Leaf"

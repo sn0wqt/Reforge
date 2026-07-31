@@ -1,4 +1,5 @@
 """OpenAI-compatible LLM provider implementation."""
+
 from __future__ import annotations
 
 import uuid
@@ -50,9 +51,7 @@ class OpenAIProvider:
 
     def send(self, messages: list[Message], **kwargs: Any) -> str:
         """Send messages via the chat completions API and return the response."""
-        api_messages: list[dict[str, str]] = [
-            {"role": m.role, "content": m.content} for m in messages
-        ]
+        api_messages: list[dict[str, str]] = [{"role": m.role, "content": m.content} for m in messages]
 
         response = self._client.chat.completions.create(
             model=kwargs.get("model", self._model),

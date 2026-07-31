@@ -1,4 +1,5 @@
 """CLI command for IPA and Binary Asset String Scanning."""
+
 from __future__ import annotations
 
 import argparse

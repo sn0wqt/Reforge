@@ -1,4 +1,5 @@
 """Unit tests for IPA & Swift String Scanner core modules."""
+
 from __future__ import annotations
 
 import plistlib

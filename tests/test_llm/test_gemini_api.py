@@ -1,4 +1,5 @@
 """Unit tests for GeminiProvider auth modes and fallbacks."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,9 +54,12 @@ def test_gemini_provider_no_creds_error(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
 
-    with patch("shutil.which", return_value=None), pytest.raises(
-        RuntimeError,
-        match="No Gemini credentials found",
+    with (
+        patch("shutil.which", return_value=None),
+        pytest.raises(
+            RuntimeError,
+            match="No Gemini credentials found",
+        ),
     ):
         GeminiProvider(api_key=None)
 

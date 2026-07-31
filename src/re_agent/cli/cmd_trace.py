@@ -1,4 +1,5 @@
 """CLI command for generating Frida TypeScript/JS live runtime tracing scripts."""
+
 from __future__ import annotations
 
 import argparse

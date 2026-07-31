@@ -1,4 +1,5 @@
 """Class-level auto-advance orchestrator."""
+
 from __future__ import annotations
 
 import logging
@@ -42,11 +43,7 @@ def reverse_class(
     if session is None:
         session = Session(config.output.session_file)
 
-    limit = (
-        max_functions
-        if max_functions is not None
-        else config.orchestrator.max_functions_per_class
-    )
+    limit = max_functions if max_functions is not None else config.orchestrator.max_functions_per_class
     if limit <= 0:
         raise ValueError("max_functions must be positive")
     results: list[ReversalResult] = []
@@ -73,8 +70,7 @@ def reverse_class(
             break
 
         print(
-            f"[{fn_idx}/{limit}] Reversing {target.class_name}::{target.function_name} "
-            f"({target.address})...",
+            f"[{fn_idx}/{limit}] Reversing {target.class_name}::{target.function_name} ({target.address})...",
             file=sys.stderr,
         )
 

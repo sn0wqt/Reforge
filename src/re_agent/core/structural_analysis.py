@@ -107,22 +107,15 @@ def analyze_structures(
             # Method taking 1 numeric parameter (damage amount) returning void or bool
             elif len(params) == 1 and return_type in ("void", "bool", "system.void", "system.boolean"):
                 p_type = params[0].get("type", "").lower() if isinstance(params[0], dict) else str(params[0]).lower()
-                if (
-                    p_type
-                    in (
-                        "float",
-                        "int32_t",
-                        "int",
-                        "double",
-                        "system.single",
-                        "system.int32",
-                        "system.double",
-                    )
-                    and any(
-                        matches_identifier_keyword(keyword, m_name)
-                        for keyword in COLLISION_KEYWORDS
-                    )
-                ):
+                if p_type in (
+                    "float",
+                    "int32_t",
+                    "int",
+                    "double",
+                    "system.single",
+                    "system.int32",
+                    "system.double",
+                ) and any(matches_identifier_keyword(keyword, m_name) for keyword in COLLISION_KEYWORDS):
                     results.append(
                         StructuralCandidate(
                             class_name=cls_name,
@@ -182,11 +175,7 @@ def analyze_deobfuscated_assembly(
     recovered_words = reconstruct_stack_strings(assembly_lines)
     xor_hits = detect_xor_loops(assembly_lines)
 
-    search_keywords = (
-        frozenset(target_keywords)
-        if target_keywords
-        else CORE_CURRENCY_VALUE_KEYWORDS
-    )
+    search_keywords = frozenset(target_keywords) if target_keywords else CORE_CURRENCY_VALUE_KEYWORDS
 
     for word in recovered_words:
         word_lower = word.lower()

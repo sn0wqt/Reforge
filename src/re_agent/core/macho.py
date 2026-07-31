@@ -1,4 +1,5 @@
 """Bounded Mach-O segment parsing and unslid file-offset mapping."""
+
 from __future__ import annotations
 
 import struct
@@ -45,7 +46,7 @@ def _parse_thin_slice(
 ) -> tuple[MachOSegment, ...]:
     if slice_offset < 0 or slice_size < 0 or slice_offset + slice_size > len(data):
         return ()
-    magic = data[slice_offset:slice_offset + 4]
+    magic = data[slice_offset : slice_offset + 4]
     format_info = _THIN_MAGICS.get(magic)
     if format_info is None:
         return ()
@@ -58,10 +59,7 @@ def _parse_thin_slice(
         command_bytes = _u32(data, slice_offset + 20, endian)
     except ValueError:
         return ()
-    if (
-        command_count > _MAX_LOAD_COMMANDS
-        or command_bytes > slice_size - header_size
-    ):
+    if command_count > _MAX_LOAD_COMMANDS or command_bytes > slice_size - header_size:
         return ()
 
     cursor = slice_offset + header_size
@@ -77,16 +75,14 @@ def _parse_thin_slice(
 
         try:
             if command == _LC_SEGMENT_64 and command_size >= 72:
-                name_bytes = data[cursor + 8:cursor + 24]
+                name_bytes = data[cursor + 8 : cursor + 24]
                 virtual_address, _virtual_size, file_offset, file_size = (
-                    int(value)
-                    for value in struct.unpack_from(f"{endian}QQQQ", data, cursor + 24)
+                    int(value) for value in struct.unpack_from(f"{endian}QQQQ", data, cursor + 24)
                 )
             elif command == _LC_SEGMENT and command_size >= 56:
-                name_bytes = data[cursor + 8:cursor + 24]
+                name_bytes = data[cursor + 8 : cursor + 24]
                 virtual_address, _virtual_size, file_offset, file_size = (
-                    int(value)
-                    for value in struct.unpack_from(f"{endian}IIII", data, cursor + 24)
+                    int(value) for value in struct.unpack_from(f"{endian}IIII", data, cursor + 24)
                 )
             else:
                 cursor += command_size
@@ -136,13 +132,11 @@ def parse_macho_segments(data: bytes) -> tuple[MachOSegment, ...]:
         try:
             if is_64:
                 _cpu, _subtype, offset, size, _align, _reserved = (
-                    int(value)
-                    for value in struct.unpack_from(f"{endian}IIQQII", data, cursor)
+                    int(value) for value in struct.unpack_from(f"{endian}IIQQII", data, cursor)
                 )
             else:
                 _cpu, _subtype, offset, size, _align = (
-                    int(value)
-                    for value in struct.unpack_from(f"{endian}IIIII", data, cursor)
+                    int(value) for value in struct.unpack_from(f"{endian}IIIII", data, cursor)
                 )
         except struct.error:
             return ()

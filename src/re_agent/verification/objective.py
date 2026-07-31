@@ -1,4 +1,5 @@
 """Conservative structural verification that does not rely on an LLM."""
+
 from __future__ import annotations
 
 import json
@@ -69,8 +70,7 @@ def verify_candidate(
             call_diff = abs(asm.call_count - source_call_count)
             if call_diff >= call_count_tolerance and source_call_count < asm.call_count:
                 findings.append(
-                    f"ASM call mismatch: disassembly has {asm.call_count} calls, "
-                    f"candidate has {source_call_count}"
+                    f"ASM call mismatch: disassembly has {asm.call_count} calls, candidate has {source_call_count}"
                 )
 
     if getattr(backend.capabilities, "has_cfg", False):
@@ -82,8 +82,7 @@ def verify_candidate(
             candidate_blocks = source_flow_count + 1
             if len(cfg) - candidate_blocks >= control_flow_tolerance:
                 findings.append(
-                    f"CFG mismatch: Ghidra has {len(cfg)} basic blocks, "
-                    f"candidate implies about {candidate_blocks}"
+                    f"CFG mismatch: Ghidra has {len(cfg)} basic blocks, candidate implies about {candidate_blocks}"
                 )
 
     if getattr(backend.capabilities, "has_pcode", False):
@@ -92,23 +91,17 @@ def verify_candidate(
             pcode = [item for item in pcode if isinstance(item, dict) and item.get("opcode")]
         if isinstance(pcode, list) and pcode:
             checks_run += 1
-            opcodes = [
-                str(item.get("opcode", "")).upper()
-                for item in pcode
-                if isinstance(item, dict)
-            ]
+            opcodes = [str(item.get("opcode", "")).upper() for item in pcode if isinstance(item, dict)]
             ir_calls = sum(op in {"CALL", "CALLIND"} for op in opcodes)
             if ir_calls - source_call_count >= call_count_tolerance:
                 findings.append(
-                    f"P-code call mismatch: normalized IR has {ir_calls} calls, "
-                    f"candidate has {source_call_count}"
+                    f"P-code call mismatch: normalized IR has {ir_calls} calls, candidate has {source_call_count}"
                 )
             ir_returns = sum(op == "RETURN" for op in opcodes)
             source_returns = source_body.count("return")
             if ir_returns >= 2 and source_returns == 0:
                 findings.append(
-                    f"P-code return mismatch: normalized IR has {ir_returns} returns, "
-                    "candidate has no explicit return"
+                    f"P-code return mismatch: normalized IR has {ir_returns} returns, candidate has no explicit return"
                 )
 
     if findings:
@@ -135,7 +128,7 @@ def _extract_body(text: str) -> str:
     close_brace = text.rfind("}")
     if open_brace == -1 or close_brace == -1 or close_brace <= open_brace:
         return text
-    return text[open_brace:close_brace + 1]
+    return text[open_brace : close_brace + 1]
 
 
 def _read_ir_artifact(backend: REBackend, method_name: str, target: str) -> object | None:
@@ -151,9 +144,7 @@ def _read_ir_artifact(backend: REBackend, method_name: str, target: str) -> obje
         return None
     if isinstance(payload, dict):
         data = payload.get("data")
-        if isinstance(data, list) and any(
-            isinstance(item, dict) and "error" in item for item in data
-        ):
+        if isinstance(data, list) and any(isinstance(item, dict) and "error" in item for item in data):
             return None
         return data
     return None
