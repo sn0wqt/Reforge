@@ -1,4 +1,5 @@
 """Tests for explicit cross-provider failover and bounded conversations."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -153,12 +154,13 @@ def test_primary_runtime_model_override_never_leaks_to_fallback() -> None:
         sleep=lambda _: None,
     )
 
-    assert provider.send(
-        [Message(role="user", content="hello")],
-        model="gemini-primary-model",
-        temperature=0.0,
-    ) == "fallback answer"
-    assert primary.kwargs_seen == [
-        {"model": "gemini-primary-model", "temperature": 0.0}
-    ]
+    assert (
+        provider.send(
+            [Message(role="user", content="hello")],
+            model="gemini-primary-model",
+            temperature=0.0,
+        )
+        == "fallback answer"
+    )
+    assert primary.kwargs_seen == [{"model": "gemini-primary-model", "temperature": 0.0}]
     assert fallback.kwargs_seen == [{"temperature": 0.0}]

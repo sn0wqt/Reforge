@@ -1,4 +1,5 @@
 """Unit tests for re-agent trace CLI command."""
+
 from __future__ import annotations
 
 from pathlib import Path

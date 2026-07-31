@@ -102,9 +102,7 @@ class AnalyzedTarget:
             raise ValueError("hook readiness fields must be booleans")
         self.parameter_types = tuple(self.parameter_types)
         if any(
-            not isinstance(parameter, str)
-            or not parameter
-            or any(character in parameter for character in "\r\n\x00")
+            not isinstance(parameter, str) or not parameter or any(character in parameter for character in "\r\n\x00")
             for parameter in self.parameter_types
         ):
             raise ValueError("parameter_types must contain safe non-empty strings")

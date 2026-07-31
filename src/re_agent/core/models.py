@@ -1,4 +1,5 @@
 """Core data models for re-agent."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,6 +8,7 @@ from enum import Enum
 # ---------------------------------------------------------------------------
 # Target identification
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FunctionTarget:
@@ -21,6 +23,7 @@ class FunctionTarget:
 # ---------------------------------------------------------------------------
 # Verdict / status enums
 # ---------------------------------------------------------------------------
+
 
 class Verdict(Enum):
     """Checker verdict for a reversal attempt."""
@@ -41,6 +44,7 @@ class ParityStatus(Enum):
 # ---------------------------------------------------------------------------
 # Checker results
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Finding:
@@ -97,6 +101,7 @@ class ReversalResult:
 # ---------------------------------------------------------------------------
 # Ghidra / decompiler data
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class DecompileResult:
@@ -189,6 +194,7 @@ class AnalysisArtifact:
 # Source analysis data
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SourceMatch:
     """Parsed source function body with analysis metrics."""
@@ -234,6 +240,7 @@ class GhidraData:
 # Hook registry
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class HookEntry:
     """A single hook from the hooks CSV registry."""
@@ -259,6 +266,7 @@ class HookEntry:
 # ---------------------------------------------------------------------------
 # Semantic parity rules
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SemanticRule:

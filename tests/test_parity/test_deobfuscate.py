@@ -1,4 +1,5 @@
 """Unit tests for de-obfuscation heuristics."""
+
 from __future__ import annotations
 
 from re_agent.parity.deobfuscate import deobfuscate_xor_buffer, detect_stack_strings, detect_xor_loops
@@ -33,6 +34,7 @@ def test_detect_stack_strings_with_decimal_stack_offset() -> None:
 
 def test_reconstruct_stack_strings_single_bytes() -> None:
     from re_agent.parity.deobfuscate import reconstruct_stack_strings
+
     asm = [
         "mov [rsp+0x10], 0x63",  # 'c'
         "mov [rsp+0x11], 0x6F",  # 'o'
@@ -46,6 +48,7 @@ def test_reconstruct_stack_strings_single_bytes() -> None:
 
 def test_reconstruct_stack_strings_dword_packed() -> None:
     from re_agent.parity.deobfuscate import reconstruct_stack_strings
+
     # 0x6E696F63 in little endian = 'c', 'o', 'i', 'n'
     asm = [
         "mov dword ptr [rsp+0x10], 0x6E696F63",
@@ -57,7 +60,7 @@ def test_reconstruct_stack_strings_dword_packed() -> None:
 
 def test_deobfuscate_xor_buffer() -> None:
     plaintext = b"Hello World"
-    key = b"\x5A"
+    key = b"\x5a"
     encrypted = bytes(b ^ 0x5A for b in plaintext)
     decrypted = deobfuscate_xor_buffer(encrypted, key)
     assert decrypted == plaintext

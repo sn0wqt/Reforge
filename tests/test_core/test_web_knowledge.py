@@ -1,4 +1,5 @@
 """Unit tests for web_knowledge module."""
+
 from __future__ import annotations
 
 from re_agent.core.web_knowledge import lookup_game_knowledge

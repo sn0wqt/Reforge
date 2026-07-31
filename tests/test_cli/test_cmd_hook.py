@@ -164,10 +164,7 @@ def test_universal_hook_bounds_review_candidates() -> None:
     )
 
     assert "WalletModel::GetCurrency" in code
-    assert (
-        f"Emitting {MAX_REVIEW_HOOK_CANDIDATES} of {len(targets)} "
-        "review candidates."
-    ) in code
+    assert (f"Emitting {MAX_REVIEW_HOOK_CANDIDATES} of {len(targets)} review candidates.") in code
     assert "80 additional review candidates" in code
     assert "Candidate99::GetValue99" not in code
     assert len(code) < 100_000

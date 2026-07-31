@@ -1,4 +1,5 @@
 """Regression tests for conservative structural evidence handling."""
+
 from __future__ import annotations
 
 import json

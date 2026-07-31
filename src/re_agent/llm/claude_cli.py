@@ -1,4 +1,5 @@
 """Claude Code CLI provider using an existing Claude subscription login."""
+
 from __future__ import annotations
 
 import json
@@ -134,9 +135,7 @@ class ClaudeCLIProvider(BaseLLMProvider):
         except json.JSONDecodeError as exc:
             if proc.returncode != 0:
                 detail = proc.stderr.strip() or proc.stdout.strip()
-                raise RuntimeError(
-                    f"claude CLI failed with exit code {proc.returncode}\n{detail}"
-                ) from exc
+                raise RuntimeError(f"claude CLI failed with exit code {proc.returncode}\n{detail}") from exc
             raise RuntimeError("claude CLI returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise RuntimeError("claude CLI returned an unexpected JSON payload")

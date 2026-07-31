@@ -75,9 +75,7 @@ def _is_activation_ready(
     hook_type = str(getattr(target, "hook_type", ""))
     offset = getattr(target, "offset", None)
     if hook_type in {"memory_patch", "multi_memory_patch"} and (
-        not isinstance(offset, int)
-        or isinstance(offset, bool)
-        or offset < 0
+        not isinstance(offset, int) or isinstance(offset, bool) or offset < 0
     ):
         return False
 
@@ -215,17 +213,10 @@ def generate_universal_hook_for_goal(
                     hook_type="multi_memory_patch",
                     return_value="999999",
                     confidence=min(patch.confidence for patch in patches),
-                    reason="Consolidated same-tier field candidates: "
-                    + ", ".join(patch.target for patch in patches),
-                    signature_verified=all(
-                        patch.signature_verified for patch in patches
-                    ),
-                    address_verified=all(
-                        patch.address_verified for patch in patches
-                    ),
-                    implementation_ready=all(
-                        patch.implementation_ready for patch in patches
-                    ),
+                    reason="Consolidated same-tier field candidates: " + ", ".join(patch.target for patch in patches),
+                    signature_verified=all(patch.signature_verified for patch in patches),
+                    address_verified=all(patch.address_verified for patch in patches),
+                    implementation_ready=all(patch.implementation_ready for patch in patches),
                 )
             )
         return grouped, memory
@@ -259,19 +250,11 @@ def generate_universal_hook_for_goal(
         alt_hook_blocks.append(block)
         alt_installs.append(install)
 
-    active_hooks_str = (
-        "\n\n".join(active_hook_blocks)
-        or "// No candidate has complete verified activation evidence."
-    )
-    active_installs_str = (
-        "\n".join(active_installs)
-        or "    // No verified hook installation selected."
-    )
+    active_hooks_str = "\n\n".join(active_hook_blocks) or "// No candidate has complete verified activation evidence."
+    active_installs_str = "\n".join(active_installs) or "    // No verified hook installation selected."
     emitted_targets = active_individual + review_individual
     w2s_section = (
-        generate_w2s_cpp_helper()
-        if any(target.hook_type == "esp_overlay" for target in emitted_targets)
-        else ""
+        generate_w2s_cpp_helper() if any(target.hook_type == "esp_overlay" for target in emitted_targets) else ""
     )
 
     alt_section = ""
@@ -279,8 +262,7 @@ def generate_universal_hook_for_goal(
     if alt_hook_blocks:
         alt_hooks_code = "\n\n".join(alt_hook_blocks)
         omitted_note = (
-            f"\n// {review_omitted} additional review candidates are retained "
-            "in patch_diff_summary.txt.\n"
+            f"\n// {review_omitted} additional review candidates are retained in patch_diff_summary.txt.\n"
             if review_omitted
             else ""
         )
@@ -405,8 +387,7 @@ static void install_candidate_{index}() {{
         )
     )
     primary_code = (
-        "\n\n".join(primary_blocks)
-        or "// No native candidate has a complete resolver, ABI, and implementation."
+        "\n\n".join(primary_blocks) or "// No native candidate has a complete resolver, ABI, and implementation."
     )
     secondary_code = "\n\n".join(secondary_blocks) or "// No review-only candidates."
 
@@ -455,11 +436,7 @@ def generate_frida_java_script(
     supplied_targets = list(active_targets)
     if alt_targets is not None:
         supplied_targets.extend(alt_targets)
-    typed_targets = [
-        target
-        for target in supplied_targets
-        if isinstance(target, AnalyzedTarget)
-    ]
+    typed_targets = [target for target in supplied_targets if isinstance(target, AnalyzedTarget)]
     active_targets, alt_targets = _partition_for_activation(
         typed_targets,
         generator="frida",
@@ -527,10 +504,7 @@ def generate_frida_java_script(
             "android-java-kotlin-dex",
             "react-native-hermes-android",
         }:
-            if method_descriptor and all(
-                isinstance(parameter, str) and parameter
-                for parameter in parameter_types
-            ):
+            if method_descriptor and all(isinstance(parameter, str) and parameter for parameter in parameter_types):
                 overload_args = ", ".join(json.dumps(parameter) for parameter in parameter_types)
                 fn_params = ", ".join(f"arg{i}" for i in range(len(parameter_types)))
                 return f"""{header}
@@ -615,10 +589,7 @@ def generate_frida_java_script(
 
     active_blocks = [block for target in active_targets if (block := _build_js_block(target))]
     secondary_blocks = [block for target in (alt_targets or []) if (block := _build_js_block(target))]
-    active_js = (
-        "\n\n".join(active_blocks)
-        or "    // No candidate has complete verified activation evidence."
-    )
+    active_js = "\n\n".join(active_blocks) or "    // No candidate has complete verified activation evidence."
     secondary_js = "\n\n".join(secondary_blocks) or "    // No review-only candidates."
     uses_java = pathway in {"android-java-kotlin-dex", "react-native-hermes-android"}
     wrapper_start = "Java.perform(function () {" if uses_java else "setImmediate(function () {"
@@ -796,13 +767,9 @@ def _gen_multi_memory_patch(
             continue
         c_type = _safe_cpp_type(p.return_type)
         val = _safe_cpp_literal(p.return_value or "999999", c_type)
-        patch_lines.append(
-            f"        *({c_type}*)((uintptr_t)self + 0x{off:X}) = {val}; "
-            f"// {_safe_comment(p.target)}"
-        )
+        patch_lines.append(f"        *({c_type}*)((uintptr_t)self + 0x{off:X}) = {val}; // {_safe_comment(p.target)}")
         comments.append(
-            f"// [{int(p.confidence)}% confidence] {_safe_comment(class_name)}::"
-            f"{_safe_comment(p.target)} @ 0x{off:X}"
+            f"// [{int(p.confidence)}% confidence] {_safe_comment(class_name)}::{_safe_comment(p.target)} @ 0x{off:X}"
         )
 
     header = "\n".join(comments)
@@ -1140,11 +1107,7 @@ def cmd_hook(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"[!] {exc}")
         return 2
-    output_path = (
-        Path(args.output)
-        if args.output
-        else Path("output") / f"Hook_{safe_identifier(symbol)}.cpp"
-    )
+    output_path = Path(args.output) if args.output else Path("output") / f"Hook_{safe_identifier(symbol)}.cpp"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     target_lang = getattr(args, "language", "cpp")

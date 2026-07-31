@@ -106,23 +106,20 @@ AMBIGUOUS_CURRENCY_KEYWORDS: Final[frozenset[str]] = frozenset(
     }
 )
 
-CORE_CURRENCY_VALUE_KEYWORDS: Final[frozenset[str]] = (
-    CURRENCY_KEYWORDS
-    - frozenset(
-        {
-            "bank",
-            "buy",
-            "currencies",
-            "currency",
-            "economy",
-            "inventory",
-            "price",
-            "purchase",
-            "shop",
-            "store",
-            "wallet",
-        }
-    )
+CORE_CURRENCY_VALUE_KEYWORDS: Final[frozenset[str]] = CURRENCY_KEYWORDS - frozenset(
+    {
+        "bank",
+        "buy",
+        "currencies",
+        "currency",
+        "economy",
+        "inventory",
+        "price",
+        "purchase",
+        "shop",
+        "store",
+        "wallet",
+    }
 )
 
 ECONOMY_DATA_HINTS: Final[frozenset[str]] = frozenset(
@@ -617,11 +614,7 @@ def identifier_tokens(value: object, *, min_length: int = 1) -> frozenset[str]:
     text = str(value)
     text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
     text = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", text)
-    return frozenset(
-        token.casefold()
-        for token in re.findall(r"[A-Za-z0-9]+", text)
-        if len(token) >= min_length
-    )
+    return frozenset(token.casefold() for token in re.findall(r"[A-Za-z0-9]+", text) if len(token) >= min_length)
 
 
 def matches_identifier_keyword(
@@ -633,10 +626,7 @@ def matches_identifier_keyword(
     """Match complete identifier tokens, never arbitrary substrings."""
     keyword_text = str(keyword).strip()
     candidate_text = str(candidate).strip()
-    if (
-        len(keyword_text) < min_keyword_length
-        or len(candidate_text) < min_keyword_length
-    ):
+    if len(keyword_text) < min_keyword_length or len(candidate_text) < min_keyword_length:
         return False
     keyword_parts = identifier_tokens(keyword_text, min_length=min_keyword_length)
     candidate_parts = identifier_tokens(candidate_text)
@@ -657,9 +647,7 @@ def is_contextual_currency_match(
     tokens = identifier_tokens(combined)
     compact = re.sub(r"[^a-z0-9]", "", combined.casefold())
     if tokens & NON_GAMEPLAY_RESOURCE_HINTS or any(
-        hint in compact
-        for hint in NON_GAMEPLAY_RESOURCE_HINTS
-        if len(hint) >= 3
+        hint in compact for hint in NON_GAMEPLAY_RESOURCE_HINTS if len(hint) >= 3
     ):
         return False
     return bool(tokens & GAMEPLAY_RESOURCE_CONTEXT_HINTS)

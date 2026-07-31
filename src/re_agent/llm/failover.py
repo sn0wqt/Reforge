@@ -1,4 +1,5 @@
 """Explicit, policy-gated failover across independently configured LLMs."""
+
 from __future__ import annotations
 
 import logging
@@ -50,9 +51,7 @@ class UnavailableLLMProvider(BaseLLMProvider):
 
     def send(self, messages: list[Message], **kwargs: Any) -> str:
         del messages, kwargs
-        raise RuntimeError(
-            f"{self._provider_name} provider is unavailable: {self._error}"
-        ) from self._error
+        raise RuntimeError(f"{self._provider_name} provider is unavailable: {self._error}") from self._error
 
 
 _SAFETY_MARKERS = (
@@ -178,9 +177,9 @@ class FailoverLLMProvider(BaseLLMProvider):
         for route_index, route in enumerate(self._routes):
             for attempt_index in range(route.max_retries + 1):
                 try:
-                    route_kwargs = kwargs if route_index == 0 else {
-                        key: value for key, value in kwargs.items() if key != "model"
-                    }
+                    route_kwargs = (
+                        kwargs if route_index == 0 else {key: value for key, value in kwargs.items() if key != "model"}
+                    )
                     response = route.provider.send(messages, **route_kwargs)
                 except Exception as exc:
                     kind = classify_provider_failure(exc)
@@ -205,11 +204,10 @@ class FailoverLLMProvider(BaseLLMProvider):
                         raise
 
                     can_retry = (
-                        kind in {FailureKind.RATE_LIMIT, FailureKind.TRANSIENT}
-                        and attempt_index < route.max_retries
+                        kind in {FailureKind.RATE_LIMIT, FailureKind.TRANSIENT} and attempt_index < route.max_retries
                     )
                     if can_retry:
-                        delay = route.retry_base_delay_s * (2 ** attempt_index)
+                        delay = route.retry_base_delay_s * (2**attempt_index)
                         logger.warning(
                             "LLM provider %s failed (%s); retrying in %.1fs",
                             route.name,

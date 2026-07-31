@@ -1,4 +1,5 @@
 """Tests for exact Mach-O file-offset to unslid-VM mapping."""
+
 from __future__ import annotations
 
 import struct
@@ -63,10 +64,7 @@ def test_maps_absolute_offset_inside_fat_slice() -> None:
     )
     data = (fat_header + fat_arch).ljust(slice_offset, b"\0") + thin
 
-    assert (
-        macho_vm_address_for_file_offset(data, slice_offset + 0x180)
-        == 0x100000180
-    )
+    assert macho_vm_address_for_file_offset(data, slice_offset + 0x180) == 0x100000180
 
 
 def test_rejects_truncated_or_invalid_macho() -> None:

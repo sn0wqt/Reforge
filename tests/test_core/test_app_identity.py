@@ -86,11 +86,7 @@ def _binary_manifest() -> bytes:
         "label",
         "Diamond Quest",
     ]
-    body = (
-        _utf8_string_pool(strings)
-        + _start_element(0, [(1, 2)])
-        + _start_element(3, [(4, 5)])
-    )
+    body = _utf8_string_pool(strings) + _start_element(0, [(1, 2)]) + _start_element(3, [(4, 5)])
     return struct.pack("<HHI", 0x0003, 8, 8 + len(body)) + body
 
 
@@ -149,6 +145,4 @@ def test_default_output_directory_uses_desktop_and_detected_name(
     binary.write_bytes(b"MZ")
     desktop = tmp_path / "Desktop"
 
-    assert default_pipeline_output_dir(binary, desktop_root=desktop) == (
-        desktop / "GameAssembly_output"
-    )
+    assert default_pipeline_output_dir(binary, desktop_root=desktop) == (desktop / "GameAssembly_output")

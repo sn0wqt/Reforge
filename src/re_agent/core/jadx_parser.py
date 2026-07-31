@@ -1,4 +1,5 @@
 """JADX and Smali bytecode decompiler parser for Android Kotlin and Java DEX applications."""
+
 from __future__ import annotations
 
 import re
@@ -27,12 +28,14 @@ def parse_smali_instructions(smali_text: str) -> list[dict[str, Any]]:
 
         invokes: list[dict[str, str]] = []
         for inv in invoke_pattern.finditer(body):
-            invokes.append({
-                "registers": inv.group(1).strip(),
-                "class_name": inv.group(2).strip(),
-                "method_name": inv.group(3).strip(),
-                "descriptor": inv.group(4).strip(),
-            })
+            invokes.append(
+                {
+                    "registers": inv.group(1).strip(),
+                    "class_name": inv.group(2).strip(),
+                    "method_name": inv.group(3).strip(),
+                    "descriptor": inv.group(4).strip(),
+                }
+            )
         for inv in custom_invoke_pattern.finditer(body):
             call_site = inv.group(2).strip()
             invokes.append(
@@ -44,11 +47,13 @@ def parse_smali_instructions(smali_text: str) -> list[dict[str, Any]]:
                 }
             )
 
-        methods.append({
-            "signature": method_sig,
-            "invokes": invokes,
-            "body_lines": [line.strip() for line in body.splitlines() if line.strip()],
-        })
+        methods.append(
+            {
+                "signature": method_sig,
+                "invokes": invokes,
+                "body_lines": [line.strip() for line in body.splitlines() if line.strip()],
+            }
+        )
 
     return methods
 

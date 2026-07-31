@@ -1,4 +1,5 @@
 """Subprocess execution utilities."""
+
 from __future__ import annotations
 
 import os
@@ -39,11 +40,7 @@ _CLI_ENVIRONMENT_KEYS = frozenset(
 def sanitized_cli_environment() -> dict[str, str]:
     """Return path/locale state needed by login-backed CLIs without API secrets."""
     allowed = {name.casefold() for name in _CLI_ENVIRONMENT_KEYS}
-    return {
-        name: value
-        for name, value in os.environ.items()
-        if name.casefold() in allowed
-    }
+    return {name: value for name, value in os.environ.items() if name.casefold() in allowed}
 
 
 def run_cmd(args: Sequence[str], timeout_s: int = 45) -> tuple[bool, str]:
@@ -75,9 +72,7 @@ def run_cmd(args: Sequence[str], timeout_s: int = 45) -> tuple[bool, str]:
         return False, f"Command could not be started: {args[0]}: {exc}"
 
 
-def run_cmd_split(
-    args: Sequence[str], timeout_s: int = 45
-) -> tuple[int, str, str]:
+def run_cmd_split(args: Sequence[str], timeout_s: int = 45) -> tuple[int, str, str]:
     """Run a command and return ``(returncode, stdout, stderr)`` separately.
 
     Unlike :func:`run_cmd`, this keeps stdout and stderr in separate streams

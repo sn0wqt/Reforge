@@ -1,4 +1,5 @@
 """Unit tests for IL2CPP metadata and Rodroid parser."""
+
 from __future__ import annotations
 
 import json
@@ -19,9 +20,7 @@ def test_parse_script_json() -> None:
         "ScriptMethod": [
             {"Name": "Player$$Update", "Address": 0x10004F210, "Signature": "void Player$$Update(Player* __this)"}
         ],
-        "ScriptString": [
-            {"Value": "Health", "Address": 0x100085C00}
-        ],
+        "ScriptString": [{"Value": "Health", "Address": 0x100085C00}],
     }
     result = parse_script_json(json.dumps(data))
     assert len(result["methods"]) == 1
@@ -245,11 +244,7 @@ def test_il2cpp_dumper_validates_inputs_before_starting_process(tmp_path, monkey
 
 def test_il2cpp_dump_tolerates_invalid_utf8_in_comments(tmp_path) -> None:
     (tmp_path / "dump.cs").write_bytes(
-        b"// obfuscated: \xff\n"
-        b"public class Wallet\n"
-        b"{\n"
-        b"    public int32_t coins; // 0x18\n"
-        b"}\n"
+        b"// obfuscated: \xff\npublic class Wallet\n{\n    public int32_t coins; // 0x18\n}\n"
     )
 
     result = find_il2cpp_metadata_in_dir(tmp_path)

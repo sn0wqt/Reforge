@@ -1,4 +1,5 @@
 """Tests for explicit external-provider policy."""
+
 from __future__ import annotations
 
 import pytest

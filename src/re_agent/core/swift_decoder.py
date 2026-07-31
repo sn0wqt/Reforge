@@ -94,9 +94,7 @@ def extract_swift_strings_from_bytes(
                             "type": "length_prefixed",
                         }
                         if base_address is not None:
-                            result["virtual_address"] = hex(
-                                base_address + i + 4
-                            )
+                            result["virtual_address"] = hex(base_address + i + 4)
                         results.append(result)
         except Exception:
             continue

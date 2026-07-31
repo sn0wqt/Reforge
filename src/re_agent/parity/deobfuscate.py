@@ -1,4 +1,5 @@
 """De-obfuscation heuristics for string encryption and constant unpacking in P-code evidence."""
+
 from __future__ import annotations
 
 import re
@@ -14,12 +15,14 @@ def detect_xor_loops(pcode_lines: list[str]) -> list[dict[str, Any]]:
     has_loop = any(loop_pattern.search(line) for line in pcode_lines)
     for idx, line in enumerate(pcode_lines):
         if xor_pattern.search(line):
-            results.append({
-                "line_index": idx,
-                "line": line.strip(),
-                "in_loop": has_loop,
-                "type": "xor_op",
-            })
+            results.append(
+                {
+                    "line_index": idx,
+                    "line": line.strip(),
+                    "in_loop": has_loop,
+                    "type": "xor_op",
+                }
+            )
     return results
 
 
@@ -47,17 +50,21 @@ def detect_stack_strings(assembly_lines: list[str]) -> list[dict[str, Any]]:
                     b3 = (val >> 24) & 0xFF
                     for b in (b0, b1, b2, b3):
                         if b != 0:
-                            stack_string_entries.append({
-                                "line_index": idx,
-                                "line": line.strip(),
-                                "value": hex(b),
-                            })
+                            stack_string_entries.append(
+                                {
+                                    "line_index": idx,
+                                    "line": line.strip(),
+                                    "value": hex(b),
+                                }
+                            )
                 else:
-                    stack_string_entries.append({
-                        "line_index": idx,
-                        "line": line.strip(),
-                        "value": raw_val,
-                    })
+                    stack_string_entries.append(
+                        {
+                            "line_index": idx,
+                            "line": line.strip(),
+                            "value": raw_val,
+                        }
+                    )
             except (ValueError, TypeError):
                 continue
 

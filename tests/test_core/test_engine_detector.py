@@ -115,10 +115,7 @@ def test_resolve_ios_bundle_in_lowercase_payload_zip(tmp_path: Path) -> None:
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("payload/Target.app/main.jsbundle", b"const value = 1;")
 
-    assert (
-        resolve_hermes_bundle_member(archive_path)
-        == "payload/Target.app/main.jsbundle"
-    )
+    assert resolve_hermes_bundle_member(archive_path) == "payload/Target.app/main.jsbundle"
 
 
 def test_detect_unity_il2cpp_windows(tmp_path: Path) -> None:
@@ -187,10 +184,7 @@ def test_detect_ios_il2cpp_dumper_directory_before_generated_dummy_dlls(
     assert detection.platform == "ios"
     assert detection.engine_type == "unity-il2cpp"
     assert detection.package_type == "metadata-directory"
-    assert any(
-        "Unity.Notifications.iOS.dll" in note
-        for note in detection.detection_notes
-    )
+    assert any("Unity.Notifications.iOS.dll" in note for note in detection.detection_notes)
 
 
 def test_metadata_only_il2cpp_platform_can_be_explicitly_resolved(

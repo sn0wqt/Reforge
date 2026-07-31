@@ -1,4 +1,5 @@
 """Tests for backend protocol and stub backend."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -94,8 +95,7 @@ def test_subcmd_exists_unrecognized_args_not_false_negative() -> None:
 
 def test_parse_unimplemented_function_list_format() -> None:
     entries = GhidraBridgeBackend._parse_function_list(
-        "  0x00401000  [  7 callers]  CTrain::ProcessControl\n"
-        "  0x00402000  [no callers]  Helper\n"
+        "  0x00401000  [  7 callers]  CTrain::ProcessControl\n  0x00402000  [no callers]  Helper\n"
     )
     assert len(entries) == 2
     assert entries[0].class_name == "CTrain"

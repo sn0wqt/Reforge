@@ -1,4 +1,5 @@
 """Tests for candidate overlays and validation gates."""
+
 from __future__ import annotations
 
 import subprocess
@@ -72,13 +73,13 @@ def test_candidate_overlay_sanitizes_template_and_operator_names(tmp_path: Path)
 
 
 def test_extract_candidate_body_ignores_braces_in_strings_and_comments() -> None:
-    code = r'''
+    code = r"""
 void Player::Update() {
     const char* text = "{not a body}";
     // }
     if (ready) { Run(); }
 }
-'''
+"""
 
     body = extract_candidate_body(code)
 
@@ -232,9 +233,7 @@ def test_failed_project_copy_creation_cleans_temporary_directory(
     source = indexer.find("CTest", "Foo")
     assert source is not None
     overlay = tmp_path / "forced-overlay"
-    monkeypatch.setattr(
-        "re_agent.verification.candidate.tempfile.mkdtemp", lambda **_: str(overlay)
-    )
+    monkeypatch.setattr("re_agent.verification.candidate.tempfile.mkdtemp", lambda **_: str(overlay))
 
     with pytest.raises(ValueError, match="outside validation.project_root"):
         create_candidate_overlay(

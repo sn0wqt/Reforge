@@ -1,4 +1,5 @@
 """Data-boundary policy checks shared by LLM-enabled commands."""
+
 from __future__ import annotations
 
 from re_agent.config.schema import DataHandlingConfig, LLMConfig

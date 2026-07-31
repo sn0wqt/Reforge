@@ -1,4 +1,5 @@
 """Configuration schema dataclasses for re-agent."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -8,31 +9,43 @@ from dataclasses import dataclass, field
 class ProjectProfile:
     """Project-specific patterns and paths."""
 
-    hook_patterns: list[str] = field(default_factory=lambda: [
-        r"RH_ScopedInstall\s*\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)",
-        r"RH_ScopedVirtualInstall\s*\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)",
-    ])
-    stub_patterns: list[str] = field(default_factory=lambda: [
-        r"plugin::Call",
-    ])
-    stub_markers: list[str] = field(default_factory=lambda: [
-        "NOTSA_UNREACHABLE",
-    ])
+    hook_patterns: list[str] = field(
+        default_factory=lambda: [
+            r"RH_ScopedInstall\s*\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)",
+            r"RH_ScopedVirtualInstall\s*\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)",
+        ]
+    )
+    stub_patterns: list[str] = field(
+        default_factory=lambda: [
+            r"plugin::Call",
+        ]
+    )
+    stub_markers: list[str] = field(
+        default_factory=lambda: [
+            "NOTSA_UNREACHABLE",
+        ]
+    )
     stub_call_prefix: str = "plugin::Call"
     class_macro: str = "RH_ScopedClass"
     source_root: str = "source/game_sa"
-    source_extensions: list[str] = field(default_factory=lambda: [
-        ".cpp", ".h", ".hpp",
-    ])
+    source_extensions: list[str] = field(
+        default_factory=lambda: [
+            ".cpp",
+            ".h",
+            ".hpp",
+        ]
+    )
     hooks_csv: str | None = "docs/hooks.csv"
     name: str = "auto-re-agent"
     language_standard: str = "C++23"
-    prompt_rules: list[str] = field(default_factory=lambda: [
-        "Use real member names from the existing project and reference headers",
-        "Never call virtual methods on this inside hook implementations",
-        "Use matrix.TransformVector(vec) instead of deprecated Multiply3x3",
-        "Verify struct offsets against project VALIDATE_OFFSET checks",
-    ])
+    prompt_rules: list[str] = field(
+        default_factory=lambda: [
+            "Use real member names from the existing project and reference headers",
+            "Never call virtual methods on this inside hook implementations",
+            "Use matrix.TransformVector(vec) instead of deprecated Multiply3x3",
+            "Verify struct offsets against project VALIDATE_OFFSET checks",
+        ]
+    )
 
 
 @dataclass
@@ -122,18 +135,20 @@ class ValidationConfig:
     require_verified: bool = False
     allow_host_commands: bool = False
     trust_configured_commands: bool = False
-    environment_allowlist: list[str] = field(default_factory=lambda: [
-        "COMSPEC",
-        "HOME",
-        "LANG",
-        "LC_ALL",
-        "PATH",
-        "PATHEXT",
-        "SYSTEMROOT",
-        "TEMP",
-        "TMP",
-        "USERPROFILE",
-    ])
+    environment_allowlist: list[str] = field(
+        default_factory=lambda: [
+            "COMSPEC",
+            "HOME",
+            "LANG",
+            "LC_ALL",
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "TEMP",
+            "TMP",
+            "USERPROFILE",
+        ]
+    )
     parity_fail_on_red: bool = True
     parity_fail_on_yellow: bool = False
     command_timeout_s: int = 900

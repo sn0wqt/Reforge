@@ -1,4 +1,5 @@
 """Base class for LLM providers eliminating duplicate conversation and message rendering code."""
+
 from __future__ import annotations
 
 import uuid
@@ -34,9 +35,7 @@ class BaseLLMProvider:
         if history is None:
             raise KeyError(f"Unknown conversation ID: {conversation_id}")
 
-        pending = self._bounded_messages(
-            [*history, Message(role="user", content=message)]
-        )
+        pending = self._bounded_messages([*history, Message(role="user", content=message)])
         response_text = self.send(pending)
         history.extend(
             [
@@ -54,10 +53,7 @@ class BaseLLMProvider:
     @staticmethod
     def _render_messages(messages: list[Message]) -> str:
         """Format messages into a standard prompt string."""
-        return "\n\n".join(
-            f"[{message.role.upper()}]\n{message.content.strip()}"
-            for message in messages
-        ).strip()
+        return "\n\n".join(f"[{message.role.upper()}]\n{message.content.strip()}" for message in messages).strip()
 
     def _bounded_messages(self, messages: list[Message]) -> list[Message]:
         """Drop oldest complete turns while preserving system and newest input.
@@ -66,10 +62,7 @@ class BaseLLMProvider:
         prevents replayed multi-turn history from growing without limit.
         """
         bounded = list(messages)
-        while (
-            len(bounded) > _MAX_CONVERSATION_MESSAGES
-            or self._message_chars(bounded) > self._max_conversation_chars
-        ):
+        while len(bounded) > _MAX_CONVERSATION_MESSAGES or self._message_chars(bounded) > self._max_conversation_chars:
             first_non_system = next(
                 (index for index, item in enumerate(bounded) if item.role != "system"),
                 len(bounded),
@@ -84,7 +77,7 @@ class BaseLLMProvider:
                 and bounded[first_non_system + 1].role == "assistant"
             ):
                 remove_count = 2
-            del bounded[first_non_system:first_non_system + remove_count]
+            del bounded[first_non_system : first_non_system + remove_count]
         return bounded
 
     @staticmethod

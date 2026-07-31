@@ -1,4 +1,5 @@
 """Tests for model-requested read-only RE investigations."""
+
 from __future__ import annotations
 
 from re_agent.agents.reverser import ReverserAgent

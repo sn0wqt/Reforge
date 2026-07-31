@@ -1,4 +1,5 @@
 """Backend factory — creates a backend from configuration."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,7 +47,4 @@ def create_backend(
 
         return StubBackend()
 
-    raise ValueError(
-        f"Unknown backend type: {config.type!r}. "
-        f"Supported: ghidra-bridge, il2cpp, stub"
-    )
+    raise ValueError(f"Unknown backend type: {config.type!r}. Supported: ghidra-bridge, il2cpp, stub")

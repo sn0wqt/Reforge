@@ -1,4 +1,5 @@
 """Candidate overlays and configurable build/test validation gates."""
+
 from __future__ import annotations
 
 import os
@@ -44,15 +45,8 @@ def validation_preflight_error(config: ValidationConfig) -> str | None:
     """Return why the configured acceptance gate can never produce PASS."""
     if not config.enabled or not config.require_verified:
         return None
-    if not (
-        config.build_commands
-        or config.test_commands
-        or config.runtime_commands
-    ):
-        return (
-            "validation.require_verified is true but no build/test/runtime "
-            "commands are configured"
-        )
+    if not (config.build_commands or config.test_commands or config.runtime_commands):
+        return "validation.require_verified is true but no build/test/runtime commands are configured"
     if config.require_build and not config.build_commands:
         return "validation.require_build is true but build_commands is empty"
     if config.require_tests and not config.test_commands:
@@ -60,15 +54,9 @@ def validation_preflight_error(config: ValidationConfig) -> str | None:
     if config.require_runtime and not config.runtime_commands:
         return "validation.require_runtime is true but runtime_commands is empty"
     if not config.allow_host_commands:
-        return (
-            "verified validation requires validation.allow_host_commands=true "
-            "in a trusted execution environment"
-        )
+        return "verified validation requires validation.allow_host_commands=true in a trusted execution environment"
     if not config.trust_configured_commands:
-        return (
-            "verified validation requires "
-            "validation.trust_configured_commands=true after reviewing the commands"
-        )
+        return "verified validation requires validation.trust_configured_commands=true after reviewing the commands"
     return None
 
 
@@ -142,10 +130,7 @@ def extract_candidate_body(code: str) -> str:
     if not spans:
         return code.strip()
     if len(spans) != 1:
-        raise ValueError(
-            "Candidate must contain exactly one top-level braced definition; "
-            f"found {len(spans)}"
-        )
+        raise ValueError(f"Candidate must contain exactly one top-level braced definition; found {len(spans)}")
     body_start, body_end = spans[0]
     return code[body_start:body_end].strip()
 
@@ -178,9 +163,7 @@ def create_candidate_overlay(
         else:
             overlay_root = report_dir / "candidates" / safe_address
         overlay_root.mkdir(parents=True, exist_ok=True)
-        (overlay_root / ".re-agent-overlay").write_text(
-            "schema_version=1\n", encoding="utf-8"
-        )
+        (overlay_root / ".re-agent-overlay").write_text("schema_version=1\n", encoding="utf-8")
         if source is None:
             safe_class_name = _sanitize_path_component(target.class_name)
             safe_function_name = _sanitize_path_component(target.function_name)
@@ -206,7 +189,7 @@ def create_candidate_overlay(
         if not 0 <= source.body_start < source.body_end <= len(original):
             raise ValueError(f"Source body offsets unavailable for {source.path}")
         body = extract_candidate_body(code)
-        overlaid = original[:source.body_start] + body + original[source.body_end:]
+        overlaid = original[: source.body_start] + body + original[source.body_end :]
         candidate_file.write_text(overlaid, encoding="utf-8")
         return candidate_file
     except Exception:
@@ -284,16 +267,14 @@ def validate_candidate(
             )
 
     allowed_environment = {name.casefold() for name in config.environment_allowlist}
-    env = {
-        name: value
-        for name, value in os.environ.items()
-        if name.casefold() in allowed_environment
-    }
-    env.update({
-        "RE_AGENT_CANDIDATE_FILE": str(candidate_file.resolve()),
-        "RE_AGENT_OVERLAY_ROOT": str(_overlay_root(candidate_file).resolve()),
-        "RE_AGENT_SOURCE_FILE": source_file or "",
-    })
+    env = {name: value for name, value in os.environ.items() if name.casefold() in allowed_environment}
+    env.update(
+        {
+            "RE_AGENT_CANDIDATE_FILE": str(candidate_file.resolve()),
+            "RE_AGENT_OVERLAY_ROOT": str(_overlay_root(candidate_file).resolve()),
+            "RE_AGENT_SOURCE_FILE": source_file or "",
+        }
+    )
     findings: list[str] = []
     try:
         working_directory = _working_directory(config, candidate_file)
@@ -405,7 +386,7 @@ def _overlay_root(candidate_file: Path) -> Path:
     if "candidates" in parts:
         idx = parts.index("candidates")
         if idx + 1 < len(parts):
-            return Path(*parts[:idx + 2])
+            return Path(*parts[: idx + 2])
     return candidate_file.parent
 
 
@@ -418,9 +399,7 @@ def _working_directory(config: ValidationConfig, candidate_file: Path) -> str:
         try:
             resolved.relative_to(overlay_root)
         except ValueError:
-            raise ValueError(
-                "validation.working_directory must stay inside the isolated project overlay"
-            ) from None
+            raise ValueError("validation.working_directory must stay inside the isolated project overlay") from None
         if not resolved.is_dir():
             raise ValueError(f"validation.working_directory does not exist: {resolved}")
         return str(resolved)
@@ -432,16 +411,13 @@ def _reject_project_symlinks(project_root: Path) -> None:
     root = project_root.resolve()
     if not root.is_dir():
         raise ValueError(f"validation.project_root is not a directory: {project_root}")
+
     def is_link_like(value: Path) -> bool:
         junction_check = getattr(value, "is_junction", None)
-        return value.is_symlink() or (
-            callable(junction_check) and bool(junction_check())
-        )
+        return value.is_symlink() or (callable(junction_check) and bool(junction_check()))
 
     if is_link_like(project_root):
-        raise ValueError(
-            f"validation.project_root must not be a symbolic link or junction: {project_root}"
-        )
+        raise ValueError(f"validation.project_root must not be a symbolic link or junction: {project_root}")
 
     for directory, dir_names, file_names in os.walk(root, followlinks=False):
         directory_path = Path(directory)
@@ -453,8 +429,7 @@ def _reject_project_symlinks(project_root: Path) -> None:
             candidate = directory_path / name
             if is_link_like(candidate):
                 raise ValueError(
-                    "Symbolic links and junctions are not allowed in isolated "
-                    f"validation copies: {candidate}"
+                    f"Symbolic links and junctions are not allowed in isolated validation copies: {candidate}"
                 )
         dir_names[:] = [name for name in dir_names if name not in ignored]
 

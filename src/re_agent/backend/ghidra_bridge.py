@@ -1,4 +1,5 @@
 """Ghidra CLI bridge backend implementation."""
+
 from __future__ import annotations
 
 import re
@@ -49,9 +50,7 @@ class GhidraBridgeBackend:
             return self._response_cache[key]
         ok, output = run_cmd([self._cli_path, *args], self._timeout_s)
         if not ok:
-            raise RuntimeError(
-                f"Ghidra CLI failed: {self._cli_path} {' '.join(args)}\n{output}"
-            )
+            raise RuntimeError(f"Ghidra CLI failed: {self._cli_path} {' '.join(args)}\n{output}")
         if len(self._response_cache) >= 128:
             self._response_cache.clear()
         self._response_cache[key] = output
@@ -99,9 +98,7 @@ class GhidraBridgeBackend:
           return non-zero for ``--help`` or for bad arguments while still
           recognising the sub-command.
         """
-        rc, _stdout, stderr = run_cmd_split(
-            [self._cli_path, subcmd, "--help"], timeout_s=min(self._timeout_s, 10)
-        )
+        rc, _stdout, stderr = run_cmd_split([self._cli_path, subcmd, "--help"], timeout_s=min(self._timeout_s, 10))
         if rc < 0:
             return False
         if rc == 0:

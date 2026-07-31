@@ -1,4 +1,5 @@
 """Single function reversal pipeline."""
+
 from __future__ import annotations
 
 import logging
@@ -42,9 +43,7 @@ def reverse_single(
             it here to avoid re-scanning the entire source tree each time.
     """
     log_dir = (
-        Path(config.output.log_dir)
-        if config.output.log_dir and config.data_handling.allow_prompt_logging
-        else None
+        Path(config.output.log_dir) if config.output.log_dir and config.data_handling.allow_prompt_logging else None
     )
 
     result = run_fix_loop(
@@ -80,8 +79,7 @@ def reverse_single(
             if len(matches) > 1:
                 locations = ", ".join(f"{match.path}:{match.line}" for match in matches)
                 raise ValueError(
-                    "Ambiguous overloaded source function; refusing to replace an arbitrary "
-                    f"definition ({locations})"
+                    f"Ambiguous overloaded source function; refusing to replace an arbitrary definition ({locations})"
                 )
             original_source = indexer.find_by_address(target.address)
             if original_source is None and matches:
@@ -168,9 +166,7 @@ def reverse_single(
                 except OSError as exc:
                     logger.warning("Could not remove temporary validation copy: %s", exc)
                     if result.validation_verdict is not None:
-                        result.validation_verdict.findings.append(
-                            f"Temporary validation copy cleanup failed: {exc}"
-                        )
+                        result.validation_verdict.findings.append(f"Temporary validation copy cleanup failed: {exc}")
                 else:
                     if result.validation_verdict is not None:
                         result.validation_verdict.overlay_file = None

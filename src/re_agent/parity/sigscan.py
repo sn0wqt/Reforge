@@ -1,4 +1,5 @@
 """Byte signature generation and pattern scanning for binary relocation analysis."""
+
 from __future__ import annotations
 
 import re

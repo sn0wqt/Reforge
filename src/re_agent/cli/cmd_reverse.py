@@ -1,4 +1,5 @@
 """re-agent reverse command — single function or class reversal."""
+
 from __future__ import annotations
 
 import argparse
@@ -153,10 +154,7 @@ def _dry_run(args: argparse.Namespace, config: object) -> int:
         print(f"Would reverse functions in class: {args.class_name}")
         max_fn = args.max_functions or config.orchestrator.max_functions_per_class
         print(f"  Max functions: {max_fn}")
-        print(
-            "  Max rounds per function: "
-            f"{args.max_rounds or config.orchestrator.max_review_rounds}"
-        )
+        print(f"  Max rounds per function: {args.max_rounds or config.orchestrator.max_review_rounds}")
         return 0
 
     print("Error: specify --address or --class", file=sys.stderr)

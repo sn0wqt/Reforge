@@ -1,4 +1,5 @@
 """Smoke tests for CLI."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,6 +42,7 @@ def test_no_command_returns_zero() -> None:
 
 def test_version_flag() -> None:
     import pytest
+
     with pytest.raises(SystemExit) as exc_info:
         main(["--version"])
     assert exc_info.value.code == 0
@@ -103,8 +105,6 @@ validation:
         encoding="utf-8",
     )
 
-    result = main(
-        ["--config", str(config_path), "reverse", "--address", "0x100"]
-    )
+    result = main(["--config", str(config_path), "reverse", "--address", "0x100"])
 
     assert result == 2

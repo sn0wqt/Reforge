@@ -1,4 +1,5 @@
 """Checker agent — verifies reversed code against Ghidra decompilation."""
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,6 @@ from re_agent.utils.templates import render_template
 from re_agent.utils.untrusted import quote_untrusted
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-
 
 
 class CheckerAgent:
@@ -48,9 +48,7 @@ class CheckerAgent:
             decompiled=quote_untrusted(decompiled, max_chars=evidence_limit),
         )
         if len(task_prompt) > self._max_prompt_chars:
-            raise ValueError(
-                "Checker prompt exceeds data_handling.max_prompt_chars after evidence bounding"
-            )
+            raise ValueError("Checker prompt exceeds data_handling.max_prompt_chars after evidence bounding")
 
         self.last_prompt = task_prompt
 

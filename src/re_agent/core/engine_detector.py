@@ -103,9 +103,7 @@ def normalize_platform_hint(platform_hint: str | None) -> str | None:
         return PLATFORM_HINTS[normalized]
     except KeyError as exc:
         supported = ", ".join(sorted(PLATFORM_HINTS))
-        raise ValueError(
-            f"Unsupported platform hint '{platform_hint}'. Expected one of: {supported}."
-        ) from exc
+        raise ValueError(f"Unsupported platform hint '{platform_hint}'. Expected one of: {supported}.") from exc
 
 
 def _read_prefix_text(path: Path) -> str:
@@ -123,11 +121,7 @@ def _il2cpp_dump_markers(path: Path) -> tuple[str, ...]:
     """Return root-level Il2CppDumper artifacts without inspecting DummyDll."""
     if not path.is_dir():
         return ()
-    return tuple(
-        marker
-        for marker in IL2CPP_DUMP_MARKERS
-        if (path / marker).is_file()
-    )
+    return tuple(marker for marker in IL2CPP_DUMP_MARKERS if (path / marker).is_file())
 
 
 def _infer_il2cpp_dump_platform(path: Path) -> tuple[str, tuple[str, ...]]:
@@ -137,11 +131,7 @@ def _infer_il2cpp_dump_platform(path: Path) -> tuple[str, tuple[str, ...]]:
     host-side analysis artifacts. Their PE files and Visual Studio scaffolding
     do not establish that the dumped game itself targets Windows.
     """
-    root_names = {
-        child.name.casefold()
-        for child in path.iterdir()
-        if child.is_file()
-    }
+    root_names = {child.name.casefold() for child in path.iterdir() if child.is_file()}
     if "gameassembly.dll" in root_names:
         return "windows", ("root-level GameAssembly.dll",)
     if "libil2cpp.so" in root_names:
@@ -169,18 +159,11 @@ def _infer_il2cpp_dump_platform(path: Path) -> tuple[str, tuple[str, ...]]:
         },
     }
     platform_evidence = {
-        platform: tuple(
-            marker
-            for marker in marker_weights
-            if marker in dump_prefix
-        )
+        platform: tuple(marker for marker in marker_weights if marker in dump_prefix)
         for platform, marker_weights in weighted_markers.items()
     }
     scores = {
-        platform: sum(
-            marker_weights[marker]
-            for marker in platform_evidence[platform]
-        )
+        platform: sum(marker_weights[marker] for marker in platform_evidence[platform])
         for platform, marker_weights in weighted_markers.items()
     }
     ranked_scores = sorted(
@@ -191,10 +174,7 @@ def _infer_il2cpp_dump_platform(path: Path) -> tuple[str, tuple[str, ...]]:
     best_platform, best_score = ranked_scores[0]
     runner_up_score = ranked_scores[1][1]
     if best_score >= 4 and best_score - runner_up_score >= 3:
-        return best_platform, tuple(
-            f"dump.cs image: {marker}"
-            for marker in platform_evidence[best_platform]
-        )
+        return best_platform, tuple(f"dump.cs image: {marker}" for marker in platform_evidence[best_platform])
     return "unknown", ()
 
 
@@ -275,9 +255,7 @@ def iter_directory_files_bounded(
             try:
                 entry_path = Path(entry.path)
                 junction_check = getattr(entry_path, "is_junction", None)
-                if entry.is_symlink() or (
-                    callable(junction_check) and bool(junction_check())
-                ):
+                if entry.is_symlink() or (callable(junction_check) and bool(junction_check())):
                     continue
                 if entry.is_dir(follow_symlinks=False):
                     pending.append(entry_path)
@@ -301,9 +279,7 @@ def _detect_archive(path: Path) -> ArchitectureDetection:
 
     normalized = [name.replace("\\", "/").lower() for name in names]
     is_ios = path.suffix.lower() == ".ipa" or any(name.startswith("payload/") for name in normalized)
-    is_android = path.suffix.lower() == ".apk" or any(
-        name.endswith("androidmanifest.xml") for name in normalized
-    )
+    is_android = path.suffix.lower() == ".apk" or any(name.endswith("androidmanifest.xml") for name in normalized)
     has_game_assembly = any(name.endswith("gameassembly.dll") for name in normalized)
     if has_game_assembly and not is_ios and not is_android:
         return _detection(
@@ -543,9 +519,7 @@ def detect_architecture_from_path(
         inferred_platform, platform_evidence = _infer_il2cpp_dump_platform(path)
         if normalized_hint is not None:
             inferred_platform = normalized_hint
-            platform_evidence = (
-                f"explicit --platform {platform_hint}",
-            )
+            platform_evidence = (f"explicit --platform {platform_hint}",)
         notes = (
             f"Il2CppDumper artifacts: {', '.join(dump_markers)}",
             *platform_evidence,
@@ -556,10 +530,7 @@ def detect_architecture_from_path(
             detection_notes=notes,
         )
 
-    names = [
-        str(candidate.relative_to(path)).replace("\\", "/")
-        for candidate in iter_directory_files_bounded(path)
-    ]
+    names = [str(candidate.relative_to(path)).replace("\\", "/") for candidate in iter_directory_files_bounded(path)]
     normalized = [name.lower() for name in names]
     bundle_member = _find_member(names, IOS_HERMES_BUNDLES + ANDROID_HERMES_BUNDLES)
     if bundle_member:

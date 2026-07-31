@@ -1,4 +1,5 @@
 """Vector and protocol type inference for spatial math (Vector3, Quaternion) and network struct declarations."""
+
 from __future__ import annotations
 
 import re
@@ -40,10 +41,7 @@ def infer_vector_types(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
             and sorted_fields[idx + 1].get("offset", 0) == f_offset + 4
             and sorted_fields[idx + 2].get("offset", 0) == f_offset + 8
         ):
-            components = [
-                _component_name(sorted_fields[idx + component].get("name", ""))
-                for component in range(3)
-            ]
+            components = [_component_name(sorted_fields[idx + component].get("name", "")) for component in range(3)]
             if (
                 any(component is None for component in components)
                 or [component[1] for component in components if component] != ["x", "y", "z"]
@@ -63,21 +61,25 @@ def infer_vector_types(fields: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 and f4_component[1] == "w"
                 and f4_component[0] == components[0][0]  # type: ignore[index]
             ):
-                inferred.append({
-                    "name": field.get("name", "rotation"),
-                    "type": "Quaternion",
-                    "offset": f_offset,
-                    "size": 16,
-                })
+                inferred.append(
+                    {
+                        "name": field.get("name", "rotation"),
+                        "type": "Quaternion",
+                        "offset": f_offset,
+                        "size": 16,
+                    }
+                )
                 idx += 4
                 continue
 
-            inferred.append({
-                "name": field.get("name", "position"),
-                "type": "Vector3",
-                "offset": f_offset,
-                "size": 12,
-            })
+            inferred.append(
+                {
+                    "name": field.get("name", "position"),
+                    "type": "Vector3",
+                    "offset": f_offset,
+                    "size": 12,
+                }
+            )
             idx += 3
             continue
 
@@ -137,9 +139,7 @@ def generate_protocol_struct(packet_name: str, payload_fields: list[dict[str, An
     assertions: list[str] = []
     cursor = 0
     pad_index = 0
-    for index, field in enumerate(
-        sorted(inferred_fields, key=lambda item: item.get("offset", 0))
-    ):
+    for index, field in enumerate(sorted(inferred_fields, key=lambda item: item.get("offset", 0))):
         field_name = safe_identifier(str(field.get("name") or f"field_{index}"))
         raw_type = str(field.get("type", "uint8_t"))
         layout = type_layouts.get(raw_type)
@@ -161,17 +161,15 @@ def generate_protocol_struct(packet_name: str, payload_fields: list[dict[str, An
             pad_index += 1
             cursor = field_offset
         cpp_type, size = layout
-        lines.append(
-            f"    {cpp_type} {field_name}; // verified offset: 0x{field_offset:X}"
-        )
-        assertions.append(
-            f"static_assert(offsetof({packet_id}, {field_name}) == 0x{field_offset:X});"
-        )
+        lines.append(f"    {cpp_type} {field_name}; // verified offset: 0x{field_offset:X}")
+        assertions.append(f"static_assert(offsetof({packet_id}, {field_name}) == 0x{field_offset:X});")
         cursor += size
 
-    lines.extend([
-        "};",
-        "#pragma pack(pop)",
-        *assertions,
-    ])
+    lines.extend(
+        [
+            "};",
+            "#pragma pack(pop)",
+            *assertions,
+        ]
+    )
     return "\n".join(lines)

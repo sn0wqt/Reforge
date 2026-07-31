@@ -1,4 +1,5 @@
 """World-to-Screen (W2S) 3D-to-2D matrix projection utility for game engines (Unity, Unreal, RenderWare, Source)."""
+
 from __future__ import annotations
 
 from typing import NamedTuple

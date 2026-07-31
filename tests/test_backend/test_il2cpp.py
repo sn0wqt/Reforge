@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from re_agent.backend.il2cpp import IL2CPPBackend
 from re_agent.backend.registry import create_backend
 from re_agent.config.schema import BackendConfig
@@ -11,7 +12,7 @@ from re_agent.config.schema import BackendConfig
 def test_il2cpp_backend_remaining_and_decompile(tmp_path: Path) -> None:
     dump_cs = tmp_path / "dump.cs"
     dump_cs.write_text(
-        """// Namespace: 
+        """// Namespace:
 public class RunSessionData
 {
     // RVA: 0x293C50C VA: 0x293C50C

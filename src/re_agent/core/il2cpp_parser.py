@@ -72,10 +72,7 @@ def run_il2cpp_dumper_cli(
             "output_dir": str(out_p),
         }
 
-    artifact_paths = tuple(
-        out_p / name
-        for name in ("script.json", "dump.cs", "il2cpp.h", "static_metadata.json")
-    )
+    artifact_paths = tuple(out_p / name for name in ("script.json", "dump.cs", "il2cpp.h", "static_metadata.json"))
 
     try:
         import shutil
@@ -120,9 +117,7 @@ def run_il2cpp_dumper_cli(
             )
             _cleanup_dump_subdirs()
             artifacts = tuple(
-                candidate
-                for candidate in artifact_paths
-                if candidate.is_file() and candidate.stat().st_size > 0
+                candidate for candidate in artifact_paths if candidate.is_file() and candidate.stat().st_size > 0
             )
             if res.returncode == 0 and bool(artifacts):
                 break
@@ -312,10 +307,7 @@ def parse_dump_cs(content: str) -> list[dict[str, Any]]:
                     "address_kind": "method_rva",
                     "args": args,
                     "parameter_types": parameter_types,
-                    "parameters": [
-                        {"type": parameter_type}
-                        for parameter_type in parameter_types
-                    ],
+                    "parameters": [{"type": parameter_type} for parameter_type in parameter_types],
                     "is_event": is_event,
                 }
             )

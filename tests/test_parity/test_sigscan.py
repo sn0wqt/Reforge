@@ -1,4 +1,5 @@
 """Unit tests for byte signature generation and pattern scanning."""
+
 from __future__ import annotations
 
 import pytest
