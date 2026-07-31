@@ -28,8 +28,9 @@ class ClaudeProvider:
         model: str = "claude-sonnet-4-5-20250929",
         max_tokens: int = 4096,
         temperature: float = 0.0,
+        timeout_s: int = 1800,
     ) -> None:
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.Anthropic(api_key=api_key, timeout=timeout_s)
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -83,7 +84,12 @@ class ClaudeProvider:
         if history is None:
             raise KeyError(f"Unknown conversation ID: {conversation_id}")
 
-        history.append(Message(role="user", content=message))
-        response_text = self.send(list(history))
-        history.append(Message(role="assistant", content=response_text))
+        pending = [*history, Message(role="user", content=message)]
+        response_text = self.send(pending)
+        history.extend(
+            [
+                Message(role="user", content=message),
+                Message(role="assistant", content=response_text),
+            ]
+        )
         return response_text

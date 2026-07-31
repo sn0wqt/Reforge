@@ -34,8 +34,13 @@ class OpenAIProvider:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         base_url: str | None = None,
+        timeout_s: int = 1800,
     ) -> None:
-        self._client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        self._client = openai.OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout_s,
+        )
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -56,6 +61,8 @@ class OpenAIProvider:
             temperature=kwargs.get("temperature", self._temperature),
         )
 
+        if not response.choices:
+            raise RuntimeError("OpenAI-compatible provider returned no choices")
         choice = response.choices[0]
         return choice.message.content or ""
 
@@ -76,7 +83,12 @@ class OpenAIProvider:
         if history is None:
             raise KeyError(f"Unknown conversation ID: {conversation_id}")
 
-        history.append(Message(role="user", content=message))
-        response_text = self.send(list(history))
-        history.append(Message(role="assistant", content=response_text))
+        pending = [*history, Message(role="user", content=message)]
+        response_text = self.send(pending)
+        history.extend(
+            [
+                Message(role="user", content=message),
+                Message(role="assistant", content=response_text),
+            ]
+        )
         return response_text

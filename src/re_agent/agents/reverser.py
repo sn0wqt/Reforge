@@ -14,6 +14,7 @@ from re_agent.core.session import Session
 from re_agent.llm.protocol import LLMProvider, Message
 from re_agent.parity.source_indexer import SourceIndexer
 from re_agent.utils.templates import render_template
+from re_agent.utils.untrusted import quote_untrusted
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 CODE_BLOCK_RE = re.compile(r"```(?:cpp|c\+\+)?\s*\n(.*?)```", re.S)
@@ -34,6 +35,8 @@ class ReverserAgent:
         report_dir: Path | None = None,
         investigation_enabled: bool = True,
         max_investigations: int = 8,
+        max_prompt_chars: int = 120_000,
+        persist_evidence: bool = False,
     ) -> None:
         self.llm = llm
         self.backend = backend
@@ -51,8 +54,11 @@ class ReverserAgent:
         self._history: list[Message] = []
         self._investigation_enabled = investigation_enabled
         self._max_investigations = max(0, max_investigations)
+        self._max_prompt_chars = max(1_000, max_prompt_chars)
         self._knowledge_graph = (
-            KnowledgeGraph(report_dir / "knowledge-graph.json") if report_dir is not None else None
+            KnowledgeGraph(report_dir / "knowledge-graph.json")
+            if persist_evidence and report_dir is not None
+            else None
         )
         self.last_prompt: str = ""
         self.last_response: str = ""
@@ -91,19 +97,27 @@ class ReverserAgent:
         if self._source_context_builder is not None:
             source_context = self._source_context_builder.build(target)
         investigation_context = self._build_investigation_context(target)
+        evidence_limit = max(1_000, self._max_prompt_chars // 5)
         task_prompt = render_template(
             PROMPTS_DIR / "reverser_task.md",
-            class_name=target.class_name,
-            function_name=target.function_name,
-            address=target.address,
-            decompiled=decompiled,
-            xrefs=xrefs_text or "None",
-            structs=structs_text or "None",
-            source_context=source_context or "None",
-            investigation_context=investigation_context or "None",
+            class_name=quote_untrusted(target.class_name, max_chars=512),
+            function_name=quote_untrusted(target.function_name, max_chars=512),
+            address=quote_untrusted(target.address, max_chars=128),
+            decompiled=quote_untrusted(decompiled, max_chars=evidence_limit),
+            xrefs=quote_untrusted(xrefs_text or "None", max_chars=evidence_limit),
+            structs=quote_untrusted(structs_text or "None", max_chars=evidence_limit),
+            source_context=quote_untrusted(source_context or "None", max_chars=evidence_limit),
+            investigation_context=quote_untrusted(
+                investigation_context or "None",
+                max_chars=evidence_limit,
+            ),
             language_standard=(self._project_profile.language_standard if self._project_profile else "C++"),
-            project_rules=self._project_rules(),
+            project_rules=quote_untrusted(self._project_rules(), max_chars=evidence_limit),
         )
+        if len(task_prompt) > self._max_prompt_chars:
+            raise ValueError(
+                "Reverser prompt exceeds data_handling.max_prompt_chars after evidence bounding"
+            )
 
         if self._conversation_id is None and self.llm.supports_conversations:
             self._conversation_id = self.llm.new_conversation(system_prompt)
@@ -198,7 +212,11 @@ class ReverserAgent:
                     continue
                 tool = str(action.get("tool", ""))
                 argument = str(action.get("target") or target.address)
-                results.append(self._execute_action(tool, argument))
+                validation_error = self._validate_action(tool, argument)
+                if validation_error:
+                    results.append(f"TOOL {tool}: rejected ({validation_error})")
+                else:
+                    results.append(self._execute_action(tool, argument))
                 used += 1
             if not results:
                 break
@@ -249,6 +267,21 @@ class ReverserAgent:
             rendered = repr(value)
         return f"TOOL {tool}({argument}):\n{rendered[:12000]}"
 
+    @staticmethod
+    def _validate_action(tool: str, argument: str) -> str | None:
+        """Reject model-supplied backend arguments outside narrow read-only forms."""
+        if len(argument) > 512 or any(character in argument for character in "\r\n\x00"):
+            return "target is too long or contains control characters"
+        if tool in {"decompile", "xrefs_from", "xrefs_to", "context", "pcode", "cfg"}:
+            if re.fullmatch(r"(?:0[xX])?[0-9A-Fa-f]{1,16}", argument) is None:
+                return "address target must be a bounded hexadecimal value"
+        elif tool in {"struct", "enum", "vtable", "global"}:
+            if re.fullmatch(r"[A-Za-z_?$][A-Za-z0-9_:.$?@-]{0,255}", argument) is None:
+                return "symbol target contains unsupported characters"
+        elif tool == "strings" and len(argument) > 128:
+            return "string query exceeds 128 characters"
+        return None
+
     def fix(
         self,
         checker_report: str,
@@ -267,13 +300,23 @@ class ReverserAgent:
             )
         fix_prompt = render_template(
             PROMPTS_DIR / "fix_instructions.md",
-            checker_report=checker_report,
-            issues="\n".join(f"- {i}" for i in all_issues),
-            fix_instructions="\n".join(f"- {i}" for i in all_fix_instructions),
-            class_name=target.class_name,
-            function_name=target.function_name,
-            address=target.address,
+            checker_report=quote_untrusted(
+                checker_report,
+                max_chars=self._max_prompt_chars // 3,
+            ),
+            issues=quote_untrusted(all_issues, max_chars=self._max_prompt_chars // 4),
+            fix_instructions=quote_untrusted(
+                all_fix_instructions,
+                max_chars=self._max_prompt_chars // 4,
+            ),
+            class_name=quote_untrusted(target.class_name, max_chars=512),
+            function_name=quote_untrusted(target.function_name, max_chars=512),
+            address=quote_untrusted(target.address, max_chars=128),
         )
+        if len(fix_prompt) > self._max_prompt_chars:
+            raise ValueError(
+                "Fix prompt exceeds data_handling.max_prompt_chars after evidence bounding"
+            )
 
         self.last_prompt = fix_prompt
 

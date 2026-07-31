@@ -8,6 +8,7 @@ from re_agent.config.schema import ProjectProfile
 from re_agent.core.models import FunctionTarget
 from re_agent.core.session import Session
 from re_agent.parity.source_indexer import SourceIndexer
+from re_agent.utils.paths import safe_filename
 
 
 class SourceContextBuilder:
@@ -35,6 +36,14 @@ class SourceContextBuilder:
         header = self._find_class_header(target.class_name)
         if header:
             sections.append("Class header:\n" + header)
+
+        # Check for IL2CPP or VTable metadata
+        from re_agent.core.il2cpp_parser import find_il2cpp_metadata_in_dir
+        il2cpp_meta = find_il2cpp_metadata_in_dir(self.source_root)
+        if il2cpp_meta and il2cpp_meta.get("structs"):
+            for s in il2cpp_meta["structs"]:
+                if s.get("name") == target.class_name:
+                    sections.append(f"IL2CPP Field Layout for {target.class_name}:\n" + str(s.get("fields")))
 
         siblings = self._find_sibling_methods(target)
         if siblings:
@@ -144,5 +153,7 @@ class SourceContextBuilder:
 
     @staticmethod
     def _code_filename(address: str, class_name: str, function_name: str) -> str:
-        safe_name = f"{address}_{class_name}_{function_name}.cpp"
-        return safe_name.replace("::", "_").replace("/", "_")
+        return safe_filename(
+            f"{address}_{class_name}_{function_name}",
+            suffix=".cpp",
+        )

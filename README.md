@@ -59,13 +59,13 @@ This is conservative verification, not a proof of semantic equivalence.
 Install the agent and its Ghidra query bridge from PyPI:
 
 ```bash
-python3 -m pip install --upgrade "auto-re-agent[ghidra-bridge]>=0.2.0"
+python3 -m pip install --upgrade "auto-re-agent[providers,ghidra-bridge]>=0.3.0"
 ```
 
 For headless Ghidra exports, install the bridge with its PyGhidra extra:
 
 ```bash
-python3 -m pip install --upgrade "auto-re-agent[headless]>=0.2.0"
+python3 -m pip install --upgrade "auto-re-agent[providers,headless]>=0.3.0"
 ```
 
 To install the latest development versions directly from GitHub instead:
@@ -73,7 +73,7 @@ To install the latest development versions directly from GitHub instead:
 ```bash
 python3 -m pip install --upgrade \
   "ghidra-ai-bridge @ git+https://github.com/Dryxio/ghidra-ai-bridge.git@main" \
-  "auto-re-agent @ git+https://github.com/Dryxio/auto-re-agent.git@main"
+  "auto-re-agent[providers] @ git+https://github.com/Dryxio/auto-re-agent.git@main"
 ```
 
 ## Set up Ghidra evidence
@@ -126,7 +126,8 @@ llm:
 agents:
   checker:
     provider: codex
-    model: gpt-5.4
+    model: gpt-5.6-sol
+    effort: high
 
 backend:
   type: ghidra-bridge
@@ -157,6 +158,8 @@ validation:
   require_build: true
   require_tests: true
   require_verified: true
+  # Separate consent to execute project-owned commands on this host.
+  allow_host_commands: true
   # This explicitly attests that the project-owned shell commands above are
   # meaningful validation gates. Leave false for untrusted commands.
   trust_configured_commands: true
@@ -220,18 +223,123 @@ Set `OPENAI_API_KEY` or `RE_AGENT_LLM_API_KEY`.
 
 ### Codex CLI
 
+Install Codex CLI, authenticate it once, and verify the saved session:
+
+```bash
+codex --version
+codex login
+codex login status
+```
+
+Then select the provider:
+
 ```yaml
 llm:
   provider: codex
-  model: gpt-5.4
+  model: gpt-5.6-sol
+  cli_path: codex
+  effort: high
 ```
 
-Codex uses the authenticated local `codex exec` command. CLI-provider
-`max_tokens` values are planning allowances, not hard output limits.
+Codex uses the authenticated local `codex exec` command; it does not use
+`api_key` or `service_account_file`. re-agent sends prompts over stdin and runs
+Codex with a read-only sandbox and ephemeral session storage. CLI-provider
+`max_tokens` values are planning allowances, not hard output limits. The
+recommended quality-first checker pin is `gpt-5.6-sol`; `effort: high` becomes
+Codex's `model_reasoning_effort="high"` setting. Keep Codex CLI current:
+
+```bash
+npm install -g @openai/codex@latest
+```
+
+If the server reports that the model requires a newer Codex version, re-agent
+classifies that route as unavailable so an explicitly configured operational
+fallback can continue.
+
+You can also keep Gemini as the top-level provider and use Codex only as the
+independent checker:
+
+```yaml
+llm:
+  provider: gemini
+  model: gemini-3.6-flash
+  service_account_file: credentials/vertex-sa.json
+
+agents:
+  checker:
+    provider: codex
+    model: gpt-5.6-sol
+    effort: high
+```
+
+These are two different mechanisms:
+
+- `agents.checker` makes Codex independently review Gemini's proposed source
+  against the binary evidence. A checker `PASS` is still only one acceptance
+  gate; objective, build/test/runtime, and parity gates remain separate.
+- `llm.fallbacks` handles operational failure for one request. It does not
+  bypass safety/policy blocks or silently turn an unverified answer into a
+  verified one.
+
+For a fast-primary, independent-checker, operational-fallback setup:
+
+```yaml
+llm:
+  provider: gemini
+  model: gemini-3.6-flash
+  service_account_file: credentials/vertex-sa.json
+  max_retries: 1
+  fallbacks:
+    - provider: codex
+      model: gpt-5.6-sol
+      cli_path: codex
+      effort: high
+      max_retries: 0
+    - provider: antigravity
+      model: gemini-3.6-flash
+      cli_path: agy
+      max_retries: 0
+
+agents:
+  checker:
+    provider: codex
+    model: gpt-5.6-sol
+    cli_path: codex
+    effort: high
+```
+
+Rate-limit and transient failures retry with bounded exponential backoff.
+Context-limit, missing-tool, and authentication failures move directly to the
+next configured route. Invalid requests, unknown implementation failures, and
+model safety/policy blocks stop instead of provider-shopping. Each provider
+keeps its own model, credentials, endpoint, and CLI path.
 
 Omit `agents.reverser` or `agents.checker` to reuse the top-level `llm`
-configuration for that role. A role block is a complete role configuration,
-not a field-by-field merge with `llm`.
+configuration for that role. Same-provider role blocks inherit omitted
+non-sensitive fields from `llm`.
+Switching providers never carries credentials, endpoints, CLI paths, or model
+identifiers across the provider boundary.
+
+External model use is denied by default because binary/source evidence may be
+proprietary. Explicitly authorize the provider boundary in the same config:
+
+```yaml
+data_handling:
+  allow_external_llm: true
+  allowed_providers: [gemini, codex, antigravity]
+  allow_prompt_logging: false
+  allow_evidence_persistence: false
+  max_prompt_chars: 120000
+```
+
+Large binaries are parsed locally. Agents receive bounded decompilation,
+metadata, and string-evidence summaries, never an unbounded binary or dump.
+The semantic metadata payload remains valid JSON while capped at 60,000
+characters, individual agent prompts are capped by `max_prompt_chars`, and
+old complete conversation turns are discarded before replay can grow without
+bound. A genuine provider context-limit response can therefore fail over, but
+the fallback receives the same bounded evidence; it does not invent missing
+analysis or silently truncate the newest request.
 
 ## Evidence and investigation
 
@@ -243,9 +351,11 @@ and can request additional read-only operations:
 - `vtable`, `global`, and `strings`
 - `context`, normalized `pcode`, and `cfg`
 
-Evidence bundle data is also ingested into
+When `data_handling.allow_evidence_persistence` is explicitly enabled, evidence
+bundle data is also ingested into
 `reports/re-agent/knowledge-graph.json`, connecting functions, calls, globals,
-and strings. Unsupported bridge capabilities degrade gracefully.
+and strings. It stays in memory otherwise. Unsupported bridge capabilities
+degrade gracefully.
 
 ## Candidate validation
 
@@ -301,7 +411,7 @@ The 11 built-in signals are:
 | NaN logic | YELLOW | Decompile indicates NaN-sensitive behavior missing from source |
 | Inline wrapper | INFO | Source forwards to an internal implementation |
 
-The signal set is fixed in `0.2.0`; configuration exposes selected thresholds,
+The signal set is fixed in `0.3.0`; configuration exposes selected thresholds,
 inline-wrapper behavior, semantic rules, and manual overrides rather than an
 individual toggle for every signal.
 
@@ -323,6 +433,8 @@ Global options must precede the subcommand, for example
 | `re-agent status --class CLASS --format text` | Show session progress |
 | `re-agent estimate --address ADDR` | Estimate one function |
 | `re-agent estimate --class CLASS --limit N` | Estimate a class batch |
+| `re-agent batch --binary FILE --goal TEXT --limit N` | Rank a complete local candidate inventory and semantically refine a bounded shortlist |
+| `re-agent pipeline --binary FILE --goal TEXT --no-repack` | Generate pathway-aware candidate reports and review hook scaffolds |
 
 Use `re-agent <command> --help` for the exact option list.
 
@@ -348,6 +460,9 @@ See [docs/configuration.md](docs/configuration.md) for the complete schema.
 
 - `generic-cpp`: portable C/C++ defaults
 - `windows-x64`: Microsoft x64-oriented prompt rules
+- `linux-x64`: System V AMD64-oriented prompt rules
+- `android-arm64`: Android AAPCS64-oriented prompt rules
+- `ios-arm64`: Apple ARM64-oriented prompt rules
 - `gta-reversed`: GTA-reversed hooks, stubs, source paths, and project rules
 - `openrct2`: OpenRCT2-oriented hook/stub patterns
 
@@ -396,8 +511,10 @@ The full binary-backed reversal workflow currently uses Ghidra through
 
 ### Which LLM providers are supported?
 
-Claude API, Claude CLI, OpenAI-compatible APIs, and Codex CLI are supported.
-The reverser and checker can use different providers or models.
+Claude API, Claude CLI, Gemini API/Vertex AI, OpenAI-compatible APIs, Codex
+CLI, and AntiGravity CLI are supported. The reverser and checker can use
+different providers or models, and an explicit ordered fallback chain can be
+configured independently.
 
 ### Does it modify the original source tree?
 
@@ -430,8 +547,12 @@ cost depends on the selected models, evidence volume, and target complexity.
 - review rounds, evidence actions, and per-function attempts are bounded;
 - prompt/response logs are written per review round, not for every internal
   evidence-loop call;
-- configured validation commands execute through `/bin/sh` and should only be
-  trusted when they are controlled by the project owner;
+- configured validation commands execute through `/bin/sh` on Unix and a
+  detected Git shell or `cmd.exe` on Windows; they should only be enabled when
+  controlled by the project owner;
+- a pipeline exit code of zero means its declared analysis/artifact stages
+  completed; `pipeline_manifest.json` separately records that runtime hook
+  installation and runtime behavior remain unverified;
 - structural and parity checks catch useful mismatches but do not prove binary
   equivalence;
 - real Ghidra/PyGhidra integration depends on the local Ghidra project and has

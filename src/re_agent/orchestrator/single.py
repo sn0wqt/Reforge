@@ -41,7 +41,11 @@ def reverse_single(
             in the same class, callers should build the indexer once and pass
             it here to avoid re-scanning the entire source tree each time.
     """
-    log_dir = Path(config.output.log_dir) if config.output.log_dir else None
+    log_dir = (
+        Path(config.output.log_dir)
+        if config.output.log_dir and config.data_handling.allow_prompt_logging
+        else None
+    )
 
     result = run_fix_loop(
         target=target,
@@ -60,20 +64,9 @@ def reverse_single(
         objective_control_flow_tolerance=config.orchestrator.objective_control_flow_tolerance,
         investigation_enabled=config.orchestrator.investigation_enabled,
         max_investigations=config.orchestrator.max_investigations,
+        max_prompt_chars=config.data_handling.max_prompt_chars,
+        persist_evidence=config.data_handling.allow_evidence_persistence,
     )
-
-    # Write generated code to a file so users don't have to dig through logs
-    if result.code:
-        code_dir = output_dir or (Path(config.output.report_dir) / "code")
-        try:
-            code_dir.mkdir(parents=True, exist_ok=True)
-            safe_name = f"{target.address}_{target.class_name}_{target.function_name}.cpp"
-            safe_name = safe_name.replace("::", "_").replace("/", "_")
-            code_path = code_dir / safe_name
-            code_path.write_text(result.code, encoding="utf-8")
-            logger.info("Code written to %s", code_path)
-        except OSError as exc:
-            logger.warning("Failed to write code file: %s", exc)
 
     # Validate the generated candidate itself, never the stale source-tree body.
     if result.code:
@@ -172,12 +165,38 @@ def reverse_single(
                 and config.validation.copy_project
                 and not config.validation.keep_project_copy
             ):
-                cleanup_candidate_overlay(candidate_file)
-                if result.validation_verdict is not None:
-                    result.validation_verdict.overlay_file = None
-                    result.validation_verdict.findings.append(
-                        "Temporary isolated project copy removed after validation"
-                    )
+                try:
+                    cleanup_candidate_overlay(candidate_file)
+                except OSError as exc:
+                    logger.warning("Could not remove temporary validation copy: %s", exc)
+                    if result.validation_verdict is not None:
+                        result.validation_verdict.findings.append(
+                            f"Temporary validation copy cleanup failed: {exc}"
+                        )
+                else:
+                    if result.validation_verdict is not None:
+                        result.validation_verdict.overlay_file = None
+                        result.validation_verdict.findings.append(
+                            "Temporary isolated project copy removed after validation"
+                        )
+
+    # Promote only accepted output to the stable code directory. Rejected code
+    # remains in the candidate overlay/report with its failed verdict.
+    if result.code and result.success:
+        code_dir = output_dir or (Path(config.output.report_dir) / "code")
+        try:
+            from re_agent.utils.paths import safe_filename
+
+            code_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = safe_filename(
+                f"{target.address}_{target.class_name}_{target.function_name}",
+                suffix=".cpp",
+            )
+            code_path = code_dir / safe_name
+            code_path.write_text(result.code, encoding="utf-8")
+            logger.info("Accepted code written to %s", code_path)
+        except OSError as exc:
+            logger.warning("Failed to write accepted code file: %s", exc)
 
     if session:
         session.record_result(result)

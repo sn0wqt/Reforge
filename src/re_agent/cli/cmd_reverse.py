@@ -20,14 +20,42 @@ def cmd_reverse(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         return _dry_run(args, config)
+    if not args.address and not args.class_name:
+        print("Error: specify --address or --class", file=sys.stderr)
+        return 1
 
     # Lazy imports to avoid loading LLM/backend unless needed
     from re_agent.backend.registry import create_backend
+    from re_agent.config.policy import require_provider_allowed
     from re_agent.core.session import Session
     from re_agent.llm.registry import create_provider
+    from re_agent.verification.candidate import validation_preflight_error
 
-    reverser_llm = create_provider(config.agents.reverser or config.llm)
-    checker_llm = create_provider(config.agents.checker or config.llm)
+    reverser_config = config.agents.reverser or config.llm
+    checker_config = config.agents.checker or config.llm
+    validation_error = validation_preflight_error(config.validation)
+    if validation_error:
+        print(
+            "Error: reversal acceptance is impossible with the current "
+            f"validation config: {validation_error}. Configure trusted gates "
+            "or explicitly set validation.require_verified=false.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        require_provider_allowed(
+            config.data_handling,
+            reverser_config,
+            role="reverser",
+        )
+        require_provider_allowed(
+            config.data_handling,
+            checker_config,
+            role="checker",
+        )
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
     backend = create_backend(config.backend)
     session = Session(config.output.session_file)
 
@@ -38,21 +66,31 @@ def cmd_reverse(args: argparse.Namespace) -> int:
         function_name = ""
 
         # Try to resolve function metadata from the backend
-        if not class_name:
-            try:
-                dec = backend.decompile(args.address)
-                if dec.name and "::" in dec.name:
-                    class_name, _, function_name = dec.name.rpartition("::")
-                elif dec.name:
-                    function_name = dec.name
-            except Exception:
-                pass  # Best-effort; proceed with empty metadata
+        try:
+            dec = backend.decompile(args.address)
+            if dec.name and "::" in dec.name:
+                resolved_class, _, function_name = dec.name.rpartition("::")
+                if not class_name:
+                    class_name = resolved_class
+            elif dec.name:
+                function_name = dec.name
+        except Exception:
+            pass  # Best-effort; objective validation will reject unresolved metadata
+        if not function_name:
+            print(
+                "Error: backend could not resolve a function name for "
+                f"{args.address}; refusing to reverse an anonymous target.",
+                file=sys.stderr,
+            )
+            return 3
 
         target = FunctionTarget(
             address=args.address,
             class_name=class_name,
             function_name=function_name,
         )
+        reverser_llm = create_provider(reverser_config)
+        checker_llm = create_provider(checker_config)
         result = reverse_single(
             target,
             config,
@@ -67,6 +105,8 @@ def cmd_reverse(args: argparse.Namespace) -> int:
     if args.class_name:
         from re_agent.orchestrator.class_runner import reverse_class
 
+        reverser_llm = create_provider(reverser_config)
+        checker_llm = create_provider(checker_config)
         results = reverse_class(
             class_name=args.class_name,
             config=config,
@@ -83,9 +123,8 @@ def cmd_reverse(args: argparse.Namespace) -> int:
         passed = sum(1 for r in results if r.success)
         total = len(results)
         print(f"\nResults: {passed}/{total} passed")
-        return 0 if passed == total else 1
+        return 0 if total > 0 and passed == total else 1
 
-    print("Error: specify --address or --class", file=sys.stderr)
     return 1
 
 
@@ -99,10 +138,16 @@ def _dry_run(args: argparse.Namespace, config: object) -> int:
         return 0
 
     if args.class_name:
+        from re_agent.config.schema import ReAgentConfig
+
+        assert isinstance(config, ReAgentConfig)
         print(f"Would reverse functions in class: {args.class_name}")
-        max_fn = args.max_functions or 10
+        max_fn = args.max_functions or config.orchestrator.max_functions_per_class
         print(f"  Max functions: {max_fn}")
-        print(f"  Max rounds per function: {args.max_rounds or 4}")
+        print(
+            "  Max rounds per function: "
+            f"{args.max_rounds or config.orchestrator.max_review_rounds}"
+        )
         return 0
 
     print("Error: specify --address or --class", file=sys.stderr)

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-import uuid
+import tempfile
 from dataclasses import dataclass, field
 from typing import Any
 
+from re_agent.llm.base import BaseLLMProvider
 from re_agent.llm.protocol import Message
+from re_agent.utils.process import sanitized_cli_environment
 
 
 @dataclass
@@ -26,7 +28,7 @@ class ClaudeCLIMetadata:
     usage: dict[str, Any] = field(default_factory=dict)
 
 
-class ClaudeCLIProvider:
+class ClaudeCLIProvider(BaseLLMProvider):
     """Run Claude Code in non-interactive, tool-free print mode."""
 
     def __init__(
@@ -37,12 +39,13 @@ class ClaudeCLIProvider:
         max_budget_usd: float | None = None,
         effort: str | None = None,
     ) -> None:
+        super().__init__()
         self._model = model
         self._timeout_s = timeout_s
         self._claude_bin = claude_bin
         self._max_budget_usd = max_budget_usd
         self._effort = effort
-        self._conversations: dict[str, _Conversation] = {}
+        self._conversations_claude: dict[str, _Conversation] = {}
         self.last_metadata = ClaudeCLIMetadata()
 
     def send(self, messages: list[Message], **kwargs: Any) -> str:
@@ -55,12 +58,12 @@ class ClaudeCLIProvider:
         return True
 
     def new_conversation(self, system: str) -> str:
-        conversation_id = str(uuid.uuid4())
-        self._conversations[conversation_id] = _Conversation(system=system)
+        conversation_id = super().new_conversation(system)
+        self._conversations_claude[conversation_id] = _Conversation(system=system)
         return conversation_id
 
     def resume(self, conversation_id: str, message: str) -> str:
-        conversation = self._conversations.get(conversation_id)
+        conversation = self._conversations_claude.get(conversation_id)
         if conversation is None:
             raise KeyError(f"Unknown conversation ID: {conversation_id}")
 
@@ -87,6 +90,9 @@ class ClaudeCLIProvider:
         cmd = [
             self._claude_bin,
             "-p",
+            "--safe-mode",
+            "--permission-mode",
+            "plan",
             "--tools",
             "",
             "--disallowedTools",
@@ -106,20 +112,22 @@ class ClaudeCLIProvider:
             cmd.extend(["--max-budget-usd", str(self._max_budget_usd)])
         if self._effort is not None:
             cmd.extend(["--effort", self._effort])
-        cmd.append(prompt)
-
         try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self._timeout_s,
-                check=False,
-            )
+            with tempfile.TemporaryDirectory(prefix="re-agent-claude-") as work_dir:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=work_dir,
+                    env=sanitized_cli_environment(),
+                    input=prompt,
+                    capture_output=True,
+                    text=True,
+                    timeout=self._timeout_s,
+                    check=False,
+                )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"claude CLI timed out after {self._timeout_s}s") from exc
-        except FileNotFoundError as exc:
-            raise RuntimeError(f"Claude CLI not found: {self._claude_bin}") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Claude CLI could not be started: {self._claude_bin}") from exc
 
         try:
             payload = json.loads(proc.stdout)

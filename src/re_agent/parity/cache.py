@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from re_agent.utils.address import normalize_address
+from re_agent.utils.paths import safe_filename
 
 
 class ParityCache:
@@ -15,7 +16,9 @@ class ParityCache:
 
     def _path(self, prefix: str, address: str) -> Path:
         key = normalize_address(address)
-        return self.cache_dir / f"{prefix}-{key}.txt"
+        if not key:
+            raise ValueError("Cache address may not be empty")
+        return self.cache_dir / safe_filename(f"{prefix}-{key}", suffix=".txt")
 
     def get(self, prefix: str, address: str) -> str | None:
         p = self._path(prefix, address)

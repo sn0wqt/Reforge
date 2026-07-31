@@ -40,6 +40,8 @@ def run_fix_loop(
     objective_control_flow_tolerance: int = 2,
     investigation_enabled: bool = True,
     max_investigations: int = 8,
+    max_prompt_chars: int = 120_000,
+    persist_evidence: bool = False,
 ) -> ReversalResult:
     """Run the reverser->checker->fix loop up to max_rounds.
 
@@ -67,8 +69,10 @@ def run_fix_loop(
         report_dir=report_dir,
         investigation_enabled=investigation_enabled,
         max_investigations=max_investigations,
+        max_prompt_chars=max_prompt_chars,
+        persist_evidence=persist_evidence,
     )
-    checker = CheckerAgent(checker_llm, backend)
+    checker = CheckerAgent(checker_llm, backend, max_prompt_chars=max_prompt_chars)
 
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)

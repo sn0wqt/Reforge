@@ -49,6 +49,30 @@ def test_mock_provider_send() -> None:
     assert r2 == "World!"
 
 
-def test_registry_creates_codex_provider() -> None:
-    provider = create_provider(LLMConfig(provider="codex", model="gpt-5.4"))
+def test_registry_creates_antigravity_provider() -> None:
+    provider = create_provider(LLMConfig(provider="antigravity", model="gemini-3.6-flash"))
     assert provider.supports_conversations
+
+
+def test_registry_creates_gemini_provider() -> None:
+    provider = create_provider(LLMConfig(provider="gemini", model="gemini-2.5-flash", api_key="test-key"))
+    assert provider.supports_conversations
+
+
+def test_registry_creates_codex_provider() -> None:
+    provider = create_provider(LLMConfig(provider="codex", model="gpt-5.6-sol"))
+    assert provider.supports_conversations
+
+
+def test_registry_creates_explicit_failover_chain() -> None:
+    from re_agent.llm.failover import FailoverLLMProvider
+
+    provider = create_provider(
+        LLMConfig(
+            provider="codex",
+            model="gpt-5.6-sol",
+            fallbacks=[LLMConfig(provider="antigravity")],
+        )
+    )
+    assert isinstance(provider, FailoverLLMProvider)
+    assert provider.provider_names == ("codex", "antigravity")
