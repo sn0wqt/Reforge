@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from re_agent.config.domain_keywords import CURRENCY_KEYWORDS, is_contextual_currency_match
+from re_agent.config.domain_keywords import is_contextual_currency_match
 from re_agent.config.loader import load_config
 from re_agent.core.candidates import rank_candidates, split_candidates
 from re_agent.utils.address import format_address

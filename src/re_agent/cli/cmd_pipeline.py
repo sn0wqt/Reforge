@@ -194,7 +194,7 @@ def _decompile_hermes_bundle(bundle_path: Path, output_dir: Path) -> Path | None
         str(decompiled),
     ]
     try:
-        result = subprocess.run(
+        subprocess.run(
             command,
             capture_output=True,
             text=True,
@@ -250,7 +250,8 @@ def _prepare_il2cpp_sidecars(
                 binary_info = sorted(
                     binary_infos,
                     key=lambda info: (
-                        "arm64-v8a" not in info.filename.casefold() and "unityframework" not in info.filename.casefold(),
+                        "arm64-v8a" not in info.filename.casefold()
+                        and "unityframework" not in info.filename.casefold(),
                         info.filename.casefold(),
                     ),
                 )[0]
@@ -469,7 +470,7 @@ def _patch_textual_bundle(
     node = shutil.which("node")
     if node:
         try:
-            syntax_result = subprocess.run(
+            subprocess.run(
                 [node, "--check", "-"],
                 input=patched,
                 capture_output=True,
@@ -841,7 +842,8 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 "[!] Warning: Unity IL2CPP target detected, but Il2CppDumper executable was not found in system PATH."
             )
             print(
-                "[!] To enable automatic C# metadata dumping (dump.cs / script.json), pass --il2cpp-dumper <path/to/Il2CppDumper.exe>"
+                "[!] To enable automatic C# metadata dumping (dump.cs / script.json), "
+                "pass --il2cpp-dumper <path/to/Il2CppDumper.exe>"
             )
         else:
             print(f"[+] Found Il2CppDumper executable: {dumper_value}")
@@ -1023,9 +1025,14 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     if batch_exit != 0:
         print("[*] Native/metadata discovery was insufficient; using Hermes evidence only.")
 
-    # For Unity IL2CPP, if metadata extraction failed or produced 0 C# symbols, do not flood with raw DEX string fallbacks
-    if architecture.engine_type == "unity-il2cpp" and not any(t.signature_verified or t.method_rva is not None for t in batch_targets):
-        print("[!] Unity IL2CPP metadata extraction was missing or yielded no C# symbols. Discarding ungrounded string fallbacks.")
+    # For Unity IL2CPP, avoid flooding raw DEX string fallbacks when no C# symbols are produced.
+    if architecture.engine_type == "unity-il2cpp" and not any(
+        t.signature_verified or t.method_rva is not None for t in batch_targets
+    ):
+        print(
+            "[!] Unity IL2CPP metadata extraction was missing or yielded no C# symbols. "
+            "Discarding ungrounded string fallbacks."
+        )
         discovered_targets = []
 
     raw_targets = [
