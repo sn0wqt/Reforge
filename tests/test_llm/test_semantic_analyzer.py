@@ -1,4 +1,4 @@
-"""Unit tests for Gemini semantic analyzer and AnalyzedTarget."""
+"""Unit tests for semantic analyzer and AnalyzedTarget."""
 
 from __future__ import annotations
 
