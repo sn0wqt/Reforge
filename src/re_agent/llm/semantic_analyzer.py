@@ -262,9 +262,11 @@ hook type and explain your reasoning.
 IMPORTANT RULES:
 1. Every target MUST match a class, field, or method name PRECISELY as shown in the metadata below. Do not invent names.
 2. For method targets: specify `hook_type` as "return_override", "skip_call", "nop", "esp_overlay", or "speed_modify".
-   - Set `return_value` appropriately (e.g., "999999" for currency, "true" for unlocks/godmode, "false" for collision/death checks, "0" for cost/damage).
+   - Set `return_value` appropriately (e.g., "999999" for currency, "true" for unlocks/godmode,
+     "false" for collision/death checks, "0" for cost/damage).
    - Set `return_type` ("int32_t", "float", "bool", "void").
-3. For field targets: specify `hook_type` as "memory_patch". Set `offset` to the exact integer offset given in the metadata.
+3. For field targets: specify `hook_type` as "memory_patch".
+   Set `offset` to the exact integer offset given in the metadata.
 4. Set `confidence` from 0-100 reflecting how confident you are that this target achieves the user's goal.
 5. Set `reason` to a concise 1-sentence technical explanation.
 
@@ -321,10 +323,11 @@ def _parse_llm_response(raw_text: str) -> list[AnalyzedTarget]:
             elif isinstance(raw_offset, str):
                 cleaned_offset = raw_offset.strip()
                 try:
-                    if cleaned_offset.casefold().startswith("0x"):
-                        val = int(cleaned_offset, 16)
-                    else:
-                        val = int(cleaned_offset)
+                    val = (
+                        int(cleaned_offset, 16)
+                        if cleaned_offset.casefold().startswith("0x")
+                        else int(cleaned_offset)
+                    )
                     if val >= 0:
                         offset = val
                 except ValueError:
@@ -372,7 +375,7 @@ def analyze_metadata(
 
     if not provider:
         try:
-            provider = create_default_provider()
+            provider = create_gemini_provider()
         except Exception:
             logger.warning("[LLM] No LLM provider available for semantic analysis")
             return []
@@ -608,7 +611,7 @@ def expand_goal_keywords_with_llm(
     """Dynamically expand a natural language goal into candidate search terms using LLM."""
     if not provider:
         try:
-            provider = GeminiProvider()
+            provider = create_gemini_provider()
         except Exception:
             tokens = re.findall(r"\w+", goal_text.lower())
             return [t for t in tokens if len(t) > 2]
@@ -654,4 +657,3 @@ def expand_goal_keywords_with_llm(
         logger.warning("[LLM] Dynamic keyword expansion bypassed/failed")
 
     return filter_entity_terms(re.findall(r"\w+", goal_text.lower()))
-

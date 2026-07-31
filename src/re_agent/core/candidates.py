@@ -31,8 +31,14 @@ def target_activation_facts(
     ev = evidence or {}
     h_type = hook_type or (target.hook_type if target is not None else "")
     offset = (target.offset if target is not None and target.offset is not None else None) or ev.get("offset")
-    method_rva = (target.method_rva if target is not None and target.method_rva is not None else None) or ev.get("rva")
-    descriptor = (target.method_descriptor if target is not None and target.method_descriptor is not None else None) or ev.get("descriptor")
+    method_rva = (
+        target.method_rva if target is not None and target.method_rva is not None else None
+    ) or ev.get("rva")
+    descriptor = (
+        target.method_descriptor
+        if target is not None and target.method_descriptor is not None
+        else None
+    ) or ev.get("descriptor")
 
     exact_java_override = (
         h_type == "return_override"
@@ -240,7 +246,7 @@ def split_candidates(
     primary_limit: int = PRIMARY_CANDIDATE_LIMIT,
     goal_prompt: str | None = None,
 ) -> CandidateGroups:
-    """Select 1 primary state target per distinct entity concept up to primary_limit, retaining remainder in secondary."""
+    """Select one primary state target per entity concept up to primary_limit."""
     ranked = rank_candidates(targets)
     high_conf = [t for t in ranked if t.confidence >= confidence_threshold]
 

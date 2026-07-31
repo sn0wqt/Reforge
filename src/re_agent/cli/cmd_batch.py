@@ -28,7 +28,11 @@ from re_agent.config.domain_keywords import (
     matches_identifier_keyword,
 )
 from re_agent.config.loader import load_config
-from re_agent.core.candidates import print_candidate_summary, rank_candidates
+from re_agent.core.candidates import (
+    print_candidate_summary,
+    rank_candidates,
+    target_activation_facts,
+)
 from re_agent.core.il2cpp_parser import find_il2cpp_metadata_in_dir
 from re_agent.llm.analyzed_target import AnalyzedTarget
 from re_agent.utils.goal_parser import extract_entity_keywords
@@ -37,10 +41,6 @@ from re_agent.utils.vtable import generate_vtable_header
 
 logger = logging.getLogger(__name__)
 MAX_OFFSET_INVENTORY_FILES = 50
-
-
-from re_agent.core.candidates import rank_candidates, target_activation_facts
-
 
 def _method_activation_facts(
     engine_type: str,

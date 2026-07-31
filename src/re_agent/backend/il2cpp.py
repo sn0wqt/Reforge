@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -80,10 +81,8 @@ class IL2CPPBackend(REBackend):
         target_clean = target.strip().casefold()
         target_rva = None
         if target_clean.startswith("0x"):
-            try:
+            with contextlib.suppress(ValueError):
                 target_rva = int(target_clean, 16)
-            except ValueError:
-                pass
 
         classes = self.parsed.get("classes", [])
         for cls in classes:
@@ -97,7 +96,12 @@ class IL2CPPBackend(REBackend):
                     ret_t = str(m.get("return_type", "void"))
                     params = m.get("parameter_types", ())
                     params_str = ", ".join(params) if isinstance(params, (list, tuple)) else ""
-                    synthetic_code = f"// Address: 0x{rva:X} (RVA)\n{ret_t} {c_name}::{m_name}({params_str}) {{\n    // IL2CPP metadata representation\n}}"
+                    synthetic_code = (
+                        f"// Address: 0x{rva:X} (RVA)\n"
+                        f"{ret_t} {c_name}::{m_name}({params_str}) {{\n"
+                        "    // IL2CPP metadata representation\n"
+                        "}}"
+                    )
                     addr_str = f"0x{rva:X}"
                     return DecompileResult(
                         address=addr_str,

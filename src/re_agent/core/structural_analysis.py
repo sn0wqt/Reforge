@@ -7,11 +7,13 @@ These are conservative ranking signals, not proof of semantics.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
 from re_agent.config.domain_keywords import (
     COLLISION_KEYWORDS,
+    CORE_CURRENCY_VALUE_KEYWORDS,
     CURRENCY_KEYWORDS,
     is_contextual_currency_match,
     matches_identifier_keyword,

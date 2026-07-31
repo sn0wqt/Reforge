@@ -1,6 +1,8 @@
 """Backend factory — creates a backend from configuration."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from re_agent.backend.protocol import REBackend
 from re_agent.config.schema import BackendConfig
 

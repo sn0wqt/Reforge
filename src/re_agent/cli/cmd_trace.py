@@ -89,11 +89,23 @@ Interceptor.attach(targetAddress, {{
     mod_str = json.dumps(module) if module else "null"
     return f"""// Auto-generated Frida ASLR-Aware Address Interceptor Script
 const modName = {mod_str};
-const mod = modName ? Process.findModuleByName(modName) : (Process.findModuleByName("libil2cpp.so") || Process.enumerateModules()[0]);
+const mod = modName
+    ? Process.findModuleByName(modName)
+    : (Process.findModuleByName("libil2cpp.so") || Process.enumerateModules()[0]);
 if (!mod) throw new Error("Could not resolve module for address tracing");
 const targetAddress = mod.base.add(ptr({json.dumps(addr_val)}));
 
-console.log("[+] Intercepting address " + {json.dumps(addr_val)} + " (Module: " + mod.name + " @ " + mod.base + " -> " + targetAddress + ")");
+console.log(
+    "[+] Intercepting address "
+    + {json.dumps(addr_val)}
+    + " (Module: "
+    + mod.name
+    + " @ "
+    + mod.base
+    + " -> "
+    + targetAddress
+    + ")"
+);
 
 try {{
     Interceptor.attach(targetAddress, {{
@@ -139,7 +151,7 @@ def cmd_trace(args: argparse.Namespace) -> int:
     remote_host = getattr(args, "host", None)
 
     if attach_target or spawn_target:
-        print(f"[*] Initiating live Frida tracing session...")
+        print("[*] Initiating live Frida tracing session...")
         cmd = ["frida"]
         if use_usb:
             cmd.append("-U")
