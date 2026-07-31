@@ -141,6 +141,38 @@ def test_generate_universal_hook_keeps_all_multi_field_offsets() -> None:
     assert "+ 0x20" in code
 
 
+def test_universal_hook_bounds_review_candidates() -> None:
+    from re_agent.cli.cmd_hook import (
+        MAX_REVIEW_HOOK_CANDIDATES,
+        generate_universal_hook_for_goal,
+    )
+    from re_agent.llm.analyzed_target import AnalyzedTarget
+
+    targets = [
+        AnalyzedTarget(
+            "WalletModel" if index == 0 else f"Candidate{index}",
+            "GetCurrency" if index == 0 else f"GetValue{index}",
+            confidence=95 - min(index, 20),
+            reason="Review candidate",
+        )
+        for index in range(100)
+    ]
+
+    code = generate_universal_hook_for_goal(
+        "give infinite coins and keys",
+        analyzed_targets=targets,
+    )
+
+    assert "WalletModel::GetCurrency" in code
+    assert (
+        f"Emitting {MAX_REVIEW_HOOK_CANDIDATES} of {len(targets)} "
+        "review candidates."
+    ) in code
+    assert "80 additional review candidates" in code
+    assert "Candidate99::GetValue99" not in code
+    assert len(code) < 100_000
+
+
 def test_mixed_confidence_fields_do_not_share_activation() -> None:
     from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
     from re_agent.llm.analyzed_target import AnalyzedTarget

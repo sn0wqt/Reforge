@@ -99,6 +99,39 @@ def test_large_metadata_summary_stays_bounded_and_valid_json() -> None:
     assert len(payload) < len(candidates)
 
 
+def test_goal_relevant_method_survives_per_class_summary_limit() -> None:
+    methods = [
+        {
+            "method_name": f"UnrelatedMethod{index}",
+            "return_type": "void",
+        }
+        for index in range(20)
+    ]
+    methods.append(
+        {
+            "method_name": "GetCurrency",
+            "return_type": "int",
+            "rva": 0x4C3A9DC,
+            "address": 0x4C3A9DC,
+            "address_kind": "method_rva",
+            "parameter_types": ("CurrencyType",),
+        }
+    )
+
+    summary = _build_metadata_summary(
+        [("WalletModel", methods, [])],
+        entity_terms=["coins", "currency", "wallet"],
+    )
+    payload = json.loads(summary)
+    selected_names = {
+        method["name"]
+        for method in payload[0]["methods"]
+    }
+
+    assert "GetCurrency" in selected_names
+    assert len(selected_names) == 12
+
+
 def test_parse_llm_response_json() -> None:
     json_resp = json.dumps([
         {
@@ -189,6 +222,46 @@ def test_analyze_metadata_with_llm_mock() -> None:
     assert targets[0].method_rva == 0x100
     assert targets[0].parameter_types == ("int",)
     assert targets[0].method_descriptor == "(I)I"
+
+
+def test_llm_target_after_first_twelve_members_is_still_grounded() -> None:
+    response = json.dumps(
+        [
+            {
+                "class_name": "WalletModel",
+                "target": "GetCurrency",
+                "hook_type": "return_override",
+                "return_value": "999999999",
+                "return_type": "int32_t",
+                "confidence": 95,
+                "reason": "Currency getter",
+            }
+        ]
+    )
+    methods = [
+        {"method_name": f"Noise{index}", "return_type": "void"}
+        for index in range(20)
+    ]
+    methods.append(
+        {
+            "method_name": "GetCurrency",
+            "return_type": "int",
+            "rva": 0x4C3A9DC,
+            "address_kind": "method_rva",
+            "parameter_types": ("CurrencyType",),
+        }
+    )
+
+    targets = analyze_metadata_with_llm(
+        MockLLMProvider(response),
+        "give infinite coins",
+        [("WalletModel", methods, [])],
+    )
+
+    assert len(targets) == 1
+    assert targets[0].target == "GetCurrency"
+    assert targets[0].method_rva == 0x4C3A9DC
+    assert targets[0].parameter_types == ("CurrencyType",)
 
 
 def test_analyze_metadata_can_surface_provider_failure() -> None:

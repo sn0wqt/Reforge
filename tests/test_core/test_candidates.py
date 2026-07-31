@@ -47,3 +47,45 @@ def test_conflicting_strategies_are_never_primary() -> None:
     assert not groups.primary
     assert len(groups.secondary) == 2
     assert all(target.confidence == 84 for target in groups.secondary)
+
+
+def test_equal_confidence_prefers_wallet_state_over_derived_currency_helpers() -> None:
+    targets = [
+        AnalyzedTarget(
+            "CurrencyExtensions",
+            "IsExpirableCurrency",
+            method_rva=0x1000,
+            return_type="bool",
+            confidence=92,
+        ),
+        AnalyzedTarget(
+            "CurrencyRewardHandler",
+            "GetCurrencyExpiration",
+            method_rva=0x2000,
+            confidence=92,
+        ),
+        AnalyzedTarget(
+            "WalletModel",
+            "GetCurrency",
+            method_rva=0x3000,
+            parameter_types=("CurrencyType",),
+            confidence=92,
+        ),
+        AnalyzedTarget(
+            "WalletOnRunModel",
+            "Coins",
+            offset=0x30,
+            hook_type="memory_patch",
+            confidence=92,
+        ),
+    ]
+
+    ranked = rank_candidates(targets)
+
+    assert [
+        (target.class_name, target.target)
+        for target in ranked[:2]
+    ] == [
+        ("WalletModel", "GetCurrency"),
+        ("WalletOnRunModel", "Coins"),
+    ]

@@ -198,6 +198,38 @@ def parse_rodroid_static_metadata(content: str | dict[str, Any]) -> dict[str, An
     return {"static_fields": data.get("static_fields", data.get("FieldRVA", []))}
 
 
+def _parse_csharp_parameter_types(arguments: str) -> tuple[str, ...]:
+    """Extract C# parameter types without splitting nested generic types."""
+    text = arguments.strip()
+    if not text:
+        return ()
+
+    parts: list[str] = []
+    start = 0
+    nesting = 0
+    for index, character in enumerate(text):
+        if character in "<[(":
+            nesting += 1
+        elif character in ">])":
+            nesting = max(0, nesting - 1)
+        elif character == "," and nesting == 0:
+            parts.append(text[start:index])
+            start = index + 1
+    parts.append(text[start:])
+
+    parameter_types: list[str] = []
+    modifiers = {"in", "out", "params", "ref", "this"}
+    for part in parts:
+        declaration = part.split("=", 1)[0].strip()
+        tokens = declaration.split()
+        while tokens and tokens[0] in modifiers:
+            tokens.pop(0)
+        if len(tokens) < 2:
+            continue
+        parameter_types.append(" ".join(tokens[:-1]))
+    return tuple(parameter_types)
+
+
 def parse_dump_cs(content: str) -> list[dict[str, Any]]:
     """Parse Il2CppDumper dump.cs for class definitions, fields, and method signatures."""
     classes: list[dict[str, Any]] = []
@@ -258,6 +290,7 @@ def parse_dump_cs(content: str) -> list[dict[str, Any]]:
             ret_t = m_match.group(2).strip()
             m_name = m_match.group(3).strip()
             args = m_match.group(4).strip()
+            parameter_types = _parse_csharp_parameter_types(args)
             is_event = (
                 m_name.startswith(("add_", "remove_", "subscribe", "unsubscribe"))
                 or "delegate" in args.lower()
@@ -273,6 +306,11 @@ def parse_dump_cs(content: str) -> list[dict[str, Any]]:
                     "rva": int(m_match.group(1), 16),
                     "address_kind": "method_rva",
                     "args": args,
+                    "parameter_types": parameter_types,
+                    "parameters": [
+                        {"type": parameter_type}
+                        for parameter_type in parameter_types
+                    ],
                     "is_event": is_event,
                 }
             )

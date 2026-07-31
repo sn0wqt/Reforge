@@ -34,6 +34,15 @@ def test_identifier_keyword_matching_uses_complete_tokens() -> None:
     assert not domain_keywords.matches_identifier_keyword("pro", "processState")
 
 
+def test_balance_value_filter_rejects_costs_and_derived_metadata() -> None:
+    assert domain_keywords.is_balance_value_member("GetCurrency")
+    assert domain_keywords.is_balance_value_member("CurrentKeys")
+    assert not domain_keywords.is_balance_value_member("KeyCost")
+    assert not domain_keywords.is_balance_value_member("GetCurrencyExpiration")
+    assert not domain_keywords.is_balance_value_member("CurrencyVariableId")
+    assert not domain_keywords.is_balance_value_member("TotalIAPCurrencySpent")
+
+
 def test_entity_filter_does_not_apply_intent_as_arbitrary_substring() -> None:
     assert domain_keywords.filter_entity_terms(["GrantedReward"]) == ["grantedreward"]
     assert domain_keywords.filter_entity_terms(["grant", "UnlimitedCoins"]) == []

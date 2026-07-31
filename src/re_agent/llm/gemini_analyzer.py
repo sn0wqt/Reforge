@@ -15,11 +15,14 @@ from pathlib import Path
 from typing import Any
 
 from re_agent.config.domain_keywords import (
+    CURRENCY_KEYWORDS,
+    DOMAIN_EXPANSION_GROUPS,
     INTENT_MODIFIERS,
     INTENT_VERBS,
     MODEL_HINTS,
     UI_PENALTY_HINTS,
     filter_entity_terms,
+    is_contextual_currency_match,
     matches_identifier_keyword,
 )
 from re_agent.core.candidates import rank_candidates
@@ -49,8 +52,39 @@ _DEX_RETURN_TYPES = {
 }
 
 
+def _metadata_member_relevance(
+    member: dict[str, Any],
+    *,
+    method: bool,
+    entity_terms: list[str],
+    class_name: str,
+) -> int:
+    """Score members so the bounded LLM summary keeps goal-relevant evidence."""
+    name = str(
+        member.get("method_name", member.get("name", ""))
+        if method
+        else member.get("name", "")
+    )
+    score = 0
+    for term in entity_terms:
+        if not matches_identifier_keyword(term, name):
+            continue
+        if (
+            term in CURRENCY_KEYWORDS
+            and not is_contextual_currency_match(term, class_name, name)
+        ):
+            continue
+        score += 100
+    if method and name.casefold().startswith(
+        ("get_", "get", "has_", "has", "is_", "is", "can")
+    ):
+        score += 20
+    return score
+
+
 def _build_metadata_summary(
     candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]],
+    entity_terms: list[str] | None = None,
 ) -> str:
     """Build a compact text summary of candidate classes for the LLM.
 
@@ -60,8 +94,42 @@ def _build_metadata_summary(
     """
     records: list[dict[str, object]] = []
     for cls_name, methods, fields in candidates[:_MAX_CANDIDATES_FOR_LLM]:
+        terms = entity_terms or []
+
+        selected_fields = (
+            sorted(
+                enumerate(fields),
+                key=lambda item: (
+                    -_metadata_member_relevance(
+                        item[1],
+                        method=False,
+                        entity_terms=terms,
+                        class_name=cls_name,
+                    ),
+                    item[0],
+                ),
+            )[:_MAX_MEMBERS_PER_CLASS]
+            if terms
+            else list(enumerate(fields[:_MAX_MEMBERS_PER_CLASS]))
+        )
+        selected_methods = (
+            sorted(
+                enumerate(methods),
+                key=lambda item: (
+                    -_metadata_member_relevance(
+                        item[1],
+                        method=True,
+                        entity_terms=terms,
+                        class_name=cls_name,
+                    ),
+                    item[0],
+                ),
+            )[:_MAX_MEMBERS_PER_CLASS]
+            if terms
+            else list(enumerate(methods[:_MAX_MEMBERS_PER_CLASS]))
+        )
         safe_fields = []
-        for field in fields[:_MAX_MEMBERS_PER_CLASS]:
+        for _index, field in selected_fields:
             offset = field.get("offset")
             if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
                 continue
@@ -73,7 +141,7 @@ def _build_metadata_summary(
                 }
             )
         safe_methods = []
-        for method in methods[:_MAX_MEMBERS_PER_CLASS]:
+        for _index, method in selected_methods:
             address = method.get("address")
             parameter_types = method.get("parameter_types", ())
             safe_methods.append(
@@ -246,8 +314,17 @@ def analyze_metadata_with_llm(
         ``raise_on_provider_error`` is enabled for a caller that reports the
         provider failure directly to the user.
     """
-    metadata_summary = _build_metadata_summary(candidates)
     entity_targets = extract_entity_keywords(goal)
+    expanded_entities = list(entity_targets)
+    goal_tokens = set(re.findall(r"\b\w+\b", goal.casefold()))
+    for triggers, expansions in DOMAIN_EXPANSION_GROUPS:
+        if goal_tokens & triggers:
+            expanded_entities.extend(sorted(expansions))
+    expanded_entities = filter_entity_terms(expanded_entities)
+    metadata_summary = _build_metadata_summary(
+        candidates,
+        entity_terms=expanded_entities,
+    )
     user_prompt = _USER_PROMPT_TEMPLATE.format(
         goal=json.dumps(goal[:2_000], ensure_ascii=True),
         entities=json.dumps(entity_targets[:50], ensure_ascii=True),
@@ -373,11 +450,11 @@ def _ground_targets(
     methods: dict[tuple[str, str], dict[str, Any]] = {}
     fields: dict[tuple[str, str], dict[str, Any]] = {}
     for class_name, class_methods, class_fields in candidates[:_MAX_CANDIDATES_FOR_LLM]:
-        for method in class_methods[:_MAX_MEMBERS_PER_CLASS]:
+        for method in class_methods:
             name = method.get("method_name", method.get("name"))
             if isinstance(name, str):
                 methods[(class_name, name)] = method
-        for field in class_fields[:_MAX_MEMBERS_PER_CLASS]:
+        for field in class_fields:
             name = field.get("name")
             if isinstance(name, str):
                 fields[(class_name, name)] = field

@@ -16,6 +16,7 @@ from re_agent.utils.paths import safe_identifier
 from re_agent.utils.w2s import generate_w2s_cpp_helper
 
 _CPP_TYPES = {"int32_t", "int64_t", "float", "double", "bool", "void", "void*"}
+MAX_REVIEW_HOOK_CANDIDATES = 20
 
 
 def _safe_comment(value: object) -> str:
@@ -193,6 +194,9 @@ def generate_universal_hook_for_goal(
         targets,
         generator="il2cpp",
     )
+    review_total = len(review_individual)
+    review_individual = review_individual[:MAX_REVIEW_HOOK_CANDIDATES]
+    review_omitted = review_total - len(review_individual)
 
     def group_partition(
         partition: list[AnalyzedTarget],
@@ -268,22 +272,32 @@ def generate_universal_hook_for_goal(
         "\n".join(active_installs)
         or "    // No verified hook installation selected."
     )
+    emitted_targets = active_individual + review_individual
     w2s_section = (
-        generate_w2s_cpp_helper() if any(target.hook_type == "esp_overlay" for target in targets) else ""
+        generate_w2s_cpp_helper()
+        if any(target.hook_type == "esp_overlay" for target in emitted_targets)
+        else ""
     )
 
     alt_section = ""
     alt_install_section = ""
     if alt_hook_blocks:
         alt_hooks_code = "\n\n".join(alt_hook_blocks)
+        omitted_note = (
+            f"\n// {review_omitted} additional review candidates are retained "
+            "in patch_diff_summary.txt.\n"
+            if review_omitted
+            else ""
+        )
         alt_section = f"""
 // ============================================================================
 // TARGET GROUP B (REVIEW-ONLY / UNVERIFIED - COMMENTED OUT)
 // Verify ABI, address/selector, and implementation readiness before enabling.
+// Emitting {len(review_individual)} of {review_total} review candidates.
 // ============================================================================
 /*
 {alt_hooks_code}
-*/"""
+*/{omitted_note}"""
         alt_installs_code = "\n".join(alt_installs)
         alt_install_section = f"""
     /*
@@ -340,6 +354,11 @@ def generate_cpp_hook_for_pathway(
         generator="native",
         pathway=pathway,
     )
+    review_total = len(review_targets)
+    review_targets = review_targets[:MAX_REVIEW_HOOK_CANDIDATES]
+    review_omitted = review_total - len(review_targets)
+
+    from re_agent.parity.sigscan import generate_signature
 
     def _native_block(index: int, target: AnalyzedTarget) -> str:
         safe = re.sub(
@@ -347,6 +366,12 @@ def generate_cpp_hook_for_pathway(
             "_",
             f"{target.class_name}_{target.target}",
         ).strip("_")
+        sig_comment = ""
+        if getattr(target, "instructions", None):
+            sig = generate_signature(target.instructions)
+            if sig:
+                sig_comment = f"\n// Pattern signature: {sig}"
+
         if target.method_rva is not None:
             address_evidence = f"method RVA 0x{target.method_rva:X}"
         elif target.offset is not None:
@@ -355,7 +380,7 @@ def generate_cpp_hook_for_pathway(
             address_evidence = "unresolved"
         return f"""// [{target.confidence}%] {_safe_comment(target.class_name)}::{_safe_comment(target.target)}
 // {_safe_comment(target.reason)}
-// Address evidence: {address_evidence}
+// Address evidence: {address_evidence}{sig_comment}
 
 static void candidate_{index}_{safe}(void* self) {{
     // TODO: declare the verified ABI before changing arguments or return values.
@@ -402,9 +427,13 @@ static void install_candidate_{index}() {{
 /*
 // ============================================================================
 // TARGET GROUP B (REVIEW-ONLY / UNVERIFIED - DO NOT ENABLE WITHOUT VERIFICATION)
+// Emitting {len(review_targets)} of {review_total} review candidates.
 // ============================================================================
 {secondary_code}
 */
+
+// {review_omitted} additional review candidates are retained in
+// patch_diff_summary.txt.
 
 void install_goal_hooks() {{
 {installs or "    // No primary candidate installation selected."}
@@ -440,6 +469,9 @@ def generate_frida_java_script(
         generator="frida",
         pathway=pathway,
     )
+    review_total = len(alt_targets)
+    alt_targets = alt_targets[:MAX_REVIEW_HOOK_CANDIDATES]
+    review_omitted = review_total - len(alt_targets)
 
     def _js_literal(value: Any, return_type: str, method_name: str) -> str:
         if value is None:
@@ -612,9 +644,13 @@ def generate_frida_java_script(
     /*
     // ============================================================================
     // TARGET GROUP B (REVIEW-ONLY / UNVERIFIED - VERIFICATION REQUIRED)
+    // Emitting {len(alt_targets)} of {review_total} review candidates.
     // ============================================================================
 {secondary_js}
     */
+
+    // {review_omitted} additional review candidates are retained in
+    // patch_diff_summary.txt.
 }});
 """
 

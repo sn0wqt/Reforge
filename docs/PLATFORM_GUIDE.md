@@ -90,12 +90,34 @@ Loose `libil2cpp.so` or `GameAssembly.dll` inputs also require
 `--metadata /path/to/global-metadata.dat`. Dumper execution is never downloaded
 or enabled implicitly; the path is a user trust decision.
 
+An Il2CppDumper output directory is detected from root-level artifacts such as
+`script.json`, `dump.cs`, and `il2cpp.h`. Generated `DummyDll/*.dll` files and
+the optional Visual Studio `cpp_project` are analysis artifacts and are never
+treated as evidence that the game targets Windows. When a platform-specific
+Unity image in `dump.cs` establishes the target, the pipeline reports that
+evidence. If the metadata remains ambiguous, select the known target explicitly:
+
+```bash
+re-agent pipeline --metadata-dir /path/to/Dump0 --platform ios \
+  --goal "find the player balance" --no-repack
+```
+
+Accepted metadata-only platform values are `ios`, `ios-arm64`, `android`,
+`android-arm64`, `windows`, and `windows-x64`. An unresolved metadata-only run
+stops before generating a platform-specific hook instead of guessing.
+
 Every pathway uses the same candidate policy:
 
 - Up to five candidates with confidence greater than or equal to 85% are
-  displayed and emitted as primary candidate blocks.
+  displayed as the report's high-confidence targets.
 - Every remaining candidate is retained with its exact score in the expanded
-  summary and emitted as a commented secondary block.
+  summary.
+- Hook files contain only candidates with complete activation evidence in the
+  active group. They include at most the 20 highest-ranked remaining
+  candidates as commented review blocks; the complete inventory belongs in
+  `patch_diff_summary.txt`, not in compilable hook source.
+- Per-class C++ offset-inventory headers are bounded to the 50 most relevant
+  classes to avoid thousands of redundant filesystem artifacts.
 - Behavior-changing C++ installs remain review-only until the method signature,
   calling convention, address, and lifecycle hook are grounded. The narrow
   Java/DEX primitive return-override path can activate only when the exact

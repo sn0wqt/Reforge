@@ -19,37 +19,42 @@ def parse_signature(signature: str) -> list[int | None]:
     return pattern
 
 
-def match_signature(binary_bytes: bytes | bytearray, signature: str) -> list[int]:
+def match_signature(
+    binary_bytes: bytes | bytearray,
+    signature: str,
+    alignment: int = 1,
+) -> list[int]:
     """Scan a binary buffer for matches against a signature pattern with wildcards.
+
+    Args:
+        binary_bytes: Raw binary buffer to scan.
+        signature: Space-separated hex pattern with wildcards (e.g. '55 48 89 ?? E5').
+        alignment: Memory alignment requirement (e.g. 4 for ARM64 instructions, 1 for x86).
 
     Returns a list of 0-based offset positions where the pattern matches.
     """
     pattern = parse_signature(signature)
-def match_signature(data: bytes, signature_str: str, alignment: int = 1) -> list[int]:
-    """Search byte data for a pattern signature with wildcards.
+    if not pattern:
+        return []
 
-    Args:
-        data: Raw binary byte buffer.
-        signature_str: Hex pattern string (e.g. "55 48 89 ?? E5").
-        alignment: Boundary alignment step (e.g. 4 for 32-bit instructions).
-
-    Returns:
-        List of byte offsets where the signature matched.
-    """
-    pattern = parse_signature(signature_str)
-    if not pattern or len(pattern) > len(data):
+    pat_len = len(pattern)
+    data_len = len(binary_bytes)
+    if pat_len > data_len:
         return []
 
     matches: list[int] = []
-    pat_len = len(pattern)
-    step = max(1, alignment)
-    for i in range(0, len(data) - pat_len + 1, step):
-        matched = True
-        for j, byte_val in enumerate(pattern):
-            if byte_val is not None and data[i + j] != byte_val:
-                matched = False
+    first_idx = next((i for i, b in enumerate(pattern) if b is not None), None)
+
+    for i in range(0, data_len - pat_len + 1, max(1, alignment)):
+        if first_idx is not None and binary_bytes[i + first_idx] != pattern[first_idx]:
+            continue
+
+        match = True
+        for j, p_byte in enumerate(pattern):
+            if p_byte is not None and binary_bytes[i + j] != p_byte:
+                match = False
                 break
-        if matched:
+        if match:
             matches.append(i)
 
     return matches

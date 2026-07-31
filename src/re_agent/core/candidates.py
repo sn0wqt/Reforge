@@ -6,6 +6,14 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import TextIO
 
+from re_agent.config.domain_keywords import (
+    CORE_CURRENCY_VALUE_KEYWORDS,
+    ECONOMY_DATA_HINTS,
+    NON_BALANCE_VALUE_HINTS,
+    NON_RUNTIME_CLASS_HINTS,
+    UI_PENALTY_HINTS,
+    identifier_tokens,
+)
 from re_agent.llm.analyzed_target import AnalyzedTarget
 
 PRIMARY_CONFIDENCE_THRESHOLD = 85
@@ -37,6 +45,64 @@ def _candidate_key(
     )
 
 
+def _semantic_priority(target: AnalyzedTarget) -> int:
+    """Break confidence ties in favor of state storage and direct value access."""
+    class_tokens = identifier_tokens(target.class_name)
+    member_tokens = identifier_tokens(target.target)
+    score = 0
+
+    if "wallet" in class_tokens:
+        score += 120
+    score += 45 * len(
+        class_tokens
+        & (ECONOMY_DATA_HINTS - frozenset({"model", "runner", "state"}))
+    )
+    score += 20 * len(class_tokens & {"model", "runner", "state"})
+
+    ignored_member_words = {
+        "available",
+        "current",
+        "for",
+        "get",
+        "has",
+        "m",
+        "raw",
+        "the",
+        "total",
+        "use",
+    }
+    value_words = member_tokens - ignored_member_words
+    if value_words and value_words <= CORE_CURRENCY_VALUE_KEYWORDS:
+        score += 90
+    elif member_tokens & CORE_CURRENCY_VALUE_KEYWORDS:
+        score += 20
+
+    score -= 45 * len(member_tokens & NON_BALANCE_VALUE_HINTS)
+    score -= 40 * len(class_tokens & UI_PENALTY_HINTS)
+    score -= 50 * len(class_tokens & NON_RUNTIME_CLASS_HINTS)
+    if target.return_type == "bool":
+        score -= 15
+    if target.method_rva is not None or target.offset is not None:
+        score += 5
+    if target.signature_verified:
+        score += 10
+    if target.address_verified:
+        score += 10
+    if target.implementation_ready:
+        score += 10
+    return score
+
+
+def _ranking_key(target: AnalyzedTarget) -> tuple[int, int, str, str, str]:
+    return (
+        -target.confidence,
+        -_semantic_priority(target),
+        target.class_name.casefold(),
+        target.target.casefold(),
+        target.hook_type,
+    )
+
+
 def rank_candidates(
     targets: Iterable[AnalyzedTarget],
 ) -> tuple[AnalyzedTarget, ...]:
@@ -57,12 +123,7 @@ def rank_candidates(
     exact_ranked = tuple(
         sorted(
             best.values(),
-            key=lambda target: (
-                -target.confidence,
-                target.class_name.casefold(),
-                target.target.casefold(),
-                target.hook_type,
-            ),
+            key=_ranking_key,
         )
     )
     by_member: dict[tuple[str, str, tuple[str, ...]], list[AnalyzedTarget]] = {}
@@ -115,12 +176,7 @@ def rank_candidates(
     return tuple(
         sorted(
             conflicted,
-            key=lambda target: (
-                -target.confidence,
-                target.class_name.casefold(),
-                target.target.casefold(),
-                target.hook_type,
-            ),
+            key=_ranking_key,
         )
     )
 

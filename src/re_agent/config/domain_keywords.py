@@ -95,6 +95,170 @@ CURRENCY_KEYWORDS: Final[frozenset[str]] = frozenset(
     }
 )
 
+# Some game-resource words are also heavily overloaded framework terms. They
+# require gameplay/economy context before becoming currency candidates.
+AMBIGUOUS_CURRENCY_KEYWORDS: Final[frozenset[str]] = frozenset(
+    {
+        "key",
+        "keys",
+        "token",
+        "tokens",
+    }
+)
+
+CORE_CURRENCY_VALUE_KEYWORDS: Final[frozenset[str]] = (
+    CURRENCY_KEYWORDS
+    - frozenset(
+        {
+            "buy",
+            "economy",
+            "inventory",
+            "price",
+            "purchase",
+            "shop",
+            "store",
+        }
+    )
+)
+
+ECONOMY_DATA_HINTS: Final[frozenset[str]] = frozenset(
+    {
+        "account",
+        "inventory",
+        "model",
+        "profile",
+        "runner",
+        "save",
+        "session",
+        "state",
+        "storage",
+        "wallet",
+    }
+)
+
+NON_BALANCE_VALUE_HINTS: Final[frozenset[str]] = frozenset(
+    {
+        "after",
+        "attach",
+        "before",
+        "cap",
+        "color",
+        "cooldown",
+        "cost",
+        "decimal",
+        "delay",
+        "duration",
+        "expiration",
+        "formatter",
+        "group",
+        "height",
+        "id",
+        "index",
+        "mapping",
+        "offset",
+        "percent",
+        "per",
+        "price",
+        "range",
+        "ratio",
+        "spent",
+        "symbol",
+        "text",
+        "time",
+        "width",
+    }
+)
+
+GAMEPLAY_RESOURCE_CONTEXT_HINTS: Final[frozenset[str]] = frozenset(
+    {
+        "available",
+        "balance",
+        "booster",
+        "count",
+        "currency",
+        "economy",
+        "inventory",
+        "owned",
+        "profile",
+        "purchase",
+        "reward",
+        "revive",
+        "runner",
+        "shop",
+        "store",
+        "use",
+        "wallet",
+    }
+)
+
+NON_GAMEPLAY_RESOURCE_HINTS: Final[frozenset[str]] = frozenset(
+    {
+        "aes",
+        "algorithm",
+        "assembly",
+        "auth",
+        "cache",
+        "certificate",
+        "cipher",
+        "cng",
+        "codec",
+        "composer",
+        "concurrent",
+        "container",
+        "crypto",
+        "datarelation",
+        "datarow",
+        "datatable",
+        "des",
+        "dictionary",
+        "dsa",
+        "ecdsa",
+        "encrypt",
+        "foreign",
+        "hash",
+        "hmac",
+        "input",
+        "keyboard",
+        "keyvalue",
+        "license",
+        "lookup",
+        "machine",
+        "metadata",
+        "metric",
+        "pair",
+        "playerprefs",
+        "primary",
+        "private",
+        "provider",
+        "public",
+        "persistence",
+        "reflection",
+        "rsa",
+        "secret",
+        "serialization",
+        "ssh",
+    }
+)
+
+NON_RUNTIME_CLASS_HINTS: Final[frozenset[str]] = frozenset(
+    {
+        "adapter",
+        "builder",
+        "comparer",
+        "extension",
+        "factory",
+        "formatter",
+        "helper",
+        "implementation",
+        "initializer",
+        "merger",
+        "migrator",
+        "request",
+        "serializer",
+        "test",
+    }
+)
+
 COLLISION_KEYWORDS: Final[frozenset[str]] = frozenset(
     {
         "character",
@@ -429,6 +593,38 @@ def matches_identifier_keyword(
     keyword_parts = identifier_tokens(keyword_text, min_length=min_keyword_length)
     candidate_parts = identifier_tokens(candidate_text)
     return bool(keyword_parts) and keyword_parts <= candidate_parts
+
+
+def is_contextual_currency_match(
+    keyword: object,
+    class_name: object,
+    member_name: object,
+) -> bool:
+    """Reject overloaded resource words without gameplay/economy context."""
+    keyword_text = str(keyword).strip().casefold()
+    if keyword_text not in AMBIGUOUS_CURRENCY_KEYWORDS:
+        return True
+
+    combined = f"{class_name} {member_name}"
+    tokens = identifier_tokens(combined)
+    compact = re.sub(r"[^a-z0-9]", "", combined.casefold())
+    if tokens & NON_GAMEPLAY_RESOURCE_HINTS or any(
+        hint in compact
+        for hint in NON_GAMEPLAY_RESOURCE_HINTS
+        if len(hint) >= 3
+    ):
+        return False
+    return bool(tokens & GAMEPLAY_RESOURCE_CONTEXT_HINTS)
+
+
+def has_economy_data_context(class_name: object) -> bool:
+    """Return whether a class name looks like persistent gameplay economy data."""
+    return bool(identifier_tokens(class_name) & ECONOMY_DATA_HINTS)
+
+
+def is_balance_value_member(member_name: object) -> bool:
+    """Reject prices, presentation values, identifiers, and derived metadata."""
+    return not bool(identifier_tokens(member_name) & NON_BALANCE_VALUE_HINTS)
 
 
 def filter_entity_terms(values: list[str]) -> list[str]:
