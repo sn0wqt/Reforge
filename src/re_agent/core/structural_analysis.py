@@ -150,3 +150,51 @@ def analyze_structures(
     # Sort results by confidence descending
     results.sort(key=lambda x: x.confidence, reverse=True)
     return results
+
+
+def analyze_deobfuscated_assembly(
+    class_name: str,
+    method_name: str,
+    assembly_lines: list[str],
+    target_keywords: Iterable[str] | None = None,
+) -> list[StructuralCandidate]:
+    """De-obfuscate assembly for a specific method using dynamic domain keywords."""
+    from re_agent.parity.deobfuscate import detect_xor_loops, reconstruct_stack_strings
+
+    results: list[StructuralCandidate] = []
+    recovered_words = reconstruct_stack_strings(assembly_lines)
+    xor_hits = detect_xor_loops(assembly_lines)
+
+    search_keywords = (
+        frozenset(target_keywords)
+        if target_keywords
+        else CORE_CURRENCY_VALUE_KEYWORDS
+    )
+
+    for word in recovered_words:
+        word_lower = word.lower()
+        if any(matches_identifier_keyword(k, word_lower) for k in search_keywords):
+            results.append(
+                StructuralCandidate(
+                    class_name=class_name,
+                    target_name=method_name,
+                    target_type="method",
+                    category="deobfuscated_domain_target",
+                    confidence=75,
+                    details=f"De-obfuscated stack string '{word}' recovered inside method {method_name}",
+                )
+            )
+
+    if xor_hits and not results:
+        results.append(
+            StructuralCandidate(
+                class_name=class_name,
+                target_name=method_name,
+                target_type="method",
+                category="xor_encrypted_body",
+                confidence=65,
+                details=f"Method {method_name} uses XOR decryption loops for runtime string unpacking",
+            )
+        )
+
+    return results
