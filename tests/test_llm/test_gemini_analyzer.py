@@ -191,6 +191,21 @@ def test_analyze_metadata_with_llm_mock() -> None:
     assert targets[0].method_descriptor == "(I)I"
 
 
+def test_analyze_metadata_can_surface_provider_failure() -> None:
+    class FailingProvider(MockLLMProvider):
+        def send(self, messages: list[Any], **kwargs: Any) -> str:
+            del messages, kwargs
+            raise RuntimeError("provider unavailable")
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        analyze_metadata_with_llm(
+            FailingProvider(""),
+            "give infinite coins",
+            [],
+            raise_on_provider_error=True,
+        )
+
+
 def test_grounded_dex_method_sets_verified_java_activation_facts() -> None:
     response = json.dumps(
         [

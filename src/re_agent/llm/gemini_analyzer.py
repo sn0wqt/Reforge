@@ -229,6 +229,8 @@ def analyze_metadata_with_llm(
     provider: LLMProvider,
     goal: str,
     candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]],
+    *,
+    raise_on_provider_error: bool = False,
 ) -> list[AnalyzedTarget]:
     """Send candidate metadata to the LLM for semantic analysis.
 
@@ -240,7 +242,9 @@ def analyze_metadata_with_llm(
 
     Returns:
         A list of ``AnalyzedTarget`` objects sorted by confidence
-        (highest first).  Returns an empty list if the LLM call fails.
+        (highest first). Returns an empty list if the LLM call fails unless
+        ``raise_on_provider_error`` is enabled for a caller that reports the
+        provider failure directly to the user.
     """
     metadata_summary = _build_metadata_summary(candidates)
     entity_targets = extract_entity_keywords(goal)
@@ -264,6 +268,8 @@ def analyze_metadata_with_llm(
         )
         raw_response = provider.send(messages)
     except Exception as err:
+        if raise_on_provider_error:
+            raise
         logger.warning(
             "[LLM] Metadata analysis failed through the configured provider; "
             "no implicit cross-provider retry will occur: %s",

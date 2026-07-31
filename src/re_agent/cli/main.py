@@ -121,7 +121,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly trusted Il2CppDumper executable for Unity extraction",
     )
     pipe_p.add_argument("--goal", help="Natural language goal prompt (e.g. 'give infinite coins and keys')")
-    pipe_p.add_argument("--output-dir", help="Output source directory")
+    pipe_p.add_argument(
+        "--output-dir",
+        help="Override output directory (default: Desktop/<app-name>_output)",
+    )
     pipe_p.add_argument(
         "--patch-bundle",
         action="store_true",

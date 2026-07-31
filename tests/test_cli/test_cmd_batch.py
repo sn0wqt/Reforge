@@ -111,6 +111,15 @@ def test_only_exact_executable_dex_override_is_activation_ready() -> None:
         "address_verified": True,
         "implementation_ready": True,
     }
+    assert _method_activation_facts(
+        "react-native-hermes",
+        evidence,
+        "return_override",
+    ) == {
+        "signature_verified": True,
+        "address_verified": True,
+        "implementation_ready": True,
+    }
     evidence["is_executable"] = False
     assert not any(
         _method_activation_facts(

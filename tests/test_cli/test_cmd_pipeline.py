@@ -45,6 +45,51 @@ project_profile:
     assert not (tmp_path / "src" / "ReconstructedModule.cpp").exists()
 
 
+def test_cmd_pipeline_uses_desktop_app_output_by_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text('project_profile:\n  name: "react-native"\n')
+    apk_path = tmp_path / "base.apk"
+    with zipfile.ZipFile(apk_path, "w") as archive:
+        archive.writestr(
+            "AndroidManifest.xml",
+            b'<manifest package="com.example.runner"><application /></manifest>',
+        )
+        archive.writestr(
+            "assets/index.android.bundle",
+            b'const state = {"diamonds": 1};',
+        )
+
+    output_dir = tmp_path / "Desktop" / "runner_output"
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline.default_pipeline_output_dir",
+        lambda _path: output_dir,
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.cmd_batch",
+        lambda _args: (0, [], []),
+    )
+
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "pipeline",
+            "--binary",
+            apk_path.as_posix(),
+            "--goal",
+            "grant unlimited diamonds",
+            "--no-repack",
+        ]
+    )
+
+    assert result == 0
+    assert (output_dir / "Hook_Frida.js").is_file()
+    assert (output_dir / "pipeline_manifest.json").is_file()
+
+
 def test_cmd_pipeline_react_native_hermes(
     tmp_path: Path,
     monkeypatch,
@@ -89,6 +134,140 @@ project_profile:
     assert manifest["capabilities"]["analysis_complete"] is True
     assert manifest["capabilities"]["runtime_hook_installed"] is False
     assert manifest["capabilities"]["runtime_behavior_verified"] is False
+
+
+def test_pipeline_stops_before_packaging_when_all_candidates_are_review_only(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text('project_profile:\n  name: "react-native"\n')
+    apk_path = tmp_path / "review-only.apk"
+    with zipfile.ZipFile(apk_path, "w") as archive:
+        archive.writestr(
+            "assets/index.android.bundle",
+            b'const state = {"balance": 1};',
+        )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.cmd_batch",
+        lambda _args: (0, [], []),
+    )
+
+    def fail_if_prompted(*_args, **_kwargs):
+        raise AssertionError("review-only analysis must not offer packaging")
+
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline._repack_choice",
+        fail_if_prompted,
+    )
+    output_dir = tmp_path / "review-output"
+
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "pipeline",
+            "--binary",
+            apk_path.as_posix(),
+            "--goal",
+            "grant unlimited diamonds",
+            "--output-dir",
+            output_dir.as_posix(),
+        ]
+    )
+
+    terminal = capsys.readouterr().out
+    manifest = json.loads(
+        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
+    )
+    discovery = next(
+        stage for stage in manifest["stages"] if stage["name"] == "candidate_discovery"
+    )
+    packaging = next(
+        stage for stage in manifest["stages"] if stage["name"] == "packaging"
+    )
+
+    assert result == 3
+    assert "INSUFFICIENT_EVIDENCE" in terminal
+    assert "Step 5/5: Packaging decision" not in terminal
+    assert discovery["status"] == "PARTIAL"
+    assert packaging["status"] == "SKIPPED"
+    assert manifest["capabilities"]["analysis_complete"] is False
+    assert manifest["capabilities"]["package_artifact"] is None
+
+
+def test_interactive_android_repack_applies_textual_patch_before_packaging(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text('project_profile:\n  name: "react-native"\n')
+    apk_path = tmp_path / "patchable.apk"
+    with zipfile.ZipFile(apk_path, "w") as archive:
+        archive.writestr(
+            "assets/index.android.bundle",
+            b'const state = {"coins": 1};',
+        )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.cmd_batch",
+        lambda _args: (0, [], []),
+    )
+    observed: dict[str, object] = {}
+
+    def choose_repack(_args, _architecture, **kwargs):
+        observed["choice_kwargs"] = kwargs
+        return True
+
+    def fake_repackage(
+        _binary,
+        output_dir,
+        _architecture,
+        _generated_files,
+        modified_bundle,
+    ):
+        observed["modified_bytes"] = modified_bundle.read_bytes()
+        signed = output_dir / "modded_app-aligned-signed.apk"
+        signed.write_bytes(b"signed")
+        return True, str(signed)
+
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline._repack_choice",
+        choose_repack,
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline._repackage_android",
+        fake_repackage,
+    )
+    output_dir = tmp_path / "patch-output"
+
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "pipeline",
+            "--binary",
+            apk_path.as_posix(),
+            "--goal",
+            "grant unlimited coins",
+            "--output-dir",
+            output_dir.as_posix(),
+        ]
+    )
+
+    assert result == 0
+    assert observed["choice_kwargs"] == {
+        "android_repackage_available": True,
+        "unavailable_reason": None,
+    }
+    assert observed["modified_bytes"] == b'const state = {"coins": 999999999};'
+    manifest = json.loads(
+        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["capabilities"]["static_patch_created"] is True
+    assert manifest["capabilities"]["package_artifact"].endswith(
+        "modded_app-aligned-signed.apk"
+    )
 
 
 def test_cmd_pipeline_ios_hermes_bundle_and_deployment_notes(

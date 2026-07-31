@@ -291,6 +291,34 @@ def test_frida_dex_uses_exact_recovered_overload() -> None:
     assert "return 999999999;" in code
 
 
+def test_frida_hybrid_hermes_path_activates_verified_dex_overload() -> None:
+    from re_agent.cli.cmd_hook import generate_frida_java_script
+    from re_agent.llm.analyzed_target import AnalyzedTarget
+
+    target = AnalyzedTarget(
+        "com.game.Wallet",
+        "getCoins",
+        confidence=95,
+        parameter_types=(),
+        method_descriptor="()I",
+        signature_verified=True,
+        address_verified=True,
+        implementation_ready=True,
+    )
+
+    code = generate_frida_java_script(
+        "unlimited coins",
+        [target],
+        pathway="react-native-hermes-android",
+    )
+    active, review = code.split("// TARGET GROUP B", maxsplit=1)
+
+    assert "com.game.Wallet::getCoins" in active
+    assert 'TargetClass["getCoins"].overload()' in active
+    assert "overload.implementation = function" in active
+    assert "com.game.Wallet::getCoins" not in review
+
+
 def test_frida_keeps_unverified_and_hermes_scaffolds_review_only() -> None:
     from re_agent.cli.cmd_hook import generate_frida_java_script
     from re_agent.llm.analyzed_target import AnalyzedTarget

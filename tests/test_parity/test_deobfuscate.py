@@ -37,3 +37,25 @@ def test_deobfuscate_xor_buffer() -> None:
     encrypted = bytes(b ^ 0x5A for b in plaintext)
     decrypted = deobfuscate_xor_buffer(encrypted, key)
     assert decrypted == plaintext
+
+
+def test_reconstruct_stack_strings_single_bytes() -> None:
+    from re_agent.parity.deobfuscate import reconstruct_stack_strings
+
+    asm = [
+        "mov [rsp+0x10], 0x63",  # 'c'
+        "mov [rsp+0x11], 0x6F",  # 'o'
+        "mov [rsp+0x12], 0x69",  # 'i'
+        "mov [rsp+0x13], 0x6E",  # 'n'
+    ]
+    res = reconstruct_stack_strings(asm)
+    assert res == "coin"
+
+
+def test_reconstruct_stack_strings_dword_packed() -> None:
+    from re_agent.parity.deobfuscate import reconstruct_stack_strings
+
+    # 0x6E696F63 in little endian -> 'c', 'o', 'i', 'n'
+    asm = ["mov [rsp+0x20], 0x6E696F63"]
+    res = reconstruct_stack_strings(asm)
+    assert res == "coin"
