@@ -199,16 +199,20 @@ def _decompile_hermes_bundle(bundle_path: Path, output_dir: Path) -> Path | None
             capture_output=True,
             text=True,
             timeout=300,
-            check=False,
+            check=True,
         )
+    except subprocess.CalledProcessError as exc:
+        tail = "\n".join((exc.stderr or exc.stdout or "").splitlines()[-5:])
+        print(f"[!] Hermes decompilation failed (exit {exc.returncode}).")
+        if tail:
+            print(tail)
+        return None
     except (OSError, subprocess.TimeoutExpired) as exc:
         print(f"[!] Hermes decompiler unavailable: {exc}")
         return None
-    if result.returncode != 0 or not decompiled.exists():
-        tail = "\n".join((result.stderr or result.stdout).splitlines()[-5:])
-        print(f"[!] Hermes decompilation failed (exit {result.returncode}).")
-        if tail:
-            print(tail)
+    if not decompiled.exists():
+        print("[!] Hermes decompilation failed: Output file not created.")
+        return None
         return None
     print(f"[+] Decompiled Hermes analysis view: {decompiled}")
     return decompiled
@@ -471,15 +475,15 @@ def _patch_textual_bundle(
                 capture_output=True,
                 text=True,
                 timeout=60,
-                check=False,
+                check=True,
             )
+        except subprocess.CalledProcessError as exc:
+            modified.unlink(missing_ok=True)
+            syntax_output = exc.stderr or exc.stdout or ""
+            return None, [f"Patched JavaScript failed syntax validation: {syntax_output[-1000:]}"]
         except (OSError, subprocess.TimeoutExpired) as exc:
             modified.unlink(missing_ok=True)
             return None, [f"Could not validate patched JavaScript syntax: {exc}"]
-        if syntax_result.returncode != 0:
-            modified.unlink(missing_ok=True)
-            syntax_output = syntax_result.stderr or syntax_result.stdout
-            return None, [f"Patched JavaScript failed syntax validation: {syntax_output[-1000:]}"]
         notes.append("JavaScript syntax validated with node --check.")
     else:
         notes.append("Node.js was unavailable; runtime syntax validation was not performed.")
@@ -537,11 +541,13 @@ def _run_tool(command: list[str], *, cwd: Path | None = None) -> tuple[bool, str
             stderr=subprocess.STDOUT,
             text=True,
             timeout=600,
-            check=False,
+            check=True,
         )
+    except subprocess.CalledProcessError as exc:
+        return False, exc.stdout or ""
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, str(exc)
-    return result.returncode == 0, result.stdout
+    return True, result.stdout
 
 
 def _find_apktool() -> str | None:

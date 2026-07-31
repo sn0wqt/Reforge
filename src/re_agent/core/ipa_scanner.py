@@ -16,6 +16,7 @@ from typing import Any
 from re_agent.core.engine_detector import iter_directory_files_bounded
 from re_agent.core.macho import macho_vm_address_for_file_offset
 from re_agent.core.swift_decoder import extract_swift_strings_from_bytes
+from re_agent.utils.binary_magic import is_mach_o
 
 logger = logging.getLogger(__name__)
 MAX_SCAN_FILE_BYTES = 268_435_456
@@ -32,23 +33,7 @@ class IPAScanner:
         self.min_length = min_length
         self.max_length = max_length
 
-    def is_mach_o(self, file_path: Path) -> bool:
-        """Determine if a file is a Mach-O binary based on magic numbers."""
-        try:
-            with open(file_path, "rb") as f:
-                magic = f.read(4)
-                return magic in [
-                    b"\xfe\xed\xfa\xce",  # MH_MAGIC
-                    b"\xce\xfa\xed\xfe",  # MH_CIGAM
-                    b"\xfe\xed\xfa\xcf",  # MH_MAGIC_64
-                    b"\xcf\xfa\xed\xfe",  # MH_CIGAM_64
-                    b"\xca\xfe\xba\xbe",  # FAT_MAGIC
-                    b"\xbe\xba\xfe\xca",  # FAT_CIGAM
-                    b"\xca\xfe\xba\xbf",  # FAT_MAGIC_64
-                    b"\xbf\xba\xfe\xca",  # FAT_CIGAM_64
-                ]
-        except OSError:
-            return False
+
 
     def scan(self, search_query: str | None = None) -> list[dict[str, Any]]:
         """Recursively scan IPA directory for string matches."""
@@ -114,7 +99,7 @@ class IPAScanner:
                     ".resource",
                     ".unity3d",
                 )
-                or self.is_mach_o(file_path)
+                or is_mach_o(file_path)
             ):
                 scan_kind = "binary"
             if scan_kind is None or size > remaining_bytes:
@@ -186,7 +171,7 @@ class IPAScanner:
                 data = f.read()
 
             extracted = extract_swift_strings_from_bytes(data)
-            is_macho = self.is_mach_o(file_path)
+            is_macho = is_mach_o(file_path)
 
             for item in extracted:
                 if len(results) >= MAX_SCAN_RESULTS:

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from re_agent.utils.archives import ArchiveSafetyError, inspect_archive
+from re_agent.utils.binary_magic import get_magic_bytes, is_mach_o
 
 ANDROID_HERMES_BUNDLES: Final[tuple[str, ...]] = ("index.android.bundle",)
 IOS_HERMES_BUNDLES: Final[tuple[str, ...]] = ("main.jsbundle", "index.ios.bundle")
@@ -288,37 +289,7 @@ def iter_directory_files_bounded(
 
 def resolve_hermes_bundle_member(target_path: str | Path) -> str | None:
     """Resolve the platform-specific Hermes bundle member in a package or directory."""
-    path = Path(target_path)
-    if not path.exists():
-        return None
-
-    if path.is_file() and zipfile.is_zipfile(path):
-        try:
-            with zipfile.ZipFile(path, "r") as archive:
-                names = [info.filename for info in inspect_archive(archive)]
-            platform = (
-                "ios"
-                if path.suffix.lower() == ".ipa"
-                or any(
-                    name.replace("\\", "/").casefold().startswith("payload/")
-                    for name in names
-                )
-                else "android"
-            )
-            bundle_names = IOS_HERMES_BUNDLES if platform == "ios" else ANDROID_HERMES_BUNDLES
-            return _find_member(names, bundle_names)
-        except (ArchiveSafetyError, OSError, zipfile.BadZipFile):
-            return None
-
-    if path.is_dir():
-        bundle_names = IOS_HERMES_BUNDLES + ANDROID_HERMES_BUNDLES
-        for candidate in iter_directory_files_bounded(path):
-            if candidate.name.lower() in bundle_names:
-                return str(candidate.relative_to(path)).replace("\\", "/")
-
-    if path.is_file() and path.name.lower() in IOS_HERMES_BUNDLES + ANDROID_HERMES_BUNDLES:
-        return path.name
-    return None
+    return detect_architecture_from_path(target_path).bundle_member
 
 
 def _detect_archive(path: Path) -> ArchitectureDetection:
@@ -478,11 +449,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
             bundle_member=path.name,
         )
 
-    try:
-        with path.open("rb") as binary:
-            magic = binary.read(4)
-    except OSError:
-        magic = b""
+    magic = get_magic_bytes(path)
 
     if magic.startswith(b"dex\n") or path.suffix.lower() == ".dex":
         return _detection(
@@ -532,16 +499,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
             "native-elf",
             "Native ELF (platform unresolved)",
         )
-    if magic in {
-        b"\xce\xfa\xed\xfe",
-        b"\xcf\xfa\xed\xfe",
-        b"\xfe\xed\xfa\xce",
-        b"\xfe\xed\xfa\xcf",
-        b"\xca\xfe\xba\xbe",
-        b"\xbe\xba\xfe\xca",
-        b"\xca\xfe\xba\xbf",
-        b"\xbf\xba\xfe\xca",
-    }:
+    if is_mach_o(path):
         return _detection(
             8,
             "native-ios-swift-objc",

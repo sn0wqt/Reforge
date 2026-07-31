@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/auto-re-agent)](https://pypi.org/project/auto-re-agent/)
 [![Python](https://img.shields.io/pypi/pyversions/auto-re-agent)](https://pypi.org/project/auto-re-agent/)
-[![CI](https://github.com/Dryxio/auto-re-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Dryxio/auto-re-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/sn0wqt/auto-re-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/sn0wqt/auto-re-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 `auto-re-agent` is an open-source AI reverse-engineering agent that uses Ghidra
@@ -47,7 +47,7 @@ This is conservative verification, not a proof of semantic equivalence.
 - Python 3.10+
 - Git, for the current source installation
 - Ghidra plus a configured
-  [ghidra-ai-bridge](https://github.com/Dryxio/ghidra-ai-bridge)
+  [ghidra-ai-bridge](https://github.com/sn0wqt/ghidra-ai-bridge)
 - At least one LLM setup:
   - Claude API: `ANTHROPIC_API_KEY`
   - OpenAI-compatible API: `OPENAI_API_KEY`
@@ -72,8 +72,8 @@ To install the latest development versions directly from GitHub instead:
 
 ```bash
 python3 -m pip install --upgrade \
-  "ghidra-ai-bridge @ git+https://github.com/Dryxio/ghidra-ai-bridge.git@main" \
-  "auto-re-agent[providers] @ git+https://github.com/Dryxio/auto-re-agent.git@main"
+  "ghidra-ai-bridge @ git+https://github.com/sn0wqt/ghidra-ai-bridge.git@main" \
+  "auto-re-agent[providers] @ git+https://github.com/sn0wqt/auto-re-agent.git@main"
 ```
 
 ## Set up Ghidra evidence
@@ -94,7 +94,7 @@ ghidra-bridge build-map
 ghidra-bridge info
 ```
 
-See the [bridge documentation](https://github.com/Dryxio/ghidra-ai-bridge)
+See the [bridge documentation](https://github.com/sn0wqt/ghidra-ai-bridge)
 for its Ghidra, export, and source-map configuration.
 
 ## Quick start
@@ -574,8 +574,8 @@ backend, leaving room for future IDA, Binary Ninja, or other backends.
 ## Development
 
 ```bash
-git clone https://github.com/Dryxio/auto-re-agent.git
-git clone https://github.com/Dryxio/ghidra-ai-bridge.git
+git clone https://github.com/sn0wqt/auto-re-agent.git
+git clone https://github.com/sn0wqt/ghidra-ai-bridge.git
 cd auto-re-agent
 
 python3 -m venv .venv

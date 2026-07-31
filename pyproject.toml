@@ -9,7 +9,7 @@ description = "Evidence-driven autonomous reverse-engineering agent with agentic
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
-authors = [{ name = "Dryxio" }]
+authors = [{ name = "sn0wqt", email = "asadfalah2@gmail.com" }]
 keywords = [
     "reverse-engineering",
     "ghidra",
@@ -62,9 +62,9 @@ dev = [
 re-agent = "re_agent.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/dryxio/auto-re-agent"
-Repository = "https://github.com/dryxio/auto-re-agent"
-Issues = "https://github.com/dryxio/auto-re-agent/issues"
+Homepage = "https://github.com/sn0wqt/auto-re-agent"
+Repository = "https://github.com/sn0wqt/auto-re-agent"
+Issues = "https://github.com/sn0wqt/auto-re-agent/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/re_agent"]
