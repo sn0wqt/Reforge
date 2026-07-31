@@ -60,7 +60,7 @@ def test_candidate_parity_is_blocking_and_uses_generated_body(tmp_path: Path) ->
         "REVERSED_FUNCTION: CTest::Foo (0x100)"
     )
     checker = _LLM(
-        "VERDICT: PASS\nSUMMARY: Looks right\nISSUES:\n- none\n"
+        '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}'
         "FIX_INSTRUCTIONS:\n- none"
     )
     result = reverse_single(
@@ -98,7 +98,7 @@ def test_unknown_validation_blocks_acceptance_by_default(tmp_path: Path) -> None
         StubBackend(),
         _LLM("```cpp\nvoid CTest::Foo() { NewImplementation(); }\n```"),
         checker_llm=_LLM(
-            "VERDICT: PASS\nSUMMARY: Looks right\nISSUES:\n- none\n"
+            '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}'
             "FIX_INSTRUCTIONS:\n- none"
         ),
     )
@@ -126,12 +126,11 @@ def test_explicitly_disabled_validation_does_not_block(tmp_path: Path) -> None:
         FunctionTarget("0x100", "CTest", "Foo"),
         config,
         StubBackend(),
-        _LLM("```cpp\nvoid CTest::Foo() {}\n```"),
-        checker_llm=_LLM(
-            "VERDICT: PASS\nSUMMARY: Looks right\nISSUES:\n- none\n"
-            "FIX_INSTRUCTIONS:\n- none"
-        ),
-    )
+            _LLM("```cpp\nvoid CTest::Foo() {}\n```"),
+            checker_llm=_LLM(
+                '{"verdict":"PASS","summary":"Looks right","issues":[],"fix_instructions":[]}'
+            ),
+        )
 
     assert result.validation_verdict is not None
     assert result.validation_verdict.verdict == Verdict.UNKNOWN

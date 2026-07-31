@@ -1,8 +1,49 @@
 """Subprocess execution utilities."""
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Sequence
+
+_CLI_ENVIRONMENT_KEYS = frozenset(
+    {
+        "APPDATA",
+        "CODEX_CA_CERTIFICATE",
+        "CODEX_HOME",
+        "COMSPEC",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LOCALAPPDATA",
+        "NO_COLOR",
+        "PATH",
+        "PATHEXT",
+        "PROGRAMDATA",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "SYSTEMDRIVE",
+        "SYSTEMROOT",
+        "TEMP",
+        "TERM",
+        "TMP",
+        "TMPDIR",
+        "USERPROFILE",
+        "WINDIR",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+    }
+)
+
+
+def sanitized_cli_environment() -> dict[str, str]:
+    """Return path/locale state needed by login-backed CLIs without API secrets."""
+    allowed = {name.casefold() for name in _CLI_ENVIRONMENT_KEYS}
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if name.casefold() in allowed
+    }
 
 
 def run_cmd(args: Sequence[str], timeout_s: int = 45) -> tuple[bool, str]:
@@ -30,6 +71,8 @@ def run_cmd(args: Sequence[str], timeout_s: int = 45) -> tuple[bool, str]:
         return False, f"TIMEOUT after {timeout_s}s: {' '.join(str(a) for a in args)}\n{e}"
     except FileNotFoundError:
         return False, f"Command not found: {args[0]}"
+    except OSError as exc:
+        return False, f"Command could not be started: {args[0]}: {exc}"
 
 
 def run_cmd_split(
@@ -55,3 +98,5 @@ def run_cmd_split(
         return -1, "", f"TIMEOUT after {timeout_s}s: {e}"
     except FileNotFoundError:
         return -1, "", f"Command not found: {args[0]}"
+    except OSError as exc:
+        return -1, "", f"Command could not be started: {args[0]}: {exc}"

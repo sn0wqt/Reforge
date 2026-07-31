@@ -18,6 +18,23 @@ def test_estimate_parser_accepts_class() -> None:
     assert args.limit == 3
 
 
+def test_batch_parser_exposes_binary_and_semantic_limit() -> None:
+    args = build_parser().parse_args(
+        [
+            "batch",
+            "--binary",
+            "game.apk",
+            "--game-name",
+            "Example",
+            "--limit",
+            "25",
+        ]
+    )
+    assert args.binary == "game.apk"
+    assert args.game_name == "Example"
+    assert args.limit == 25
+
+
 def test_no_command_returns_zero() -> None:
     assert main([]) == 0
 
@@ -45,12 +62,12 @@ def test_init_fails_if_exists(tmp_path: Path) -> None:
 
 def test_status_no_session(tmp_path: Path) -> None:
     config_path = tmp_path / "re-agent.yaml"
-    # Create a minimal config with session file in tmp
+    posix_tmp = tmp_path.as_posix()
     config_path.write_text(f'''
 output:
-  session_file: "{tmp_path}/progress.json"
-  report_dir: "{tmp_path}/reports"
-  log_dir: "{tmp_path}/logs"
+  session_file: "{posix_tmp}/progress.json"
+  report_dir: "{posix_tmp}/reports"
+  log_dir: "{posix_tmp}/logs"
 ''')
     result = main(["--config", str(config_path), "status"])
     assert result == 0
@@ -68,3 +85,26 @@ def test_reverse_no_target(tmp_path: Path) -> None:
     config_path.write_text("llm:\n  provider: claude\n")
     result = main(["--config", str(config_path), "reverse"])
     assert result == 1
+
+
+def test_reverse_rejects_impossible_validation_before_llm(tmp_path: Path) -> None:
+    config_path = tmp_path / "re-agent.yaml"
+    config_path.write_text(
+        """\
+llm:
+  provider: codex
+validation:
+  enabled: true
+  require_verified: true
+  build_commands: []
+  test_commands: []
+  runtime_commands: []
+""",
+        encoding="utf-8",
+    )
+
+    result = main(
+        ["--config", str(config_path), "reverse", "--address", "0x100"]
+    )
+
+    assert result == 2

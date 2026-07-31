@@ -9,6 +9,7 @@ from re_agent.backend.protocol import REBackend
 from re_agent.core.models import CheckerVerdict, FunctionTarget, Verdict
 from re_agent.llm.protocol import LLMProvider, Message
 from re_agent.utils.templates import render_template
+from re_agent.utils.untrusted import quote_untrusted
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 VERDICT_RE = re.compile(r"VERDICT:\s*(PASS|FAIL)", re.I)
@@ -20,12 +21,19 @@ FIX_RE = re.compile(r"FIX_INSTRUCTIONS:\s*\n((?:\s*-\s*.+\n?)+)", re.I)
 class CheckerAgent:
     """Verifies reversed code against Ghidra decompilation."""
 
-    def __init__(self, llm: LLMProvider, backend: REBackend) -> None:
+    def __init__(
+        self,
+        llm: LLMProvider,
+        backend: REBackend,
+        *,
+        max_prompt_chars: int = 120_000,
+    ) -> None:
         self.llm = llm
         self.backend = backend
         self._conversation_id: str | None = None
         self.last_prompt: str = ""
         self.last_response: str = ""
+        self._max_prompt_chars = max(1_000, max_prompt_chars)
 
     def check(self, code: str, target: FunctionTarget) -> CheckerVerdict:
         """Check reversed code against decompilation. Returns CheckerVerdict."""
@@ -33,14 +41,19 @@ class CheckerAgent:
         decompiled = decompile_result.raw_output
 
         system_prompt = render_template(PROMPTS_DIR / "checker_system.md")
+        evidence_limit = max(1_000, (self._max_prompt_chars - 2_000) // 2)
         task_prompt = render_template(
             PROMPTS_DIR / "checker_task.md",
-            class_name=target.class_name,
-            function_name=target.function_name,
-            address=target.address,
-            reversed_code=code,
-            decompiled=decompiled,
+            class_name=quote_untrusted(target.class_name, max_chars=512),
+            function_name=quote_untrusted(target.function_name, max_chars=512),
+            address=quote_untrusted(target.address, max_chars=128),
+            reversed_code=quote_untrusted(code, max_chars=evidence_limit),
+            decompiled=quote_untrusted(decompiled, max_chars=evidence_limit),
         )
+        if len(task_prompt) > self._max_prompt_chars:
+            raise ValueError(
+                "Checker prompt exceeds data_handling.max_prompt_chars after evidence bounding"
+            )
 
         self.last_prompt = task_prompt
 
@@ -65,12 +78,14 @@ class CheckerAgent:
         if json_verdict is not None:
             return json_verdict
 
+        # Preserve legacy FAIL as fail-closed compatibility. Never accept a
+        # regex PASS because arbitrary evidence can contain that substring.
         verdict_match = VERDICT_RE.search(response)
-        if verdict_match:
-            verdict_str = verdict_match.group(1).upper()
-            verdict = Verdict.PASS if verdict_str == "PASS" else Verdict.FAIL
-        else:
-            verdict = Verdict.UNKNOWN
+        verdict = (
+            Verdict.FAIL
+            if verdict_match and verdict_match.group(1).upper() == "FAIL"
+            else Verdict.UNKNOWN
+        )
 
         summary_match = SUMMARY_RE.search(response)
         summary = summary_match.group(1).strip() if summary_match else ""
@@ -101,8 +116,9 @@ class CheckerAgent:
     @staticmethod
     def _parse_json_verdict(response: str) -> CheckerVerdict | None:
         text = response.strip()
-        if text.startswith("```json") and text.endswith("```"):
-            text = text[7:-3].strip()
+        fenced = re.fullmatch(r"```json\s*\n(?P<body>.*)\n```", text, re.S | re.I)
+        if fenced:
+            text = fenced.group("body").strip()
         if not text.startswith("{"):
             return None
         try:
@@ -111,16 +127,30 @@ class CheckerAgent:
             return None
         if not isinstance(payload, dict):
             return None
-        raw_verdict = str(payload.get("verdict", "UNKNOWN")).upper()
+        raw_verdict = payload.get("verdict")
+        if not isinstance(raw_verdict, str):
+            return None
+        raw_verdict = raw_verdict.upper()
         verdict = {
             "PASS": Verdict.PASS,
             "FAIL": Verdict.FAIL,
         }.get(raw_verdict, Verdict.UNKNOWN)
         issues = payload.get("issues", [])
         fixes = payload.get("fix_instructions", [])
+        summary = payload.get("summary", "")
+        if (
+            not isinstance(summary, str)
+            or not isinstance(issues, list)
+            or not all(isinstance(item, str) for item in issues)
+            or not isinstance(fixes, list)
+            or not all(isinstance(item, str) for item in fixes)
+        ):
+            return None
+        if verdict == Verdict.PASS and (issues or fixes):
+            verdict = Verdict.UNKNOWN
         return CheckerVerdict(
             verdict=verdict,
-            summary=str(payload.get("summary", "")),
-            issues=[str(item) for item in issues] if isinstance(issues, list) else [],
-            fix_instructions=[str(item) for item in fixes] if isinstance(fixes, list) else [],
+            summary=summary,
+            issues=list(issues),
+            fix_instructions=list(fixes),
         )

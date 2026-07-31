@@ -40,7 +40,7 @@ class LLMConfig:
     """LLM provider configuration."""
 
     provider: str = "claude"
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str | None = None
     api_key: str | None = None
     base_url: str | None = None
     max_tokens: int = 4096
@@ -51,6 +51,11 @@ class LLMConfig:
     effort: str | None = None
     input_cost_per_million: float = 0.0
     output_cost_per_million: float = 0.0
+    service_account_file: str | None = None
+    allow_provider_fallback: bool = False
+    fallbacks: list[LLMConfig] = field(default_factory=list)
+    max_retries: int = 1
+    retry_base_delay_s: float = 1.0
 
 
 @dataclass
@@ -115,12 +120,36 @@ class ValidationConfig:
     require_tests: bool = False
     require_runtime: bool = False
     require_verified: bool = True
+    allow_host_commands: bool = False
     trust_configured_commands: bool = False
+    environment_allowlist: list[str] = field(default_factory=lambda: [
+        "COMSPEC",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+    ])
     parity_fail_on_red: bool = True
     parity_fail_on_yellow: bool = False
     command_timeout_s: int = 900
     working_directory: str = "."
     keep_project_copy: bool = False
+
+
+@dataclass
+class DataHandlingConfig:
+    """Explicit trust policy for external models and retained prompt data."""
+
+    allow_external_llm: bool = False
+    allowed_providers: list[str] = field(default_factory=list)
+    allow_prompt_logging: bool = False
+    allow_evidence_persistence: bool = False
+    max_prompt_chars: int = 120_000
 
 
 @dataclass
@@ -145,6 +174,7 @@ class ReAgentConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
     agents: AgentModelsConfig = field(default_factory=AgentModelsConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
+    data_handling: DataHandlingConfig = field(default_factory=DataHandlingConfig)
 
     @classmethod
     def create_default(cls) -> ReAgentConfig:
@@ -157,5 +187,6 @@ class ReAgentConfig:
             parity=ParityConfig(),
             orchestrator=OrchestratorConfig(),
             validation=ValidationConfig(),
+            data_handling=DataHandlingConfig(),
             output=OutputConfig(),
         )

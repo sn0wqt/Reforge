@@ -22,7 +22,8 @@ def _completed(session_id: str = "session-1") -> CompletedProcess[str]:
     return CompletedProcess(["claude"], 0, stdout=json.dumps(payload), stderr="")
 
 
-def test_claude_cli_send_parses_result_and_usage() -> None:
+def test_claude_cli_send_parses_result_and_usage(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "must-not-leak")
     provider = ClaudeCLIProvider(model="sonnet", max_budget_usd=1.5, effort="high")
     with patch("re_agent.llm.claude_cli.subprocess.run", return_value=_completed()) as run:
         result = provider.send([
@@ -37,6 +38,7 @@ def test_claude_cli_send_parses_result_and_usage() -> None:
     assert "--bare" not in command
     assert "--max-budget-usd" in command
     assert "--system-prompt" in command
+    assert "GEMINI_API_KEY" not in run.call_args.kwargs["env"]
 
 
 def test_claude_cli_uses_real_session_resume() -> None:

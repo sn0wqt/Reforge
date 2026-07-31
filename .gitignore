@@ -7,6 +7,22 @@ build/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.test-tmp/
 .cache/
 *.egg
 .env
+re-agent.yaml
+output/
+reports/
+scratch/
+plugins/
+decompiled_bundle.js
+*.apk
+*.ipa
+*.jar
+*.tar.gz
+*.exe
+
+# Service account credentials
+credentials/
+*.json.bak

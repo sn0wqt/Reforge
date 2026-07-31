@@ -39,6 +39,18 @@ llm:
   max_tokens: 4096
   temperature: 0.0
   timeout_s: 1800
+  max_retries: 1
+  retry_base_delay_s: 1.0
+  # Ordered, opt-in cross-provider failover. Authorize every route below in
+  # data_handling.allowed_providers before enabling it.
+  # fallbacks:
+  #   - provider: "codex"
+  #     model: "gpt-5.6-sol"
+  #     effort: "high"
+  #     max_retries: 0
+  #   - provider: "antigravity"
+  #     model: "gemini-3.6-flash"
+  #     max_retries: 0
   input_cost_per_million: 0.0
   output_cost_per_million: 0.0
 
@@ -50,7 +62,8 @@ llm:
 #     max_budget_usd: 1.0
 #   checker:
 #     provider: "codex"
-#     model: "gpt-5.4"
+#     model: "gpt-5.6-sol"
+#     effort: "high"
 
 backend:
   type: "ghidra-bridge"
@@ -88,13 +101,35 @@ validation:
   require_runtime: false
   # UNKNOWN (for example, no configured commands) is not accepted by default.
   require_verified: true
+  # Separate execution consent from whether passing commands count as proof.
+  allow_host_commands: false
   # Arbitrary shell commands are only evidence after an explicit trust decision.
   trust_configured_commands: false
+  # Secrets and provider credentials are not inherited by validation commands.
+  environment_allowlist:
+    - "PATH"
+    - "PATHEXT"
+    - "SYSTEMROOT"
+    - "COMSPEC"
+    - "TEMP"
+    - "TMP"
+    - "HOME"
+    - "USERPROFILE"
+    - "LANG"
+    - "LC_ALL"
   parity_fail_on_red: true
   parity_fail_on_yellow: false
   command_timeout_s: 900
   working_directory: "."
   keep_project_copy: false
+
+data_handling:
+  # Reverse-engineering evidence may contain proprietary or sensitive code.
+  allow_external_llm: false
+  allowed_providers: []
+  allow_prompt_logging: false
+  allow_evidence_persistence: false
+  max_prompt_chars: 120000
 
 output:
   report_dir: "reports/re-agent"
@@ -178,6 +213,56 @@ EXAMPLE_PROFILE_TEMPLATES: dict[str, dict[str, Any]] = {
         "class_macro": "",
         "source_root": "src",
         "source_extensions": [".cpp", ".h", ".hpp"],
+        "hooks_csv": None,
+    },
+    "ios-arm64": {
+        "name": "ios-arm64",
+        "language_standard": "C++20",
+        "prompt_rules": [
+            "Preserve ARM64 calling conventions (X0-X7 registers, FP/LR frame pointers)",
+            "Account for Objective-C runtime Messaging (objc_msgSend) and Swift ABI metadata if present",
+            "Maintain 8-byte structure alignment for 64-bit iOS pointers",
+        ],
+        "hook_patterns": [],
+        "stub_patterns": [r"TODO|NOT_IMPLEMENTED"],
+        "stub_markers": ["NOT_IMPLEMENTED"],
+        "stub_call_prefix": "__re_agent_no_stub_prefix__",
+        "class_macro": "",
+        "source_root": "src",
+        "source_extensions": [".cpp", ".mm", ".m", ".cc", ".h", ".hpp"],
+        "hooks_csv": None,
+    },
+    "android-arm64": {
+        "name": "android-arm64",
+        "language_standard": "C++20",
+        "prompt_rules": [
+            "Preserve AAPCS64 (ARM64 Android) ABI conventions and alignment",
+            "Account for Android NDK C++ STL types and JNI native method signatures (Java_...)",
+            "Maintain 8-byte pointer alignment for .so shared libraries",
+        ],
+        "hook_patterns": [],
+        "stub_patterns": [r"TODO|NOT_IMPLEMENTED"],
+        "stub_markers": ["NOT_IMPLEMENTED"],
+        "stub_call_prefix": "__re_agent_no_stub_prefix__",
+        "class_macro": "",
+        "source_root": "src",
+        "source_extensions": [".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"],
+        "hooks_csv": None,
+    },
+    "linux-x64": {
+        "name": "linux-x64",
+        "language_standard": "C++20",
+        "prompt_rules": [
+            "Assume System V AMD64 ABI (RDI, RSI, RDX, RCX, R8, R9 argument passing)",
+            "Preserve ELF dynamic linking symbol resolution and mangled C++ names",
+        ],
+        "hook_patterns": [],
+        "stub_patterns": [r"TODO|NOT_IMPLEMENTED"],
+        "stub_markers": ["NOT_IMPLEMENTED"],
+        "stub_call_prefix": "__re_agent_no_stub_prefix__",
+        "class_macro": "",
+        "source_root": "src",
+        "source_extensions": [".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"],
         "hooks_csv": None,
     },
 }
