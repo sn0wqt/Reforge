@@ -19,7 +19,7 @@ class CodexCLIProvider(BaseLLMProvider):
     def __init__(
         self,
         model: str | None = None,
-        timeout_s: int = 1800,
+        timeout_s: int = 600,
         codex_bin: str = "codex",
         effort: str | None = None,
     ) -> None:

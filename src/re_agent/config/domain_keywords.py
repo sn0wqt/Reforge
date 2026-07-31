@@ -110,13 +110,17 @@ CORE_CURRENCY_VALUE_KEYWORDS: Final[frozenset[str]] = (
     CURRENCY_KEYWORDS
     - frozenset(
         {
+            "bank",
             "buy",
+            "currencies",
+            "currency",
             "economy",
             "inventory",
             "price",
             "purchase",
             "shop",
             "store",
+            "wallet",
         }
     )
 )
@@ -191,6 +195,22 @@ GAMEPLAY_RESOURCE_CONTEXT_HINTS: Final[frozenset[str]] = frozenset(
     }
 )
 
+AD_NETWORK_KEYWORDS: Final[frozenset[str]] = frozenset(
+    {
+        "applovin",
+        "chartboost",
+        "vungle",
+        "ironsource",
+        "singular",
+        "adjust",
+        "bidmachine",
+        "googlemobileads",
+        "unityads",
+        "mopub",
+        "inmobi",
+    }
+)
+
 NON_GAMEPLAY_RESOURCE_HINTS: Final[frozenset[str]] = frozenset(
     {
         "aes",
@@ -202,6 +222,8 @@ NON_GAMEPLAY_RESOURCE_HINTS: Final[frozenset[str]] = frozenset(
         "cipher",
         "cng",
         "codec",
+        "collection",
+        "collections",
         "composer",
         "concurrent",
         "container",
@@ -237,7 +259,33 @@ NON_GAMEPLAY_RESOURCE_HINTS: Final[frozenset[str]] = frozenset(
         "secret",
         "serialization",
         "ssh",
-    }
+        "system",
+        "appstore",
+        "playstore",
+        "storekit",
+        "store_id",
+        "storeid",
+        "storeurl",
+        "store_url",
+        "admob",
+    }.union(AD_NETWORK_KEYWORDS)
+)
+
+IGNORED_SDK_PREFIXES: Final[frozenset[str]] = frozenset(
+    {
+        "com.appsflyer.",
+        "com.singular.sdk",
+        "com.adjust.sdk",
+        "com.google.android.gms",
+        "com.google.firebase",
+        "com.inmobi",
+        "com.applovin",
+        "com.chartboost",
+        "com.vungle",
+        "com.ironsource",
+        "com.unity3d.ads",
+        "inmobisdk",
+    }.union(AD_NETWORK_KEYWORDS)
 )
 
 NON_RUNTIME_CLASS_HINTS: Final[frozenset[str]] = frozenset(

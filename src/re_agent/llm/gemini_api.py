@@ -28,7 +28,7 @@ class GeminiProvider(BaseLLMProvider):
         temperature: float = 0.0,
         base_url: str | None = None,
         service_account_file: str | None = None,
-        timeout_s: int = 1800,
+        timeout_s: int = 600,
         allow_provider_fallback: bool = False,
     ) -> None:
         super().__init__()
@@ -207,3 +207,5 @@ class GeminiProvider(BaseLLMProvider):
             location=location,
             http_options=http_options,
         )
+
+

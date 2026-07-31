@@ -86,24 +86,32 @@ Interceptor.attach(targetAddress, {{
     if address is None:
         raise ValueError("Trace generation requires --class, --symbol, or --address")
     addr_val = format_address(address)
-    return f"""// Auto-generated Frida Absolute Address Interceptor Script
-const targetAddress = ptr({json.dumps(addr_val)});
+    mod_str = json.dumps(module) if module else "null"
+    return f"""// Auto-generated Frida ASLR-Aware Address Interceptor Script
+const modName = {mod_str};
+const mod = modName ? Process.findModuleByName(modName) : (Process.findModuleByName("libil2cpp.so") || Process.enumerateModules()[0]);
+if (!mod) throw new Error("Could not resolve module for address tracing");
+const targetAddress = mod.base.add(ptr({json.dumps(addr_val)}));
 
-console.log("[+] Intercepting raw address at: " + targetAddress);
+console.log("[+] Intercepting address " + {json.dumps(addr_val)} + " (Module: " + mod.name + " @ " + mod.base + " -> " + targetAddress + ")");
 
-Interceptor.attach(targetAddress, {{
-    onEnter(args) {{
-        console.log("[+] Intercepted address {addr_val} - arg0: " + args[0]);
-    }},
-    onLeave(retval) {{
-        console.log("[+] Address {addr_val} returned: " + retval);
-    }}
-}});
+try {{
+    Interceptor.attach(targetAddress, {{
+        onEnter(args) {{
+            console.log("[+] Enter " + {json.dumps(addr_val)} + " - arg0: " + args[0] + ", arg1: " + args[1]);
+        }},
+        onLeave(retval) {{
+            console.log("[+] Leave " + {json.dumps(addr_val)} + " -> " + retval);
+        }}
+    }});
+}} catch (err) {{
+    console.log("[-] Interceptor failed at " + targetAddress + ": " + err.message);
+}}
 """
 
 
 def cmd_trace(args: argparse.Namespace) -> int:
-    """Execute Frida trace script generation."""
+    """Execute Frida trace script generation and optional live execution."""
     symbol = args.symbol
     class_name = getattr(args, "class_name", None)
     address = args.address
@@ -123,6 +131,33 @@ def cmd_trace(args: argparse.Namespace) -> int:
     )
     out_path = Path(args.output or safe_filename(f"trace_{target_name}", suffix=".ts"))
     out_path.write_text(script, encoding="utf-8")
+    print(f"[+] Successfully generated Frida trace script: {out_path}")
 
-    print(f"[✓] Successfully generated Frida trace script: {out_path}")
+    attach_target = getattr(args, "attach", None)
+    spawn_target = getattr(args, "spawn", None)
+    use_usb = getattr(args, "usb", False)
+    remote_host = getattr(args, "host", None)
+
+    if attach_target or spawn_target:
+        print(f"[*] Initiating live Frida tracing session...")
+        cmd = ["frida"]
+        if use_usb:
+            cmd.append("-U")
+        elif remote_host:
+            cmd.extend(["-H", remote_host])
+
+        if spawn_target:
+            cmd.extend(["-f", spawn_target])
+        elif attach_target:
+            cmd.extend(["-n", attach_target])
+
+        cmd.extend(["-l", str(out_path)])
+        try:
+            import subprocess
+
+            print(f"[*] Running command: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True)
+        except Exception as exc:
+            print(f"[!] Live tracing session ended: {exc}", file=sys.stderr)
+
     return 0

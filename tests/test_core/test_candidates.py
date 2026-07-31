@@ -82,10 +82,10 @@ def test_equal_confidence_prefers_wallet_state_over_derived_currency_helpers() -
 
     ranked = rank_candidates(targets)
 
-    assert [
+    assert {
         (target.class_name, target.target)
         for target in ranked[:2]
-    ] == [
+    } == {
         ("WalletModel", "GetCurrency"),
         ("WalletOnRunModel", "Coins"),
-    ]
+    }

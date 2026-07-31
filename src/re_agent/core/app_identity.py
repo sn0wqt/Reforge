@@ -234,14 +234,7 @@ def _ios_archive_identity(path: Path) -> tuple[str | None, str | None]:
                 max_bytes=_MAX_INFO_PLIST_BYTES,
             )
         plist = plistlib.loads(data)
-    except (
-        ArchiveSafetyError,
-        OSError,
-        ValueError,
-        TypeError,
-        zipfile.BadZipFile,
-        plistlib.InvalidFileException,
-    ):
+    except Exception:
         return None, None
     if not isinstance(plist, dict):
         return None, None

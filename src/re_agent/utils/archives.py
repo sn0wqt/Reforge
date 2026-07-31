@@ -293,7 +293,6 @@ def _stream_info_to_path(
 ) -> None:
     _ensure_explicit_destination_contained(destination, destination_root)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    _ensure_explicit_destination_contained(destination, destination_root)
     if destination.exists() and destination.is_dir():
         raise ArchiveSafetyError(f"archive file would replace a directory: {destination}")
 
@@ -327,7 +326,6 @@ def _stream_info_to_path(
             os.fsync(target.fileno())
         if copied != info.file_size:
             raise ArchiveSafetyError("archive member length did not match central directory")
-        _ensure_explicit_destination_contained(destination, destination_root)
         os.replace(temporary_path, destination)
         temporary_path = None
     finally:
@@ -393,14 +391,6 @@ def extract_archive_bounded(
     return tuple(extracted)
 
 
-def copy_member_to_path(
-    archive: zipfile.ZipFile,
-    member: str,
-    destination: Path,
-) -> None:
-    """Compatibility alias for explicit bounded extraction."""
-
-    extract_member_bounded(archive, member, destination)
 
 
 def read_member_bounded(

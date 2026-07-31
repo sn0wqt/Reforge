@@ -11,6 +11,8 @@ def canonical_provider_name(provider: str) -> str:
         "google-gemini": "gemini",
         "antigravity-cli": "antigravity",
         "gemini-cli": "antigravity",
+        "claude-cli": "claude",
+        "codex-cli": "codex",
     }
     return aliases.get(normalized, normalized)
 

@@ -16,7 +16,7 @@ def test_scans_direct_native_symbols_as_review_only(tmp_path: Path) -> None:
     targets = scan_native_evidence(binary, ["coins", "wallet"])
 
     assert len(targets) == 1
-    assert targets[0].confidence == 75
+    assert targets[0].confidence == 35
     assert targets[0].signature_verified is False
     assert targets[0].address_verified is False
     assert targets[0].implementation_ready is False

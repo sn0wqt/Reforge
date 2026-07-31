@@ -88,7 +88,7 @@ def parse_dex_file(dex_bytes: bytes) -> list[dict[str, Any]]:
 
     try:
         declared_size, header_size, endian_tag = struct.unpack("<III", dex_bytes[32:44])
-        if declared_size != len(dex_bytes) or header_size != 112 or endian_tag != 0x12345678:
+        if declared_size > len(dex_bytes) or header_size != 112 or endian_tag != 0x12345678:
             return []
         string_ids_size, string_ids_off = struct.unpack("<II", dex_bytes[56:64])
         type_ids_size, type_ids_off = struct.unpack("<II", dex_bytes[64:72])
@@ -286,8 +286,10 @@ def parse_dex_file(dex_bytes: bytes) -> list[dict[str, Any]]:
             prototype = prototypes[proto_idx] if proto_idx < len(prototypes) else None
             definition = method_definitions.get(i)
 
-            # Format Lcom/example/ClassName; -> com.example.ClassName
-            clean_cls = raw_cls.strip(";").lstrip("L").replace("/", ".")
+            raw_cls_clean = raw_cls.strip(";")
+            if raw_cls_clean.startswith("L"):
+                raw_cls_clean = raw_cls_clean[1:]
+            clean_cls = raw_cls_clean.replace("/", ".")
             framework_prefixes = (
                 "android.", "java.", "javax.", "kotlin.", "kotlinx.", "androidx.",
                 "com.google.", "com.facebook.", "io.sentry.", "org.apache.", "org.json.",

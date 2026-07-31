@@ -53,7 +53,7 @@ def test_consumers_do_not_redefine_domain_keyword_constants() -> None:
     consumers = (
         root / "src/re_agent/cli/cmd_batch.py",
         root / "src/re_agent/cli/cmd_hook.py",
-        root / "src/re_agent/llm/gemini_analyzer.py",
+        root / "src/re_agent/llm/semantic_analyzer.py",
         root / "src/re_agent/utils/goal_parser.py",
     )
     forbidden = {

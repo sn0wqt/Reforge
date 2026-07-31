@@ -52,6 +52,8 @@ class GhidraBridgeBackend:
             raise RuntimeError(
                 f"Ghidra CLI failed: {self._cli_path} {' '.join(args)}\n{output}"
             )
+        if len(self._response_cache) >= 128:
+            self._response_cache.clear()
         self._response_cache[key] = output
         return output
 
@@ -63,6 +65,8 @@ class GhidraBridgeBackend:
         ok, output = run_cmd([self._cli_path, *args], self._timeout_s)
         if not ok:
             return None
+        if len(self._response_cache) >= 128:
+            self._response_cache.clear()
         self._response_cache[key] = output
         return output
 

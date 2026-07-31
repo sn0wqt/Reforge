@@ -11,7 +11,8 @@ from re_agent.reports.formatter import format_result
 
 
 def cmd_reverse(args: argparse.Namespace) -> int:
-    config = load_config(Path(args.config))
+    config_path = Path(args.config) if (getattr(args, "config", None) and Path(args.config).exists()) else None
+    config = load_config(config_path)
 
     if args.max_rounds is not None:
         config.orchestrator.max_review_rounds = args.max_rounds
@@ -56,7 +57,8 @@ def cmd_reverse(args: argparse.Namespace) -> int:
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
-    backend = create_backend(config.backend)
+    metadata_dir = getattr(args, "metadata_dir", None) or getattr(args, "dump", None) or getattr(args, "binary", None)
+    backend = create_backend(config.backend, metadata_dir=metadata_dir)
     session = Session(config.output.session_file)
 
     if args.address:
@@ -122,6 +124,13 @@ def cmd_reverse(args: argparse.Namespace) -> int:
 
         passed = sum(1 for r in results if r.success)
         total = len(results)
+        if total == 0:
+            print(
+                f"[!] Error: 0 exported functions found for class '{args.class_name}'. "
+                "Run 'ghidra-bridge export all' in Ghidra first or pass '--metadata-dir'.",
+                file=sys.stderr,
+            )
+            return 1
         print(f"\nResults: {passed}/{total} passed")
         return 0 if total > 0 and passed == total else 1
 

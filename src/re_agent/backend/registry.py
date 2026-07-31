@@ -5,16 +5,25 @@ from re_agent.backend.protocol import REBackend
 from re_agent.config.schema import BackendConfig
 
 
-def create_backend(config: BackendConfig) -> REBackend:
-    """Create an RE backend based on config.backend.type.
+def create_backend(
+    config: BackendConfig,
+    metadata_dir: str | Path | None = None,
+) -> REBackend:
+    """Create an RE backend based on config.backend.type or explicit metadata_dir.
 
     Supported types:
         - ``"ghidra-bridge"`` (default): Shells out to a Ghidra CLI tool.
+        - ``"il2cpp"`` / ``"metadata"``: Directly parses dump.cs / script.json metadata directory.
         - ``"stub"``: In-memory stub returning canned data (for testing).
 
     Raises:
         ValueError: If the backend type is not recognised.
     """
+    if metadata_dir is not None:
+        from re_agent.backend.il2cpp import IL2CPPBackend
+
+        return IL2CPPBackend(metadata_dir)
+
     backend_type = config.type.lower().replace("_", "-")
 
     if backend_type in ("ghidra-bridge", "ghidra"):
@@ -25,6 +34,11 @@ def create_backend(config: BackendConfig) -> REBackend:
             timeout_s=config.timeout_s,
         )
 
+    if backend_type in ("il2cpp", "metadata"):
+        from re_agent.backend.il2cpp import IL2CPPBackend
+
+        return IL2CPPBackend("output")
+
     if backend_type == "stub":
         from re_agent.backend.stub import StubBackend
 
@@ -32,5 +46,5 @@ def create_backend(config: BackendConfig) -> REBackend:
 
     raise ValueError(
         f"Unknown backend type: {config.type!r}. "
-        f"Supported: ghidra-bridge, stub"
+        f"Supported: ghidra-bridge, il2cpp, stub"
     )

@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
 
-from re_agent.config.domain_keywords import matches_identifier_keyword
+from re_agent.config.domain_keywords import IGNORED_SDK_PREFIXES, matches_identifier_keyword
 from re_agent.core.candidates import rank_candidates
 from re_agent.core.engine_detector import iter_directory_files_bounded
 from re_agent.llm.analyzed_target import AnalyzedTarget
@@ -26,13 +26,18 @@ class _BinaryReader(Protocol):
 
 def _looks_like_native_member(name: str) -> bool:
     normalized = name.replace("\\", "/")
+    lowered = normalized.casefold()
+    if any(sdk in lowered for sdk in IGNORED_SDK_PREFIXES):
+        return False
+    # Preserve UnityFramework.framework for Unity IL2CPP IPA analysis
+    if "frameworks/" in lowered and "unityframework.framework" not in lowered:
+        return False
     suffix = Path(normalized).suffix.casefold()
     if suffix in _NATIVE_SUFFIXES:
         return True
-    lowered = normalized.casefold()
     return (
         lowered.startswith("payload/")
-        and (".app/" in lowered or ".framework/" in lowered)
+        and ".app/" in lowered
         and suffix not in {".bundle", ".json", ".metallib", ".plist", ".strings"}
     )
 
@@ -60,8 +65,7 @@ def _candidate_from_string(
         or value.startswith(("$s", "_$s", "_Z", "Java_"))
         or "objc" in value.casefold()
     )
-    exact_token = any(matches_identifier_keyword(term, value) for term in matches)
-    confidence = 75 if symbol_like else 70 if exact_token else 60
+    confidence = 35 if symbol_like else 30
     safe_value = value[:240]
     return AnalyzedTarget(
         class_name=Path(module).name or "NativeBinary",
