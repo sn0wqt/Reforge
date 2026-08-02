@@ -380,8 +380,11 @@ def cmd_batch(
     known_domain_goal = any(is_entity_keyword(keyword) for keyword in direct_goal_keywords) if goal_prompt else False
     provider = None
 
-    # Only attempt LLM keyword expansion if the goal is an unrecognized custom prompt AND an LLM flag/key is set
-    if goal_prompt and not known_domain_goal and getattr(args, "llm", None):
+    # A configured provider refines the bounded local shortlist automatically for
+    # every goal. Policy is checked before any provider (including fallbacks) is
+    # initialized, and local discovery remains usable when the provider is denied
+    # or unavailable.
+    if goal_prompt:
         try:
             from re_agent.config.policy import require_provider_allowed
             from re_agent.llm.registry import create_provider
@@ -393,19 +396,21 @@ def cmd_batch(
             )
             provider = create_provider(config.llm)
         except Exception as exc:
-            logger.debug("Optional LLM expansion unavailable: %s", exc)
+            detail = " ".join(str(exc).split())[:500] or type(exc).__name__
+            logger.warning("Configured LLM semantic analysis unavailable: %s", detail)
+            print(
+                f"[!] Configured-provider semantic analysis unavailable; continuing with local evidence only: {detail}",
+                flush=True,
+            )
 
     if goal_prompt:
         known_domain_goal = any(is_entity_keyword(keyword) for keyword in direct_goal_keywords)
-        route_description = (
-            "local domain rules"
-            if known_domain_goal
-            else (
-                f"local rules plus configured {config.llm.provider} expansion"
-                if provider is not None
-                else "local rules only"
-            )
-        )
+        if provider is not None:
+            route_description = f"local rules plus configured {config.llm.provider} semantic refinement"
+        elif known_domain_goal:
+            route_description = "local domain rules"
+        else:
+            route_description = "local rules only"
         print(
             f"[+] Resolving Natural Language Goal ({route_description}): '{goal_prompt}'",
             flush=True,
@@ -639,7 +644,7 @@ def cmd_batch(
 
         # Optional configured-provider semantic refinement step.
         llm_targets: list[AnalyzedTarget] = []
-        if goal_prompt and provider is not None:
+        if goal_prompt and provider is not None and semantic_shortlist:
             analysis_started = time.monotonic()
             try:
                 from re_agent.llm.semantic_analyzer import analyze_metadata_with_llm

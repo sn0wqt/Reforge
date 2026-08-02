@@ -40,12 +40,13 @@ def test_no_command_returns_zero() -> None:
     assert main([]) == 0
 
 
-def test_version_flag() -> None:
+def test_version_flag(capsys) -> None:
     import pytest
 
     with pytest.raises(SystemExit) as exc_info:
         main(["--version"])
     assert exc_info.value.code == 0
+    assert capsys.readouterr().out.strip() == "re-agent 0.3.0"
 
 
 def test_init_creates_config(tmp_path: Path) -> None:

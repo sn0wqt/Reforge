@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from re_agent.utils.toolchain import resolve_jadx
 
 
 def parse_smali_instructions(smali_text: str) -> list[dict[str, Any]]:
@@ -64,8 +65,8 @@ def decompile_apk_or_dex(target_file: str | Path, output_dir: str | Path) -> dic
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    jadx_bin = shutil.which("jadx") or shutil.which("jadx.bat")
-    if not jadx_bin:
+    jadx_path = resolve_jadx()
+    if jadx_path is None:
         err_msg = (
             "JADX executable not found in PATH. Install JADX (github.com/skylot/jadx) to decompile Kotlin/DEX files."
         )
@@ -76,7 +77,7 @@ def decompile_apk_or_dex(target_file: str | Path, output_dir: str | Path) -> dic
         }
 
     try:
-        cmd = [jadx_bin, "-d", str(out_path), str(target_path)]
+        cmd = [str(jadx_path), "-d", str(out_path), str(target_path)]
         res = subprocess.run(
             cmd,
             capture_output=True,

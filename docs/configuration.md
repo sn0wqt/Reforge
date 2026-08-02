@@ -17,6 +17,18 @@ Supported CLI overrides > supported environment variables > YAML config > defaul
 | `RE_AGENT_LLM_BASE_URL` | `llm.base_url` |
 | `RE_AGENT_BACKEND_CLI_PATH` | `backend.cli_path` |
 | `RE_AGENT_BACKEND_TIMEOUT` | `backend.timeout_s` |
+| `RE_AGENT_TOOLS_DIR` | Managed external-tool installation root |
+| `RE_AGENT_APKTOOL` | Explicit apktool executable override |
+| `RE_AGENT_APK_SIGNER_JAR` | Trusted uber-apk-signer JAR |
+| `RE_AGENT_FRIDA_GADGET_DIR` | Managed Gadget file or ABI directory |
+| `RE_AGENT_FRIDA_GADGET_VERSION` | Gadget version used for host compatibility checks |
+| `RE_AGENT_IL2CPP_DUMPER` | Explicit Il2CppDumper executable |
+
+On Windows, `scripts/setup_android_tools.ps1` populates the packaging/toolchain
+variables at user scope and adds ADB, JADX, and Il2CppDumper to the user PATH.
+`re-agent doctor` shows the resolved paths and versions. CLI paths always win;
+environment paths then override the pinned managed installation, which is
+preferred over an unrelated PATH copy.
 
 ## LLM Config
 
@@ -115,6 +127,12 @@ data_handling:
 Provider authorization is checked independently for reverser, checker,
 batch-analysis roles, and every fallback route. Prompt/response logging remains
 disabled unless separately enabled.
+
+`batch --goal` and `pipeline --goal` automatically initialize the configured
+provider route after this policy check; there is no `--llm` flag. Candidate
+discovery runs locally first. Only a bounded evidence shortlist is submitted,
+and provider initialization errors, quota failures, timeouts, or malformed
+responses fall back to the local ranked results without discarding them.
 
 The configured `max_prompt_chars` bounds each agent evidence prompt before it
 reaches a provider. Multi-turn history is also bounded and drops the oldest

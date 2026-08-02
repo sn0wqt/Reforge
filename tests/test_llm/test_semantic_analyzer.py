@@ -261,6 +261,9 @@ def test_llm_target_after_first_twelve_members_is_still_grounded() -> None:
     assert targets[0].target == "GetCurrency"
     assert targets[0].method_rva == 0x4C3A9DC
     assert targets[0].parameter_types == ("CurrencyType",)
+    assert targets[0].address_verified is True
+    assert targets[0].signature_verified is False
+    assert targets[0].implementation_ready is False
 
 
 def test_analyze_metadata_can_surface_provider_failure() -> None:

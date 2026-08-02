@@ -5,10 +5,11 @@ from __future__ import annotations
 import contextlib
 import json
 import re
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from re_agent.utils.toolchain import resolve_il2cpp_dumper
 
 MAX_METADATA_TEXT_BYTES = 268_435_456
 
@@ -16,20 +17,16 @@ MAX_METADATA_TEXT_BYTES = 268_435_456
 def find_il2cpp_dumper(explicit_path: str | Path | None = None) -> str | None:
     """Single source of truth for resolving the Il2CppDumper CLI executable path."""
     if explicit_path:
-        p = Path(explicit_path).expanduser()
-        if p.is_file():
+        explicit = Path(explicit_path).expanduser()
+        if explicit.is_file():
             return str(explicit_path)
     cargo_bin = Path.home() / ".cargo" / "bin" / "il2cpp_dumper.exe"
-    if cargo_bin.exists():
+    resolved = resolve_il2cpp_dumper()
+    if resolved is not None:
+        return str(resolved)
+    if cargo_bin.is_file():
         return str(cargo_bin.resolve())
-    return (
-        shutil.which("il2cpp_dumper")
-        or shutil.which("il2cpp_dumper.exe")
-        or shutil.which("il2cpp-dumper")
-        or shutil.which("il2cpp-dumper.exe")
-        or shutil.which("Il2CppDumper")
-        or shutil.which("Il2CppDumper.exe")
-    )
+    return None
 
 
 def run_il2cpp_dumper_cli(
