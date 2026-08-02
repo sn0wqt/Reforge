@@ -16,6 +16,7 @@ def register_subparser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     parser = subparsers.add_parser(
         "scan-strings",
         help="Scan extracted IPA directory, plists, and binaries for strings with IDA base address mapping.",
+        allow_abbrev=False,
     )
     parser.add_argument("--ipa-path", required=True, help="Path to extracted IPA package or app directory.")
     parser.add_argument("--search", default=None, help="String query to search for.")

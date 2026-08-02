@@ -76,6 +76,91 @@ python3 -m pip install --upgrade \
   "auto-re-agent[providers] @ git+https://github.com/sn0wqt/auto-re-agent.git@main"
 ```
 
+## Android one-time setup
+
+On Windows, APK analysis/repackaging expects `apktool`, Java, and Frida to be
+on `PATH`. Once those three prerequisites are present, the repository setup
+script installs and configures everything else:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_android_tools.ps1
+
+# Open a new terminal so the persistent PATH/environment updates are visible.
+re-agent doctor
+```
+
+The script installs the following under
+`%LOCALAPPDATA%\auto-re-agent\tools` and does not add the downloaded binaries
+to Git:
+
+| Tool | Installed version | Used for |
+|---|---:|---|
+| uber-apk-signer | 1.3.0 | Aligning, signing, and verifying rebuilt APKs |
+| Frida Gadget | 17.16.4, all four Android ABIs | Non-root runtime instrumentation |
+| Android platform-tools | 37.0.1 | `adb install`, port forwarding, and device communication |
+| JADX | 1.5.6 | Deeper Java/Kotlin/DEX decompilation |
+| Il2CppDumper | 6.7.46 | Unity IL2CPP metadata sidecar generation |
+
+The installer verifies pinned SHA-256 values before extracting anything,
+stores an `install-manifest.json`, persists the required environment variables,
+and deletes its temporary ZIP downloads. Frida CLI and Gadget must remain on
+the same version. The currently pinned pair is:
+
+```powershell
+python -m pip install --upgrade "frida==17.16.4" "frida-tools==14.10.4"
+```
+
+Upstream sources: [Frida releases](https://github.com/frida/frida/releases),
+[Frida Gadget documentation](https://frida.re/docs/gadget/),
+[Android platform-tools](https://developer.android.com/tools/releases/platform-tools),
+[uber-apk-signer](https://github.com/patrickfav/uber-apk-signer/releases),
+[JADX](https://github.com/skylot/jadx/releases), and
+[Il2CppDumper](https://github.com/Perfare/Il2CppDumper/releases).
+
+### Which command should I use?
+
+| Goal | Command |
+|---|---|
+| Check whether the machine is ready | `re-agent doctor` |
+| Find and rank targets from an APK/dump | `re-agent batch --binary app.apk --goal "..."` |
+| Run detection, analysis, hook generation, and optional packaging | `re-agent pipeline --binary app.apk --goal "..."` |
+| Build a signed non-root Gadget APK | `re-agent pipeline --binary app.apk --goal "..." --embed-frida-gadget` |
+| Generate or launch a live logging trace | `re-agent trace --class CLASS --symbol METHOD ...` |
+| Deeply reconstruct functions from Ghidra/IL2CPP evidence | `re-agent reverse --address RVA` or `re-agent reverse --class CLASS` |
+
+`pipeline` is the normal end-to-end APK command. `batch` is candidate discovery
+without packaging. `trace` observes a running app; it does not search a dump.
+`reverse` is the multi-round reverser/checker reconstruction workflow, not a
+replacement for `pipeline`.
+
+### Non-root Android workflow
+
+After setup, no signer or Gadget path is required:
+
+```powershell
+re-agent pipeline `
+  --binary "C:\path\game.apk" `
+  --goal "give infinite coins" `
+  --embed-frida-gadget
+```
+
+The pipeline automatically selects the managed Gadget directory matching the
+local Frida version, covers every ABI present in the APK, rebuilds and signs
+the APK, and verifies that the loader and Gadget bytes survived signing. Then:
+
+```powershell
+adb install "C:\path\app_output\modded_app-aligned-signed.apk"
+adb forward tcp:27042 tcp:27042
+frida -H 127.0.0.1:27042 -n Gadget -l "C:\path\app_output\Hook_Frida.js"
+```
+
+If the original app is installed with a different certificate, Android will
+normally require uninstalling it first, which removes that app's local data.
+Without a user-supplied release keystore, uber-apk-signer uses its debug-signing
+mode; the result is suitable for local testing, not Play Store distribution.
+Signature pinning, anti-tamper logic, split delivery, or Play Integrity may
+still reject a rebuilt APK; setup tooling cannot truthfully guarantee otherwise.
+
 ## Set up Ghidra evidence
 
 Run these commands from the project you want to reverse:
@@ -422,6 +507,7 @@ Global options must precede the subcommand, for example
 
 | Command | Purpose |
 |---|---|
+| `re-agent doctor [--json]` | Verify analysis, packaging, Gadget, and ADB tooling |
 | `re-agent init --profile generic-cpp` | Create `re-agent.yaml` from a profile |
 | `re-agent reverse --address ADDR` | Reverse one function |
 | `re-agent reverse --class CLASS --max-functions N` | Reverse a bounded class batch |
@@ -436,6 +522,9 @@ Global options must precede the subcommand, for example
 | `re-agent batch --binary FILE --goal TEXT --limit N` | Rank a complete local candidate inventory and semantically refine a bounded shortlist |
 | `re-agent pipeline --binary FILE --goal TEXT --no-repack` | Generate pathway-aware candidate reports and review hook scaffolds |
 | `re-agent pipeline --metadata-dir DIR --platform ios --goal TEXT --no-repack` | Analyze a metadata-only IL2CPP dump with an explicit platform when auto-detection is ambiguous |
+| `re-agent trace --class CLASS --symbol METHOD --assembly Assembly-CSharp` | Generate a Frida trace script |
+| `re-agent trace ... --attach PROCESS --usb` | Generate the script and attach it through the local Frida CLI |
+| `re-agent pipeline --binary app.apk --goal TEXT --embed-frida-gadget` | Use the managed matching Gadget binaries, rebuild, sign, and verify an Android APK |
 
 Use `re-agent <command> --help` for the exact option list.
 
@@ -444,6 +533,19 @@ Generated hook files stay bounded: active blocks require complete readiness
 evidence, and at most 20 additional candidates are included as commented
 review blocks. This keeps `Hook_Goal.cpp` and `Hook_Frida.js` usable even when
 a binary exposes thousands of keyword-adjacent members.
+
+Supplying `--goal` to `batch` or `pipeline` automatically runs semantic
+refinement through the configured LLM route when `data_handling` authorizes
+every provider in that route. There is no separate `--llm` switch. The model
+receives only the bounded local shortlist, and policy denial, quota exhaustion,
+timeouts, or provider errors leave deterministic local discovery running.
+
+Native addresses and offsets are never equated with mutation safety. An
+IL2CPP/native RVA may be displayed as verified address evidence, but generated
+native interceptors log only until the return ABI, calling convention, module
+lifecycle, and replacement behavior have been independently verified. The
+narrow active path is an exact executable Java/DEX method with a recovered
+descriptor and primitive return type.
 
 ## Configuration precedence
 
@@ -457,6 +559,12 @@ variables are:
 - `RE_AGENT_LLM_BASE_URL`
 - `RE_AGENT_BACKEND_CLI_PATH`
 - `RE_AGENT_BACKEND_TIMEOUT`
+- `RE_AGENT_TOOLS_DIR`
+- `RE_AGENT_APKTOOL`
+- `RE_AGENT_APK_SIGNER_JAR`
+- `RE_AGENT_FRIDA_GADGET_DIR`
+- `RE_AGENT_FRIDA_GADGET_VERSION`
+- `RE_AGENT_IL2CPP_DUMPER`
 
 Role-specific `agents.*` configuration, validation, project profiles, parity,
 and output paths should be configured in YAML.

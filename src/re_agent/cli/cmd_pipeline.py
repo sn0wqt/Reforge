@@ -37,6 +37,13 @@ from re_agent.core.engine_detector import (
 )
 from re_agent.core.web_knowledge import lookup_game_knowledge
 from re_agent.llm.analyzed_target import AnalyzedTarget
+from re_agent.packaging.frida_gadget import (
+    GadgetEmbedding,
+    GadgetPackagingError,
+    embed_frida_gadget,
+    verify_gadget_archive,
+    write_gadget_deployment_notes,
+)
 from re_agent.utils.archives import (
     ArchiveSafetyError,
     extract_member_bounded,
@@ -45,6 +52,10 @@ from re_agent.utils.archives import (
     read_member_bounded,
 )
 from re_agent.utils.goal_parser import extract_entity_keywords
+from re_agent.utils.toolchain import (
+    resolve_apk_signer,
+    resolve_frida_gadget_path,
+)
 
 MAX_TEXT_BUNDLE_BYTES = 268_435_456
 _JS_PRIMITIVE_LITERAL = r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null"
@@ -529,26 +540,43 @@ def _find_apktool() -> str | None:
     return shutil.which("apktool") or shutil.which("apktool.bat")
 
 
+def _local_frida_version() -> str | None:
+    executable = shutil.which("frida")
+    if not executable:
+        return None
+    ok, output = _run_tool([executable, "--version"])
+    if not ok:
+        return None
+    version = output.strip().splitlines()[0] if output.strip() else ""
+    return version or None
+
+
 def _repackage_android(
     binary_path: Path,
     output_dir: Path,
     architecture: ArchitectureDetection,
     generated_files: list[Path],
     modified_bundle: Path | None,
+    *,
+    gadget_path: Path | None = None,
+    gadget_expected_sha256: str | None = None,
+    gadget_on_load: str = "resume",
+    gadget_port: int = 27042,
+    gadget_version: str | None = None,
 ) -> tuple[bool, str]:
     """Decode with apktool, inject generated artifacts, rebuild, and sign."""
     apktool = _find_apktool()
     java = shutil.which("java")
-    signer_value = os.environ.get("RE_AGENT_APK_SIGNER_JAR")
-    signer = Path(signer_value).expanduser() if signer_value else None
+    signer = resolve_apk_signer()
     if not apktool:
         return False, "apktool was not found on PATH and RE_AGENT_APKTOOL is not a valid file."
     if not java:
         return False, "Java was not found on PATH."
-    if signer is None or not signer.is_file():
+    if signer is None:
         return (
             False,
-            "Set RE_AGENT_APK_SIGNER_JAR to an explicitly trusted uber-apk-signer JAR path.",
+            "No trusted uber-apk-signer JAR was found. Run "
+            "scripts/setup_android_tools.ps1 or set RE_AGENT_APK_SIGNER_JAR.",
         )
 
     signed_apk = output_dir / "modded_app-aligned-signed.apk"
@@ -575,6 +603,20 @@ def _repackage_android(
             bundle_target.relative_to(decoded.resolve())
             bundle_target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(modified_bundle, bundle_target)
+
+        gadget_embedding: GadgetEmbedding | None = None
+        if gadget_path is not None:
+            try:
+                gadget_embedding = embed_frida_gadget(
+                    decoded,
+                    gadget_path,
+                    expected_sha256=gadget_expected_sha256,
+                    on_load=gadget_on_load,
+                    port=gadget_port,
+                    declared_version=gadget_version,
+                )
+            except GadgetPackagingError as exc:
+                return False, f"Frida Gadget embedding failed: {exc}"
 
         ok, output = _run_tool([apktool, "b", str(decoded), "-o", str(unsigned_apk)])
         if not ok or not unsigned_apk.exists():
@@ -619,6 +661,11 @@ def _repackage_android(
                 )
             if signed_bytes != modified_bundle.read_bytes():
                 return False, "Signed APK bundle content does not match the generated patch."
+        if gadget_embedding is not None:
+            try:
+                verify_gadget_archive(signer_output, gadget_embedding)
+            except (GadgetPackagingError, ArchiveSafetyError, zipfile.BadZipFile) as exc:
+                return False, f"Signed APK Gadget verification failed: {exc}"
         ok, verification_output = _run_tool(
             [
                 java,
@@ -635,6 +682,10 @@ def _repackage_android(
                 "APK signature/alignment verification failed:\n" + verification_output[-2000:],
             )
         shutil.copy2(signer_output, signed_apk)
+        if gadget_embedding is not None:
+            notes = write_gadget_deployment_notes(output_dir, gadget_embedding)
+            if notes not in generated_files:
+                generated_files.append(notes)
 
     return True, str(signed_apk)
 
@@ -677,6 +728,8 @@ def _repack_choice(
         print("[+] Keeping analysis and review-hook artifacts only.")
         return False
     if bool(getattr(args, "repack_apk", False)):
+        return True
+    if bool(getattr(args, "embed_frida_gadget", False)):
         return True
     if not sys.stdin.isatty():
         print("[*] Non-interactive input detected; defaulting to hook/report output only.")
@@ -752,6 +805,67 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         detection_target,
         platform_hint=getattr(args, "platform", None),
     )
+    gadget_requested = bool(getattr(args, "embed_frida_gadget", False))
+    gadget_cli_value = getattr(args, "frida_gadget_path", None)
+    gadget_hash = getattr(args, "frida_gadget_sha256", None)
+    gadget_cli_version = getattr(args, "frida_gadget_version", None)
+    gadget_on_load = getattr(args, "frida_gadget_on_load", None)
+    gadget_port = getattr(args, "frida_gadget_port", None)
+    if not gadget_requested and any(
+        (
+            gadget_cli_value,
+            gadget_hash,
+            gadget_cli_version,
+            gadget_on_load,
+            gadget_port,
+        )
+    ):
+        print("[!] Frida Gadget options require --embed-frida-gadget.")
+        return 2
+    gadget_value: str | None = None
+    gadget_version: str | None = None
+    if gadget_requested:
+        if bool(getattr(args, "no_repack", False)):
+            print("[!] --embed-frida-gadget cannot be combined with --no-repack.")
+            return 2
+        if binary_path is None or binary_path.suffix.casefold() != ".apk" or not architecture.is_android:
+            print("[!] Frida Gadget embedding currently supports a single Android APK input only.")
+            return 2
+        local_frida = _local_frida_version()
+        configured_version = gadget_cli_version or os.environ.get("RE_AGENT_FRIDA_GADGET_VERSION")
+        resolved_gadget = resolve_frida_gadget_path(
+            gadget_cli_value,
+            version=str(configured_version or local_frida or "") or None,
+        )
+        if resolved_gadget is None:
+            print(
+                "[!] No matching local Frida Gadget installation was found. "
+                "Run scripts/setup_android_tools.ps1 or pass --frida-gadget-path."
+            )
+            return 2
+        gadget_input = resolved_gadget
+        gadget_value = str(gadget_input)
+        gadget_version = str(configured_version) if configured_version else None
+        if (
+            gadget_version is None
+            and gadget_input.is_dir()
+            and re.fullmatch(
+                r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?",
+                gadget_input.name,
+            )
+        ):
+            gadget_version = gadget_input.name
+        if gadget_version and not re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", str(gadget_version)):
+            print("[!] --frida-gadget-version must be a semantic version such as 17.15.2.")
+            return 2
+        if gadget_version and local_frida and local_frida != gadget_version:
+            print(f"[!] Frida host/Gadget version mismatch: host={local_frida}, declared Gadget={gadget_version}.")
+            return 2
+        if not gadget_version:
+            print(
+                "[!] Gadget version was not declared. Embedding will record hashes, "
+                "but host compatibility remains unverified."
+            )
     configured_output_dir = getattr(args, "output_dir", None)
     output_dir = Path(configured_output_dir) if configured_output_dir else default_pipeline_output_dir(detection_target)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1164,7 +1278,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         print(f"[!] Static patch request was not fulfilled; see {manifest}.")
         return 4
 
-    if not groups.primary:
+    if not groups.primary and not gadget_requested:
         print(
             "\n[!] INSUFFICIENT_EVIDENCE: no candidate met the >=85% "
             "high-confidence threshold. Generated hooks are review-only; "
@@ -1188,6 +1302,11 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         print(f"[+] Review artifacts retained in: {output_dir.resolve()}")
         print(f"[+] Capability manifest: {manifest}")
         return 3
+    if not groups.primary and gadget_requested:
+        print(
+            "\n[!] No candidate met the active threshold. Continuing only because "
+            "explicit Gadget embedding was requested; generated hooks remain review-only."
+        )
 
     print("\n[*] Step 5/5: Packaging decision...")
     can_attempt_textual_patch = (
@@ -1196,7 +1315,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         and _read_text_bundle(bundle_path) is not None
         and bool(groups.primary)
     )
-    android_repackage_available = modified_bundle is not None or can_attempt_textual_patch
+    android_repackage_available = gadget_requested or modified_bundle is not None or can_attempt_textual_patch
     if architecture.is_android and not android_repackage_available:
         if bundle_path is not None and _read_text_bundle(bundle_path) is None:
             unavailable_reason = (
@@ -1226,7 +1345,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 modified_bundle=modified_bundle,
             )
             return 2
-        if modified_bundle is None and can_attempt_textual_patch:
+        if modified_bundle is None and can_attempt_textual_patch and not gadget_requested:
             assert bundle_path is not None
             modified_bundle, patch_notes = _patch_textual_bundle(
                 bundle_path,
@@ -1271,7 +1390,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 print(f"[+] Capability manifest: {manifest}")
                 return 4
             print(f"[+] Created deployable bundle patch: {modified_bundle}")
-        if modified_bundle is None:
+        if modified_bundle is None and not gadget_requested:
             print(
                 "[!] Refusing to label an APK as modded: no verified static bundle "
                 "patch or installed runtime injection strategy is available."
@@ -1292,13 +1411,28 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 modified_bundle=modified_bundle,
             )
             return 2
-        ok, result = _repackage_android(
-            binary_path,
-            output_dir,
-            architecture,
-            generated_files,
-            modified_bundle,
-        )
+        if gadget_requested:
+            assert gadget_value is not None
+            ok, result = _repackage_android(
+                binary_path,
+                output_dir,
+                architecture,
+                generated_files,
+                modified_bundle,
+                gadget_path=Path(gadget_value).expanduser(),
+                gadget_expected_sha256=str(gadget_hash) if gadget_hash else None,
+                gadget_on_load=str(gadget_on_load or "resume"),
+                gadget_port=int(gadget_port or 27042),
+                gadget_version=str(gadget_version) if gadget_version else None,
+            )
+        else:
+            ok, result = _repackage_android(
+                binary_path,
+                output_dir,
+                architecture,
+                generated_files,
+                modified_bundle,
+            )
         if not ok:
             print(f"[!] Repackaging failed: {result}")
             stages.append(PipelineStage("packaging", "FAILED", result))
@@ -1316,7 +1450,11 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             PipelineStage(
                 "packaging",
                 "SUCCEEDED",
-                "APK rebuilt, signed, and its modified bundle bytes verified.",
+                (
+                    "APK rebuilt, signed, and Frida Gadget payload/loader verified."
+                    if gadget_requested
+                    else "APK rebuilt, signed, and its modified bundle bytes verified."
+                ),
                 (result,),
             )
         )

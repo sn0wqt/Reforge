@@ -18,6 +18,19 @@ from re_agent.llm.analyzed_target import AnalyzedTarget
 
 PRIMARY_CONFIDENCE_THRESHOLD = 85
 PRIMARY_CANDIDATE_LIMIT = 5
+_JAVA_DEX_ENGINES = frozenset({"android-java-dex", "react-native-hermes"})
+_DEX_PRIMITIVE_RETURN_TYPES = frozenset(
+    {
+        "boolean",
+        "byte",
+        "char",
+        "double",
+        "float",
+        "int",
+        "long",
+        "short",
+    }
+)
 
 
 def target_activation_facts(
@@ -27,41 +40,48 @@ def target_activation_facts(
     hook_type: str = "",
     evidence: dict[str, Any] | None = None,
 ) -> dict[str, bool]:
-    """Centralized activation readiness validation across IL2CPP and DEX pathways."""
+    """Return evidence facts without treating native address evidence as ABI proof.
+
+    Only the narrowly grounded Java/DEX primitive return-override pathway is
+    implementation-ready. A native RVA or field offset may prove an address,
+    but never proves the callable signature, ABI, or safe mutation behavior.
+    """
     ev = evidence or {}
     h_type = hook_type or (target.hook_type if target is not None else "")
-    offset = (target.offset if target is not None and target.offset is not None else None) or ev.get("offset")
-    method_rva = (target.method_rva if target is not None and target.method_rva is not None else None) or ev.get("rva")
+    offset = target.offset if target is not None and target.offset is not None else ev.get("offset")
+    method_rva = target.method_rva if target is not None and target.method_rva is not None else ev.get("rva")
     descriptor = (
         target.method_descriptor if target is not None and target.method_descriptor is not None else None
     ) or ev.get("descriptor")
 
     exact_java_override = (
-        h_type == "return_override"
+        engine_type in _JAVA_DEX_ENGINES
+        and h_type == "return_override"
         and ev.get("is_declared") is True
         and ev.get("is_executable") is True
         and ev.get("is_constructor") is False
         and isinstance(ev.get("is_static"), bool)
         and bool(descriptor)
+        and str(ev.get("return_type", "")).casefold() in _DEX_PRIMITIVE_RETURN_TYPES
     )
-    il2cpp_method_verified = (
-        h_type in {"return_override", "skip_call", "nop", "speed_modify"}
+    native_method_address = (
+        engine_type.startswith("unity-il2cpp")
+        and h_type in {"return_override", "skip_call", "nop", "speed_modify"}
         and isinstance(method_rva, int)
         and not isinstance(method_rva, bool)
         and method_rva > 0
     )
-    il2cpp_field_verified = (
+    native_field_address = (
         engine_type.startswith("unity-il2cpp")
         and h_type in {"memory_patch", "multi_memory_patch"}
         and isinstance(offset, int)
         and not isinstance(offset, bool)
         and offset >= 0
     )
-    verified = exact_java_override or il2cpp_method_verified or il2cpp_field_verified
     return {
-        "signature_verified": verified,
-        "address_verified": verified,
-        "implementation_ready": verified,
+        "signature_verified": exact_java_override,
+        "address_verified": exact_java_override or native_method_address or native_field_address,
+        "implementation_ready": exact_java_override,
     }
 
 

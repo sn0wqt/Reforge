@@ -163,12 +163,55 @@ re-agent pipeline --binary app.apk --goal "grant unlimited diamonds" --repack-ap
 re-agent pipeline --binary app.apk --goal "grant unlimited diamonds" --no-repack
 ```
 
-Android repackaging requires `apktool`, Java, and an explicitly trusted signer
-path in `RE_AGENT_APK_SIGNER_JAR`. `RE_AGENT_APKTOOL` can pin a specific
-apktool executable; otherwise the PATH copy is used. Repackaging is refused
-unless a real textual bundle patch was produced. The APK is decoded, the valid
-modified bundle is injected, and the result is rebuilt and signed. A zero exit
-status is returned only when the requested artifact exists.
+Android repackaging requires `apktool`, Java, and a trusted signer. The Windows
+setup script installs the signer in the managed tool directory; alternatively,
+`RE_AGENT_APK_SIGNER_JAR` can select one explicitly. `RE_AGENT_APKTOOL` can pin
+a specific apktool executable; otherwise the PATH copy is used. Without runtime
+injection, repackaging is refused unless a real textual bundle patch was
+produced. The APK is decoded, the valid modification is injected, and the
+result is rebuilt, signed, and verified. A zero exit status is returned only
+when the requested artifact exists and the expected modified members survive
+signing.
+
+For an explicitly authorized non-root Android test workflow, the pipeline can
+embed Frida Gadget from the managed tool installation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_android_tools.ps1
+re-agent doctor
+re-agent pipeline --binary app.apk --goal "trace the player balance" `
+  --embed-frida-gadget --frida-gadget-on-load resume
+```
+
+Runtime embedding remains deliberately opt-in. The pipeline never downloads
+Gadget during an analysis run; the separate setup script performs pinned,
+hash-verified installation. `RE_AGENT_FRIDA_GADGET_DIR` and
+`RE_AGENT_FRIDA_GADGET_VERSION` select the managed input automatically.
+`--frida-gadget-path` and `--frida-gadget-version` remain explicit overrides.
+A single `.so` or `.so.xz` may be supplied for a single-ABI APK; a directory
+must contain one matching ELF Gadget for every ABI shipped by a multi-ABI APK.
+A single input can additionally be pinned with `--frida-gadget-sha256`.
+
+The packager verifies ELF type and architecture, rejects unsupported or
+missing ABI coverage and split manifests, installs a non-exported startup
+provider, writes Gadget's listen configuration, and verifies payload hashes
+plus the loader class in the signed APK. `FRIDA_GADGET_NOTES.txt` records the
+exact ADB forwarding and Frida connection command.
+
+Typical deployment after a successful pipeline run:
+
+```powershell
+adb install .\modded_app-aligned-signed.apk
+adb forward tcp:27042 tcp:27042
+frida -H 127.0.0.1:27042 -n Gadget -l .\Hook_Frida.js
+```
+
+Embedding does not make every APK compatible. Re-signing changes the signing
+certificate, and signature pinning, anti-tamper logic, Play Integrity, split
+delivery, or application-specific startup behavior can still reject the
+rebuilt package. The declared Gadget version is compared with a locally
+installed `frida --version` when available, but a version declaration is not a
+cryptographic identity; use the SHA-256 option when provenance must be pinned.
 
 Every run also writes `pipeline_manifest.json`. Pipeline success means the
 declared analysis and artifact stages completed; it does not claim that a

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -151,6 +152,10 @@ def cmd_trace(args: argparse.Namespace) -> int:
     use_usb = getattr(args, "usb", False)
     remote_host = getattr(args, "host", None)
 
+    if (use_usb or remote_host) and not (attach_target or spawn_target):
+        print("Error: --usb/--host requires --attach or --spawn", file=sys.stderr)
+        return 2
+
     if attach_target or spawn_target:
         print("[*] Initiating live Frida tracing session...")
         cmd = ["frida"]
@@ -166,11 +171,16 @@ def cmd_trace(args: argparse.Namespace) -> int:
 
         cmd.extend(["-l", str(out_path)])
         try:
-            import subprocess
-
             print(f"[*] Running command: {' '.join(cmd)}")
             subprocess.run(cmd, check=True)
-        except Exception as exc:
+        except FileNotFoundError:
+            print("[!] Frida CLI was not found on PATH.", file=sys.stderr)
+            return 2
+        except subprocess.CalledProcessError as exc:
             print(f"[!] Live tracing session ended: {exc}", file=sys.stderr)
+            return exc.returncode or 1
+        except KeyboardInterrupt:
+            print("\n[*] Live tracing interrupted by user.", file=sys.stderr)
+            return 130
 
     return 0

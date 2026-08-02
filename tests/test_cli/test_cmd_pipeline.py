@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import struct
 import zipfile
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from re_agent.cli.cmd_pipeline import (
 from re_agent.cli.main import main
 from re_agent.core.engine_detector import detect_architecture_from_path
 from re_agent.llm.analyzed_target import AnalyzedTarget
+from re_agent.packaging.frida_gadget import GADGET_LOADER_DESCRIPTOR
 
 
 def test_cmd_pipeline_generic_binary(tmp_path: Path) -> None:
@@ -43,6 +45,92 @@ project_profile:
     assert out == 3
     assert not (tmp_path / "src" / "ReconstructedModule.h").exists()
     assert not (tmp_path / "src" / "ReconstructedModule.cpp").exists()
+
+
+def test_gadget_tuning_option_requires_explicit_embedding(tmp_path: Path) -> None:
+    apk = tmp_path / "app.apk"
+    with zipfile.ZipFile(apk, "w") as archive:
+        archive.writestr("classes.dex", b"dex\n035\x00")
+
+    assert (
+        main(
+            [
+                "pipeline",
+                "--binary",
+                apk.as_posix(),
+                "--frida-gadget-port",
+                "28042",
+                "--no-repack",
+            ]
+        )
+        == 2
+    )
+
+
+def test_managed_gadget_install_is_used_without_path_flags(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    apk = tmp_path / "app.apk"
+    with zipfile.ZipFile(apk, "w") as archive:
+        archive.writestr("classes.dex", b"dex\n035\x00")
+    gadget_dir = tmp_path / "frida-gadget" / "17.16.4"
+    gadget_dir.mkdir(parents=True)
+    observed: dict[str, object] = {}
+    target = AnalyzedTarget(
+        class_name="com.example.Wallet",
+        target="getCoins",
+        hook_type="return_override",
+        confidence=90,
+        reason="test candidate",
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline.resolve_frida_gadget_path",
+        lambda _explicit=None, *, version=None: gadget_dir,
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline._local_frida_version",
+        lambda: "17.16.4",
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.cmd_batch",
+        lambda _args: (0, [], [target]),
+    )
+
+    def fake_repackage(
+        _binary,
+        output_dir,
+        _architecture,
+        _generated_files,
+        _modified_bundle,
+        **kwargs,
+    ):
+        observed.update(kwargs)
+        signed = output_dir / "modded_app-aligned-signed.apk"
+        signed.write_bytes(b"signed")
+        return True, str(signed)
+
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline._repackage_android",
+        fake_repackage,
+    )
+
+    result = main(
+        [
+            "pipeline",
+            "--binary",
+            apk.as_posix(),
+            "--goal",
+            "give infinite coins",
+            "--embed-frida-gadget",
+            "--output-dir",
+            (tmp_path / "output").as_posix(),
+        ]
+    )
+
+    assert result == 0
+    assert observed["gadget_path"] == gadget_dir
+    assert observed["gadget_version"] == "17.16.4"
 
 
 def test_cmd_pipeline_uses_desktop_app_output_by_default(
@@ -810,3 +898,76 @@ def test_android_repackage_verifies_fresh_signature_and_bundle(
     assert success is True
     assert Path(detail).is_file()
     assert verified and verified[0].name == "modded_app-aligned-signed.apk"
+
+
+def test_android_repackage_embeds_and_verifies_explicit_gadget(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    apk = tmp_path / "app.apk"
+    with zipfile.ZipFile(apk, "w") as archive:
+        archive.writestr("AndroidManifest.xml", b"binary-manifest-placeholder")
+        archive.writestr("lib/arm64-v8a/libgame.so", b"game")
+    architecture = detect_architecture_from_path(apk)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    signer = tmp_path / "signer.jar"
+    signer.write_bytes(b"jar")
+    gadget = tmp_path / "frida-gadget.so"
+    header = bytearray(64)
+    header[:4] = b"\x7fELF"
+    header[4:7] = b"\x02\x01\x01"
+    struct.pack_into("<H", header, 16, 3)
+    struct.pack_into("<H", header, 18, 183)
+    gadget.write_bytes(bytes(header) + b"GADGET")
+
+    def fake_tool(command, *, cwd=None):
+        del cwd
+        if "apktool" in command[0] and "d" in command:
+            decoded = Path(command[command.index("-o") + 1])
+            (decoded / "lib" / "arm64-v8a").mkdir(parents=True)
+            (decoded / "AndroidManifest.xml").write_text(
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android" '
+                'package="com.example.game"><application /></manifest>',
+                encoding="utf-8",
+            )
+        elif "apktool" in command[0] and "b" in command:
+            decoded = Path(command[2])
+            unsigned = Path(command[command.index("-o") + 1])
+            with zipfile.ZipFile(unsigned, "w") as archive:
+                for path in sorted(decoded.rglob("*")):
+                    if path.is_file():
+                        archive.write(path, path.relative_to(decoded).as_posix())
+                archive.writestr("classes.dex", b"dex\n035\x00" + GADGET_LOADER_DESCRIPTOR)
+        elif command[0] == "java" and "--onlyVerify" not in command:
+            unsigned = Path(command[command.index("--apks") + 1])
+            signed = unsigned.with_name("modded_app-aligned-signed.apk")
+            signed.write_bytes(unsigned.read_bytes())
+        return True, "verified"
+
+    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: "apktool")
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline.shutil.which",
+        lambda name: "java" if name == "java" else None,
+    )
+    monkeypatch.setattr("re_agent.cli.cmd_pipeline._run_tool", fake_tool)
+    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", signer.as_posix())
+
+    success, detail = _repackage_android(
+        apk,
+        output_dir,
+        architecture,
+        [],
+        None,
+        gadget_path=gadget,
+        gadget_on_load="resume",
+        gadget_port=28042,
+        gadget_version="17.15.2",
+    )
+
+    assert success is True
+    assert Path(detail).is_file()
+    assert (output_dir / "FRIDA_GADGET_NOTES.txt").is_file()
+    with zipfile.ZipFile(detail) as archive:
+        assert "lib/arm64-v8a/libreagent-gadget.so" in archive.namelist()
+        assert "assets/re-agent/frida-gadget-manifest.json" in archive.namelist()

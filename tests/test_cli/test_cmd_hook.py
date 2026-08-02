@@ -170,7 +170,7 @@ def test_universal_hook_bounds_review_candidates() -> None:
     assert len(code) < 100_000
 
 
-def test_mixed_confidence_fields_do_not_share_activation() -> None:
+def test_native_fields_remain_review_only_even_with_readiness_flags() -> None:
     from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
     from re_agent.llm.analyzed_target import AnalyzedTarget
 
@@ -203,8 +203,9 @@ def test_mixed_confidence_fields_do_not_share_activation() -> None:
     )
     active, review = code.split("// TARGET GROUP B", maxsplit=1)
 
-    assert "+ 0x10" in active
+    assert "+ 0x10" not in active
     assert "+ 0x20" not in active
+    assert "+ 0x10" in review
     assert "+ 0x20" in review
 
 
@@ -233,7 +234,7 @@ def test_unresolved_field_offset_is_never_active() -> None:
     assert "no verified field offset" in review
 
 
-def test_il2cpp_activation_requires_all_readiness_evidence() -> None:
+def test_il2cpp_mutation_remains_review_only_even_with_readiness_flags() -> None:
     from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
     from re_agent.llm.analyzed_target import AnalyzedTarget
 
@@ -259,8 +260,9 @@ def test_il2cpp_activation_requires_all_readiness_evidence() -> None:
     )
     active, review = code.split("// TARGET GROUP B", maxsplit=1)
 
-    assert "Wallet::GetCoins" in active
+    assert "Wallet::GetCoins" not in active
     assert "Wallet::GetGems" not in active
+    assert "Wallet::GetCoins" in review
     assert "Wallet::GetGems" in review
 
 
@@ -443,6 +445,20 @@ def test_frida_il2cpp_uses_only_typed_method_rvas_as_code_addresses() -> None:
     assert 'Process.getModuleByName("libil2cpp.so")' in code
     assert "module.base.add(0x1234)" in code
     assert "module.base.add(0x18)" not in code
+    assert "retval.replace" not in code
+    assert "Return (unchanged; ABI review required)" in code
+
+
+def test_standalone_rust_installation_is_disabled_pending_abi_review() -> None:
+    from re_agent.cli.cmd_hook import generate_rust_hook
+
+    code = generate_rust_hook("0x1234", "GetCoins")
+
+    active_calls = [
+        line for line in code.splitlines() if "MSHookFunction(target_ptr" in line and not line.lstrip().startswith("//")
+    ]
+    assert active_calls == []
+    assert "Disabled until the real signature, ABI" in code
 
 
 def test_esp_helper_is_emitted_once_with_matching_signature() -> None:

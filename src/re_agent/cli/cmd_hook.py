@@ -16,6 +16,11 @@ from re_agent.utils.paths import safe_identifier
 from re_agent.utils.w2s import generate_w2s_cpp_helper
 
 _CPP_TYPES = {"int32_t", "int64_t", "float", "double", "bool", "void", "void*"}
+_DEX_OVERRIDE_TYPES = {"int32_t", "int64_t", "float", "double", "bool"}
+_DEX_FRIDA_PATHWAYS = {
+    "android-java-kotlin-dex",
+    "react-native-hermes-android",
+}
 MAX_REVIEW_HOOK_CANDIDATES = 20
 
 
@@ -73,31 +78,17 @@ def _is_activation_ready(
         return False
 
     hook_type = str(getattr(target, "hook_type", ""))
-    offset = getattr(target, "offset", None)
-    if hook_type in {"memory_patch", "multi_memory_patch"} and (
-        not isinstance(offset, int) or isinstance(offset, bool) or offset < 0
-    ):
+    # Native/C++/IL2CPP mutation remains review-only until the generator has a
+    # complete signature, calling convention, module mapping, and lifecycle
+    # model. A positive RVA or field offset is not ABI evidence.
+    if generator != "frida" or pathway not in _DEX_FRIDA_PATHWAYS:
         return False
 
-    if generator == "il2cpp" or (generator == "cpp" and pathway.startswith("unity-il2cpp")):
-        return hook_type in {
-            "return_override",
-            "memory_patch",
-            "multi_memory_patch",
-            "skip_call",
-            "speed_modify",
-            "nop",
-        }
-    if generator == "frida":
-        return hook_type in {
-            "return_override",
-            "memory_patch",
-            "multi_memory_patch",
-            "skip_call",
-            "speed_modify",
-            "nop",
-        }
-    return False
+    return (
+        hook_type == "return_override"
+        and bool(getattr(target, "method_descriptor", None))
+        and str(getattr(target, "return_type", "")) in _DEX_OVERRIDE_TYPES
+    )
 
 
 def _partition_for_activation(
@@ -544,12 +535,12 @@ def generate_frida_java_script(
         const address = module.base.add(0x{method_rva:X});
         console.log("[re-agent] Attaching RVA interceptor at " + address
             + " in " + module.name);
-        Interceptor.attach(address, {{
-            onEnter(args) {{ console.log("[re-agent] Entered " + {label_js}); }},
-            onLeave(retval) {{
-                retval.replace(ptr({return_value}));
-            }}
-        }});
+         Interceptor.attach(address, {{
+             onEnter(args) {{ console.log("[re-agent] Entered " + {label_js}); }},
+             onLeave(retval) {{
+                 console.log("[re-agent] Return (unchanged; ABI review required): " + retval);
+             }}
+         }});
     }} catch (error) {{
         console.log("[!] Failed to attach " + {label_js} + ": " + error);
     }}"""
@@ -1085,8 +1076,10 @@ extern "C" {{
 
 pub unsafe fn install_rust_hook(target_ptr: *mut c_void) {{
     // Candidate address: {safe_address} ({_safe_comment(symbol)})
-    let mut original: *mut c_void = std::ptr::null_mut();
-    MSHookFunction(target_ptr, hk_{safe_symbol} as *mut c_void, &mut original);
+    let _ = target_ptr;
+    // Disabled until the real signature, ABI, and original-call behavior are verified:
+    // let mut original: *mut c_void = std::ptr::null_mut();
+    // MSHookFunction(target_ptr, hk_{safe_symbol} as *mut c_void, &mut original);
 }}
 
 unsafe extern "C" fn hk_{safe_symbol}(_self: *mut c_void) {{

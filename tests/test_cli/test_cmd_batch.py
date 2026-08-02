@@ -7,6 +7,47 @@ from pathlib import Path
 from re_agent.cli.main import main
 
 
+def _write_currency_metadata_config(
+    tmp_path: Path,
+    *,
+    allow_external_llm: bool,
+) -> tuple[Path, Path]:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text(
+        f"""\
+llm:
+  provider: codex
+  model: test-model
+data_handling:
+  allow_external_llm: {str(allow_external_llm).lower()}
+  allowed_providers: [codex]
+project_profile:
+  name: "generic-cpp"
+""",
+        encoding="utf-8",
+    )
+    metadata_dir = tmp_path / "Dump0"
+    metadata_dir.mkdir()
+    return config_file, metadata_dir
+
+
+def _currency_metadata() -> dict[str, object]:
+    return {
+        "methods": [
+            {
+                "name": "WalletModel$$GetCoins",
+                "method_name": "GetCoins",
+                "rva": 0x1234,
+                "address_kind": "method_rva",
+                "return_type": "int",
+                "parameter_types": (),
+            }
+        ],
+        "structs": [],
+        "classes": [],
+    }
+
+
 def test_cmd_batch_auto_discover(tmp_path: Path) -> None:
     config_file = tmp_path / "re-agent.yaml"
     config_file.write_text(f"""
@@ -370,3 +411,140 @@ def test_metadata_join_does_not_add_lowercase_class_aliases(
     class_names = {target.class_name for target in result[2]}
     assert "EndRunSequence" in class_names
     assert "endrunsequence" not in class_names
+
+
+def test_goal_automatically_runs_configured_semantic_analysis(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_file, metadata_dir = _write_currency_metadata_config(
+        tmp_path,
+        allow_external_llm=True,
+    )
+    provider = object()
+    calls: list[tuple[object, str, int]] = []
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        lambda _path: _currency_metadata(),
+    )
+    monkeypatch.setattr(
+        "re_agent.llm.registry.create_provider",
+        lambda _config: provider,
+    )
+
+    def fake_analysis(selected_provider, goal, candidates, **kwargs):
+        calls.append((selected_provider, goal, len(candidates)))
+        assert kwargs == {"raise_on_provider_error": True}
+        return []
+
+    monkeypatch.setattr(
+        "re_agent.llm.semantic_analyzer.analyze_metadata_with_llm",
+        fake_analysis,
+    )
+
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "batch",
+            "--metadata-dir",
+            metadata_dir.as_posix(),
+            "--platform",
+            "ios",
+            "--goal",
+            "give infinite coins",
+            "--output-dir",
+            (tmp_path / "output").as_posix(),
+        ]
+    )
+
+    assert result == 0
+    assert calls == [(provider, "give infinite coins", 1)]
+
+
+def test_denied_semantic_provider_never_initializes_and_keeps_local_results(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    config_file, metadata_dir = _write_currency_metadata_config(
+        tmp_path,
+        allow_external_llm=False,
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        lambda _path: _currency_metadata(),
+    )
+
+    def forbidden_provider(_config):
+        raise AssertionError("provider initialization must be policy-gated")
+
+    monkeypatch.setattr(
+        "re_agent.llm.registry.create_provider",
+        forbidden_provider,
+    )
+
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "batch",
+            "--metadata-dir",
+            metadata_dir.as_posix(),
+            "--platform",
+            "ios",
+            "--goal",
+            "give infinite coins",
+            "--output-dir",
+            (tmp_path / "output").as_posix(),
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "continuing with local evidence only" in output
+    assert "not authorized by data_handling" in output
+
+
+def test_semantic_provider_failure_keeps_local_results(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    config_file, metadata_dir = _write_currency_metadata_config(
+        tmp_path,
+        allow_external_llm=True,
+    )
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        lambda _path: _currency_metadata(),
+    )
+    monkeypatch.setattr(
+        "re_agent.llm.registry.create_provider",
+        lambda _config: object(),
+    )
+    monkeypatch.setattr(
+        "re_agent.llm.semantic_analyzer.analyze_metadata_with_llm",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("quota exhausted")),
+    )
+
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "batch",
+            "--metadata-dir",
+            metadata_dir.as_posix(),
+            "--platform",
+            "ios",
+            "--goal",
+            "give infinite coins",
+            "--output-dir",
+            (tmp_path / "output").as_posix(),
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "Configured-provider analysis failed" in output
+    assert "quota exhausted" in output

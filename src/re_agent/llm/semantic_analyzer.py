@@ -25,7 +25,7 @@ from re_agent.config.domain_keywords import (
     is_contextual_currency_match,
     matches_identifier_keyword,
 )
-from re_agent.core.candidates import rank_candidates
+from re_agent.core.candidates import rank_candidates, target_activation_facts
 from re_agent.llm.analyzed_target import AnalyzedTarget
 from re_agent.llm.protocol import LLMProvider, Message
 from re_agent.utils.goal_parser import extract_entity_keywords
@@ -494,27 +494,19 @@ def _ground_targets(
                 target.confidence = 88
             else:
                 target.confidence = 75
-            exact_java_override = (
-                target.hook_type == "return_override"
-                and evidence.get("is_declared") is True
-                and evidence.get("is_executable") is True
-                and evidence.get("is_constructor") is False
-                and isinstance(evidence.get("is_static"), bool)
-                and bool(target.method_descriptor)
-                and evidence_type.casefold() in _DEX_RETURN_TYPES
+            evidence_engine = (
+                "android-java-dex"
+                if evidence.get("is_declared") is not None or bool(target.method_descriptor)
+                else "unity-il2cpp"
             )
-            il2cpp_method_verified = (
-                target.hook_type == "return_override" and isinstance(target.method_rva, int) and target.method_rva > 0
+            activation = target_activation_facts(
+                target,
+                engine_type=evidence_engine,
+                evidence=evidence,
             )
-            il2cpp_field_verified = (
-                target.hook_type in {"memory_patch", "multi_memory_patch"}
-                and isinstance(target.offset, int)
-                and target.offset >= 0
-            )
-            verified = exact_java_override or il2cpp_method_verified or il2cpp_field_verified
-            target.signature_verified = verified
-            target.address_verified = verified
-            target.implementation_ready = verified
+            target.signature_verified = activation["signature_verified"]
+            target.address_verified = activation["address_verified"]
+            target.implementation_ready = activation["implementation_ready"]
             target.reason = f"Exact method matched submitted metadata: {target.reason}"
         grounded.append(target)
     return list(rank_candidates(grounded))
