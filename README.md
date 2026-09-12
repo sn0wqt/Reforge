@@ -1,6 +1,6 @@
 # Reforge
 
-[![CI](https://github.com/sn0wqt/auto-re-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/sn0wqt/auto-re-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/sn0wqt/Reforge/actions/workflows/ci.yml/badge.svg)](https://github.com/sn0wqt/Reforge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 `Reforge` is an open-source AI reverse-engineering agent that uses Ghidra
@@ -55,13 +55,13 @@ This is conservative verification, not a proof of semantic equivalence.
 Install the agent and its Ghidra query bridge from PyPI:
 
 ```bash
-python3 -m pip install --upgrade "auto-re-agent[providers,ghidra-bridge]>=0.3.0"
+python3 -m pip install --upgrade "reforge[providers,ghidra-bridge]>=0.3.0"
 ```
 
 For headless Ghidra exports, install the bridge with its PyGhidra extra:
 
 ```bash
-python3 -m pip install --upgrade "auto-re-agent[providers,headless]>=0.3.0"
+python3 -m pip install --upgrade "reforge[providers,headless]>=0.3.0"
 ```
 
 To install the latest development versions directly from GitHub instead:
@@ -69,7 +69,7 @@ To install the latest development versions directly from GitHub instead:
 ```bash
 python3 -m pip install --upgrade \
   "ghidra-ai-bridge @ git+https://github.com/sn0wqt/ghidra-ai-bridge.git@main" \
-  "auto-re-agent[providers] @ git+https://github.com/sn0wqt/auto-re-agent.git@main"
+  "reforge[providers] @ git+https://github.com/sn0wqt/Reforge.git@main"
 ```
 
 ## Android one-time setup
@@ -86,7 +86,7 @@ re-agent doctor
 ```
 
 The script installs the following under
-`%LOCALAPPDATA%\auto-re-agent\tools` and does not add the downloaded binaries
+`%LOCALAPPDATA%\Reforge\tools` and does not add the downloaded binaries
 to Git:
 
 | Tool | Installed version | Used for |
@@ -323,7 +323,7 @@ llm:
 ```
 
 Codex uses the authenticated local `codex exec` command; it does not use
-`api_key` or `service_account_file`. re-agent sends prompts over stdin and runs
+`api_key` or `service_account_file`. Reforge sends prompts over stdin and runs
 Codex with a read-only sandbox and ephemeral session storage. CLI-provider
 `max_tokens` values are planning allowances, not hard output limits. The
 recommended quality-first checker pin is `gpt-5.6-sol`; `effort: high` becomes
@@ -333,7 +333,7 @@ Codex's `model_reasoning_effort="high"` setting. Keep Codex CLI current:
 npm install -g @openai/codex@latest
 ```
 
-If the server reports that the model requires a newer Codex version, re-agent
+If the server reports that the model requires a newer Codex version, Reforge
 classifies that route as unavailable so an explicitly configured operational
 fallback can continue.
 
@@ -599,19 +599,19 @@ latest state per address, while its `runs` list preserves recorded attempts.
 |---|---|---|---|
 | Traditional decompiler | Translate machine code into analyst-readable pseudocode | Decompiler analysis; correctness is assessed manually | Function-by-function analysis |
 | Interactive Ghidra AI or MCP assistant | Let an analyst ask questions and request Ghidra operations | Depends on the analyst, prompts, and connected tools | Human-directed conversation |
-| `auto-re-agent` | Generate and validate candidate C/C++ implementations | Ghidra evidence, independent checker, structural checks, configured build/tests, and parity signals | Bounded autonomous reverser/checker pipeline with persistent reports |
+| `Reforge` | Generate and validate candidate C/C++ implementations | Ghidra evidence, independent checker, structural checks, configured build/tests, and parity signals | Bounded autonomous reverser/checker pipeline with persistent reports |
 
-`auto-re-agent` complements Ghidra rather than replacing it: Ghidra supplies
+`Reforge` complements Ghidra rather than replacing it: Ghidra supplies
 the program analysis, while the agent orchestrates evidence collection,
 implementation, review, validation, and reporting. It is designed for
 repeatable project-scale workflows, not just one-off decompiler chat.
 
 ## Frequently asked questions
 
-### Is auto-re-agent a decompiler?
+### Is Reforge a decompiler?
 
 Not in the traditional sense. Ghidra performs the disassembly, decompilation,
-and program analysis. `auto-re-agent` uses that evidence plus project source
+and program analysis. `Reforge` uses that evidence plus project source
 context and LLMs to produce and validate candidate C/C++ implementations.
 
 ### Does it require Ghidra?
@@ -653,7 +653,7 @@ cost depends on the selected models, evidence volume, and target complexity.
 
 ## Safety and limitations
 
-- re-agent does not commit or push generated code;
+- Reforge does not commit or push generated code;
 - candidate generation does not overwrite the original source tree;
 - review rounds, evidence actions, and per-function attempts are bounded;
 - prompt/response logs are written per review round, not for every internal
@@ -672,15 +672,15 @@ cost depends on the selected models, evidence volume, and target complexity.
 ## Why ghidra-ai-bridge stays separate
 
 `ghidra-ai-bridge` remains an independent analysis package with a versioned
-JSON/CLI evidence surface. auto-re-agent consumes it through a capability-based
+JSON/CLI evidence surface. Reforge consumes it through a capability-based
 backend, leaving room for future IDA, Binary Ninja, or other backends.
 
 ## Development
 
 ```bash
-git clone https://github.com/sn0wqt/auto-re-agent.git
+git clone https://github.com/sn0wqt/Reforge.git
 git clone https://github.com/sn0wqt/ghidra-ai-bridge.git
-cd auto-re-agent
+cd Reforge
 
 python3 -m venv .venv
 source .venv/bin/activate
