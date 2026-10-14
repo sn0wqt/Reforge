@@ -69,6 +69,119 @@ def test_cmd_hook_rust(tmp_path: Path) -> None:
     assert "MSHookFunction" in content
 
 
+def test_cmd_hook_linux_uses_elf_scaffold(tmp_path: Path) -> None:
+    hook_file = tmp_path / "Hook_Linux.cpp"
+
+    result = main(
+        [
+            "hook",
+            "--address",
+            "0x4000",
+            "--symbol",
+            "Tick",
+            "--platform",
+            "linux-x64",
+            "--output",
+            hook_file.as_posix(),
+        ]
+    )
+
+    assert result == 0
+    content = hook_file.read_text(encoding="utf-8")
+    assert "Linux ELF hook scaffold" in content
+    assert "windows.h" not in content
+
+
+def test_cmd_hook_does_not_fabricate_missing_target(tmp_path: Path) -> None:
+    output = tmp_path / "Hook.cpp"
+
+    assert main(["hook", "--output", output.as_posix()]) == 2
+    assert not output.exists()
+
+
+def test_cmd_hook_does_not_assume_windows_for_neutral_profile(tmp_path: Path) -> None:
+    output = tmp_path / "Hook.cpp"
+
+    result = main(
+        [
+            "hook",
+            "--symbol",
+            "Update",
+            "--address",
+            "0x1234",
+            "--output",
+            output.as_posix(),
+        ]
+    )
+
+    assert result == 2
+    assert not output.exists()
+    assert main(["hook", "--symbol", "Update", "--output", output.as_posix()]) == 2
+    assert not output.exists()
+
+
+def test_cmd_hook_dynamic_rejects_ignored_address(tmp_path: Path) -> None:
+    output = tmp_path / "Hook.cpp"
+
+    result = main(
+        [
+            "hook",
+            "--dynamic",
+            "--symbol",
+            "GetValue",
+            "--address",
+            "0x1234",
+            "--output",
+            output.as_posix(),
+        ]
+    )
+
+    assert result == 2
+    assert not output.exists()
+
+
+def test_cmd_hook_dynamic_platform_is_recorded(tmp_path: Path) -> None:
+    output = tmp_path / "Hook.cpp"
+
+    result = main(
+        [
+            "hook",
+            "--dynamic",
+            "--class",
+            "Wallet",
+            "--symbol",
+            "GetValue",
+            "--platform",
+            "android-arm64",
+            "--output",
+            output.as_posix(),
+        ]
+    )
+
+    assert result == 0
+    assert "Target platform: android-arm64" in output.read_text(encoding="utf-8")
+
+
+def test_cmd_hook_dynamic_does_not_invent_target_class(tmp_path: Path) -> None:
+    output = tmp_path / "Hook.cpp"
+
+    result = main(
+        [
+            "hook",
+            "--dynamic",
+            "--symbol",
+            "GetValue",
+            "--platform",
+            "android",
+            "--output",
+            output.as_posix(),
+        ]
+    )
+
+    assert result == 2
+    assert not output.exists()
+
+
 def test_cmd_hook_sanitizes_complex_symbols() -> None:
     from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
     from re_agent.llm.analyzed_target import AnalyzedTarget
@@ -418,7 +531,7 @@ def test_native_todo_scaffold_is_review_only_even_with_readiness_flags() -> None
     assert "libgame.so::GetCoins" in review
 
 
-def test_frida_il2cpp_uses_only_typed_method_rvas_as_code_addresses() -> None:
+def test_frida_il2cpp_activates_only_verified_integral_method_rvas() -> None:
     from re_agent.cli.cmd_hook import generate_frida_java_script
     from re_agent.llm.analyzed_target import AnalyzedTarget
 
@@ -427,6 +540,11 @@ def test_frida_il2cpp_uses_only_typed_method_rvas_as_code_addresses() -> None:
         "GetCoins",
         confidence=95,
         method_rva=0x1234,
+        return_type="int32_t",
+        return_value="999999999",
+        signature_verified=True,
+        address_verified=True,
+        implementation_ready=True,
     )
     field = AnalyzedTarget(
         "Wallet",
@@ -445,8 +563,39 @@ def test_frida_il2cpp_uses_only_typed_method_rvas_as_code_addresses() -> None:
     assert 'Process.getModuleByName("libil2cpp.so")' in code
     assert "module.base.add(0x1234)" in code
     assert "module.base.add(0x18)" not in code
-    assert "retval.replace" not in code
-    assert "Return (unchanged; ABI review required)" in code
+    active, review = code.split("// TARGET GROUP B", maxsplit=1)
+    assert 'retval.replace(ptr("0x3B9AC9FF"))' in active
+    assert "Wallet::coins" not in active
+    assert "Wallet::coins" in review
+
+
+def test_frida_il2cpp_float_return_remains_review_only() -> None:
+    from re_agent.cli.cmd_hook import generate_frida_java_script
+    from re_agent.llm.analyzed_target import AnalyzedTarget
+
+    target = AnalyzedTarget(
+        "MovementState",
+        "GetSpeed",
+        confidence=95,
+        method_rva=0x4567,
+        return_type="float",
+        return_value="3.0",
+        signature_verified=True,
+        address_verified=True,
+        implementation_ready=True,
+    )
+
+    code = generate_frida_java_script(
+        "set speed to 3",
+        [target],
+        pathway="unity-il2cpp-android",
+    )
+    active, review = code.split("// TARGET GROUP B", maxsplit=1)
+
+    assert "MovementState::GetSpeed" not in active
+    assert "MovementState::GetSpeed" in review
+    assert "retval.replace" not in review
+    assert "Return unchanged; ABI/type verification required" in review
 
 
 def test_standalone_rust_installation_is_disabled_pending_abi_review() -> None:

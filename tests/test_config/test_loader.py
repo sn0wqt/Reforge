@@ -6,19 +6,91 @@ from pathlib import Path
 
 import pytest
 
-from re_agent.config.loader import load_config
+from re_agent.config.defaults import DEFAULT_CONFIG_YAML
+from re_agent.config.loader import discover_config_path, load_config
 from re_agent.config.schema import ReAgentConfig
 
 
 def test_load_default_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("re_agent.config.loader.discover_config_path", lambda: None)
     config = load_config(None)
     assert isinstance(config, ReAgentConfig)
-    assert config.llm.provider == "claude"
+    assert config.llm.provider == "codex"
+    assert config.project_profile.name == "generic-cpp"
+    assert config.project_profile.source_root == "output"
     assert config.backend.type == "ghidra-bridge"
     assert config.backend.cli_path == "ghidra-bridge"
     assert config.orchestrator.max_review_rounds == 4
     assert config.orchestrator.objective_verifier_enabled is True
+
+
+def test_init_template_matches_schema_except_validation_opt_in(tmp_path: Path) -> None:
+    config_path = tmp_path / "re-agent.yaml"
+    config_path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
+
+    config = load_config(config_path)
+    schema = ReAgentConfig.create_default()
+
+    # Direct ValidationConfig callers retain the historical enabled default.
+    # A freshly initialized project opts out until it has meaningful commands.
+    assert schema.validation.enabled is True
+    schema.validation.enabled = False
+    assert config == schema
+
+
+def test_default_config_discovery_works_outside_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("RE_AGENT_CONFIG", raising=False)
+
+    discovered = discover_config_path()
+
+    assert discovered is not None
+    assert discovered.name == "re-agent.yaml"
+    assert discovered.parent.name == "auto-re-agent"
+
+
+def test_explicit_environment_config_wins_default_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_path = tmp_path / "custom.yaml"
+    config_path.write_text("llm:\n  provider: codex\n", encoding="utf-8")
+    monkeypatch.setenv("RE_AGENT_CONFIG", str(config_path))
+
+    assert discover_config_path() == config_path.resolve()
+
+
+def test_yaml_provider_credentials_are_relative_to_config_file(tmp_path: Path) -> None:
+    config_path = tmp_path / "config" / "re-agent.yaml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        """\
+llm:
+  provider: codex
+  fallbacks:
+    - provider: gemini
+      service_account_file: credentials/primary.json
+agents:
+  reverser:
+    provider: gemini
+    service_account_file: credentials/reverser.json
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.llm.fallbacks[0].service_account_file == str(
+        (config_path.parent / "credentials" / "primary.json").resolve()
+    )
+    assert config.agents.reverser is not None
+    assert config.agents.reverser.service_account_file == str(
+        (config_path.parent / "credentials" / "reverser.json").resolve()
+    )
 
 
 def test_load_from_yaml(sample_config_path: Path) -> None:
@@ -127,7 +199,8 @@ agents:
     )
     config = load_config(path)
     assert config.agents.checker is not None
-    assert config.agents.checker.model is None
+    assert config.agents.checker.model == "gpt-5.6-sol"
+    assert config.agents.checker.model != "gemini-model"
     assert config.agents.checker.service_account_file is None
 
 

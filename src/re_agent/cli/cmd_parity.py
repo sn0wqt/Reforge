@@ -15,7 +15,8 @@ from re_agent.utils.address import normalize_address
 
 
 def cmd_parity(args: argparse.Namespace) -> int:
-    config = load_config(Path(args.config))
+    configured = getattr(args, "config", None)
+    config = load_config(Path(configured) if configured else None)
     profile = config.project_profile
 
     source_root = Path(profile.source_root)

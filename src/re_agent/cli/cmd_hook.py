@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +13,15 @@ from re_agent.config.domain_keywords import is_contextual_currency_match
 from re_agent.config.loader import load_config
 from re_agent.core.candidates import rank_candidates, split_candidates
 from re_agent.utils.address import format_address
+from re_agent.utils.mutation_intent import (
+    MUTABLE_SCALAR_CPP_TYPES,
+    SAFE_CPP_TYPES,
+    primitive_literal_kind,
+    primitive_type_kind,
+)
 from re_agent.utils.paths import safe_identifier
 from re_agent.utils.w2s import generate_w2s_cpp_helper
 
-_CPP_TYPES = {"int32_t", "int64_t", "float", "double", "bool", "void", "void*"}
-_DEX_OVERRIDE_TYPES = {"int32_t", "int64_t", "float", "double", "bool"}
 _DEX_FRIDA_PATHWAYS = {
     "android-java-kotlin-dex",
     "react-native-hermes-android",
@@ -34,7 +39,7 @@ def _cpp_string(value: object) -> str:
 
 def _safe_cpp_type(value: object, *, fallback: str = "int32_t") -> str:
     candidate = str(value or fallback).strip()
-    return candidate if candidate in _CPP_TYPES else fallback
+    return candidate if candidate in SAFE_CPP_TYPES else fallback
 
 
 def _safe_cpp_literal(value: object, return_type: str) -> str:
@@ -78,17 +83,35 @@ def _is_activation_ready(
         return False
 
     hook_type = str(getattr(target, "hook_type", ""))
-    # Native/C++/IL2CPP mutation remains review-only until the generator has a
-    # complete signature, calling convention, module mapping, and lifecycle
-    # model. A positive RVA or field offset is not ABI evidence.
-    if generator != "frida" or pathway not in _DEX_FRIDA_PATHWAYS:
+    if generator != "frida":
         return False
 
-    return (
-        hook_type == "return_override"
-        and bool(getattr(target, "method_descriptor", None))
-        and str(getattr(target, "return_type", "")) in _DEX_OVERRIDE_TYPES
-    )
+    if pathway in _DEX_FRIDA_PATHWAYS:
+        return (
+            hook_type == "return_override"
+            and bool(getattr(target, "method_descriptor", None))
+            and str(getattr(target, "return_type", "")) in MUTABLE_SCALAR_CPP_TYPES
+        )
+
+    # Frida exposes integer and pointer-sized native return values through
+    # ``retval`` without requiring argument decoding.  Exact IL2CPP method
+    # RVAs may therefore be activated for verified bool/integer returns. Float,
+    # object, struct, field, and behavior-changing argument hooks stay closed
+    # because their ABI/register semantics are not represented by retval.
+    if pathway.startswith("unity-il2cpp"):
+        method_rva = getattr(target, "method_rva", None)
+        return_kind = primitive_type_kind(getattr(target, "return_type", ""))
+        replacement_kind = primitive_literal_kind(getattr(target, "return_value", None))
+        return (
+            hook_type == "return_override"
+            and isinstance(method_rva, int)
+            and not isinstance(method_rva, bool)
+            and method_rva > 0
+            and return_kind in {"bool", "integer"}
+            and replacement_kind == return_kind
+        )
+
+    return False
 
 
 def _partition_for_activation(
@@ -96,6 +119,7 @@ def _partition_for_activation(
     *,
     generator: str,
     pathway: str = "",
+    goal_prompt: str | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Rank verified hooks for activation and retain all others for review."""
     ranked = list(rank_candidates(targets))
@@ -108,7 +132,7 @@ def _partition_for_activation(
             pathway=pathway,
         )
     ]
-    ready_groups = split_candidates(ready)
+    ready_groups = split_candidates(ready, goal_prompt=goal_prompt)
     active = list(ready_groups.primary)
     active_keys = {
         (
@@ -177,6 +201,7 @@ def generate_universal_hook_for_goal(
     active_individual, review_individual = _partition_for_activation(
         targets,
         generator="il2cpp",
+        goal_prompt=goal_text,
     )
     review_total = len(review_individual)
     review_individual = review_individual[:MAX_REVIEW_HOOK_CANDIDATES]
@@ -321,6 +346,7 @@ def generate_cpp_hook_for_pathway(
         typed_targets,
         generator="native",
         pathway=pathway,
+        goal_prompt=goal_text,
     )
     review_total = len(review_targets)
     review_targets = review_targets[:MAX_REVIEW_HOOK_CANDIDATES]
@@ -432,6 +458,7 @@ def generate_frida_java_script(
         typed_targets,
         generator="frida",
         pathway=pathway,
+        goal_prompt=goal_text,
     )
     review_total = len(alt_targets)
     alt_targets = alt_targets[:MAX_REVIEW_HOOK_CANDIDATES]
@@ -450,7 +477,21 @@ def generate_frida_java_script(
             return re.sub(r"(?:f|ll)$", "", text, flags=re.IGNORECASE)
         return json.dumps(text)
 
-    def _build_js_block(target: Any) -> str:
+    def _native_pointer_literal(value: Any) -> str | None:
+        text = str(value).strip().casefold()
+        if text == "true":
+            integer = 1
+        elif text == "false":
+            integer = 0
+        elif re.fullmatch(r"[-+]?\d+", text):
+            integer = int(text)
+        else:
+            return None
+        if integer < 0:
+            integer &= (1 << 64) - 1
+        return f'ptr("0x{integer:X}")'
+
+    def _build_js_block(target: Any, *, mutation_enabled: bool) -> str:
         cls_name = str(getattr(target, "class_name", ""))
         method_name = str(getattr(target, "target", ""))
         reason = _safe_comment(getattr(target, "reason", ""))
@@ -529,6 +570,13 @@ def generate_frida_java_script(
                 "unity-il2cpp-ios": "UnityFramework",
                 "unity-il2cpp-windows": "GameAssembly.dll",
             }.get(pathway, "libil2cpp.so")
+            pointer_literal = _native_pointer_literal(getattr(target, "return_value", None))
+            if mutation_enabled and pointer_literal is not None:
+                on_leave = f"""console.log("[re-agent] Original return: " + retval);
+                 retval.replace({pointer_literal});
+                 console.log("[re-agent] Replaced return for " + {label_js});"""
+            else:
+                on_leave = 'console.log("[re-agent] Return unchanged; ABI/type verification required: " + retval);'
             return f"""{header}
     try {{
         const module = Process.getModuleByName({json.dumps(module_name)});
@@ -538,7 +586,7 @@ def generate_frida_java_script(
          Interceptor.attach(address, {{
              onEnter(args) {{ console.log("[re-agent] Entered " + {label_js}); }},
              onLeave(retval) {{
-                 console.log("[re-agent] Return (unchanged; ABI review required): " + retval);
+                 {on_leave}
              }}
          }});
     }} catch (error) {{
@@ -578,8 +626,25 @@ def generate_frida_java_script(
         console.log("[!] Failed to attach " + {label_js} + ": " + error);
     }}"""
 
-    active_blocks = [block for target in active_targets if (block := _build_js_block(target))]
-    secondary_blocks = [block for target in (alt_targets or []) if (block := _build_js_block(target))]
+    active_blocks = [
+        block
+        for target in active_targets
+        if (block := _build_js_block(target, mutation_enabled=True))
+    ]
+    secondary_blocks = [
+        block
+        for target in (alt_targets or [])
+        if (
+            block := _build_js_block(
+                target,
+                mutation_enabled=_is_activation_ready(
+                    target,
+                    generator="frida",
+                    pathway=pathway,
+                ),
+            )
+        )
+    ]
     active_js = "\n\n".join(active_blocks) or "    // No candidate has complete verified activation evidence."
     secondary_js = "\n\n".join(secondary_blocks) or "    // No review-only candidates."
     uses_java = pathway in {"android-java-kotlin-dex", "react-native-hermes-android"}
@@ -950,10 +1015,11 @@ void hk_{safe}(void* self) {{
 
 def generate_dynamic_resolver_hook(
     symbol: str,
-    class_name: str | None = None,
+    class_name: str,
     return_type: str | None = None,
+    platform: str | None = None,
 ) -> str:
-    cls = class_name or "TargetClass"
+    cls = class_name
     sym_lower = symbol.lower()
     safe_symbol = safe_identifier(symbol)
     class_literal = _cpp_string(cls)
@@ -975,7 +1041,9 @@ def generate_dynamic_resolver_hook(
     else:
         mod_return = f"if (orig_{safe_symbol}) return orig_{safe_symbol}(self, type);\n    return 0;"
 
+    platform_comment = _safe_comment(platform or "platform not specified")
     return f"""// Auto-generated Dynamic BNM / Il2CppResolver candidate scaffold
+// Target platform: {platform_comment}
 #include "Il2CppResolver.h"
 
 typedef {ret_t} (*{safe_symbol}_t)(void* self, int32_t type);
@@ -1064,10 +1132,32 @@ void __fastcall hk_{safe_symbol}(void* self) {{
 """
 
 
-def generate_rust_hook(address: str, symbol: str) -> str:
+def generate_linux_hook(address: str, symbol: str) -> str:
+    """Generate a Linux ELF scaffold without assuming a module or ABI."""
     safe_symbol = safe_identifier(symbol)
     safe_address = format_address(address)
+    return f"""// Auto-generated Linux ELF hook scaffold
+#include <cstdint>
+
+// Candidate RVA: {safe_address} ({_safe_comment(symbol)})
+// Resolve the owning module base at runtime before installing a hook.
+typedef void (*{safe_symbol}_t)(void* self);
+static {safe_symbol}_t orig_{safe_symbol} = nullptr;
+
+void hk_{safe_symbol}(void* self) {{
+    if (orig_{safe_symbol}) {{
+        orig_{safe_symbol}(self);
+    }}
+}}
+"""
+
+
+def generate_rust_hook(address: str, symbol: str, platform: str | None = None) -> str:
+    safe_symbol = safe_identifier(symbol)
+    safe_address = format_address(address)
+    platform_comment = _safe_comment(platform or "platform not specified")
     return f"""// Auto-generated cydia-substrate-rs / kittymemory-rs Rust hook template
+// Target platform: {platform_comment}
 use std::ffi::c_void;
 
 extern "C" {{
@@ -1090,36 +1180,69 @@ unsafe extern "C" fn hk_{safe_symbol}(_self: *mut c_void) {{
 
 def cmd_hook(args: argparse.Namespace) -> int:
     """Execute platform-specific hook generation command."""
-    config_path = Path(args.config)
-    config = load_config(config_path) if config_path.exists() else load_config(None)
-
-    symbol = args.symbol or "Update"
-    address = args.address or "0x1000"
-    try:
-        address = format_address(address)
-    except ValueError as exc:
-        print(f"[!] {exc}")
-        return 2
-    output_path = Path(args.output) if args.output else Path("output") / f"Hook_{safe_identifier(symbol)}.cpp"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
+    symbol = getattr(args, "symbol", None)
+    address = getattr(args, "address", None)
     target_lang = getattr(args, "language", "cpp")
     is_dynamic = getattr(args, "dynamic", False)
+    if not symbol:
+        print("Error: hook requires --symbol", file=sys.stderr)
+        return 2
+    if not is_dynamic and not address:
+        print("Error: static hook generation requires --address", file=sys.stderr)
+        return 2
+    if is_dynamic and address:
+        print("Error: --address is not used by --dynamic hooks", file=sys.stderr)
+        return 2
+    if is_dynamic and not getattr(args, "class_name", None):
+        print("Error: --dynamic requires --class; no target class will be invented", file=sys.stderr)
+        return 2
+    if not is_dynamic and getattr(args, "class_name", None):
+        print("Error: --class is only used by --dynamic hooks", file=sys.stderr)
+        return 2
+    if is_dynamic and target_lang != "cpp":
+        print("Error: --dynamic only generates C++ hooks", file=sys.stderr)
+        return 2
+
+    configured = getattr(args, "config", None)
+    config = load_config(Path(configured) if configured else None)
+    if address is not None:
+        try:
+            address = format_address(address)
+        except ValueError as exc:
+            print(f"[!] {exc}")
+            return 2
+
+    output_path = Path(args.output) if args.output else Path("output") / f"Hook_{safe_identifier(symbol)}.cpp"
 
     if is_dynamic:
-        code = generate_dynamic_resolver_hook(symbol, args.class_name)
+        code = generate_dynamic_resolver_hook(
+            symbol,
+            args.class_name,
+            platform=getattr(args, "platform", None),
+        )
     elif target_lang == "rust":
+        assert address is not None
         output_path = output_path.with_suffix(".rs")
-        code = generate_rust_hook(address, symbol)
+        code = generate_rust_hook(address, symbol, getattr(args, "platform", None))
     else:
+        assert address is not None
         platform_name = (getattr(args, "platform", None) or config.project_profile.name).lower()
+        if not any(name in platform_name for name in ("ios", "android", "windows", "linux")):
+            print(
+                "Error: --platform is required when the configured profile is platform-neutral",
+                file=sys.stderr,
+            )
+            return 2
         if "ios" in platform_name:
             code = generate_ios_hook(address, symbol)
         elif "android" in platform_name:
             code = generate_android_hook(address, symbol)
+        elif "linux" in platform_name:
+            code = generate_linux_hook(address, symbol)
         else:
             code = generate_windows_hook(address, symbol)
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(code, encoding="utf-8")
     print(f"[+] Generated Hook File: {output_path}")
     return 0

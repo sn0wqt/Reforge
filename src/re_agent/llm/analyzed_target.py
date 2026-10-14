@@ -36,6 +36,9 @@ class AnalyzedTarget:
             is unambiguous and evidence-backed.
         implementation_ready: Whether the generated scaffold for this hook
             type actually installs and performs the requested behavior.
+        source_file: Packaged/source-map file that grounds a web target.
+        endpoint_pattern: Request URL fragment used by a web response patch.
+        json_path: Dot-separated JSON property path modified in a response.
     """
 
     class_name: str
@@ -52,6 +55,9 @@ class AnalyzedTarget:
     signature_verified: bool = False
     address_verified: bool = False
     implementation_ready: bool = False
+    source_file: str | None = None
+    endpoint_pattern: str | None = None
+    json_path: str | None = None
 
     def __post_init__(self) -> None:
         # Normalize LLM aliases to canonical hook types
@@ -77,6 +83,7 @@ class AnalyzedTarget:
             "speed_modify",
             "nop",
             "js_property_patch",
+            "web_response_patch",
         }
         if self.hook_type not in valid_types:
             raise ValueError(f"Invalid hook_type {self.hook_type!r}. Must be one of: {', '.join(sorted(valid_types))}")
@@ -100,6 +107,17 @@ class AnalyzedTarget:
             )
         ):
             raise ValueError("hook readiness fields must be booleans")
+        for label, value in (
+            ("source_file", self.source_file),
+            ("endpoint_pattern", self.endpoint_pattern),
+            ("json_path", self.json_path),
+        ):
+            if value is not None and (
+                not isinstance(value, str)
+                or not value.strip()
+                or any(character in value for character in "\r\n\x00")
+            ):
+                raise ValueError(f"{label} must be a safe non-empty string when provided")
         self.parameter_types = tuple(self.parameter_types)
         if any(
             not isinstance(parameter, str) or not parameter or any(character in parameter for character in "\r\n\x00")

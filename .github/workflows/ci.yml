@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: ruff check src/
+      - run: ruff check src/ tests/
       - run: mypy src/re_agent/
 
   test:
@@ -22,14 +22,24 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest tests/ -m "not llm and not ghidra" -x --tb=short
+      - run: pytest tests/ -m "not llm and not ghidra" --strict-markers --tb=short
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/ -m "not llm and not ghidra" --strict-markers --cov=re_agent --cov-branch --cov-report=term-missing --cov-fail-under=70
 
   package:
     runs-on: ubuntu-latest

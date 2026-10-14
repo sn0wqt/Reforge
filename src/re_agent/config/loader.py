@@ -49,6 +49,63 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
     return data
 
 
+def _resolve_yaml_relative_provider_paths(raw: dict[str, Any], config_path: Path) -> None:
+    """Resolve YAML-owned credential files relative to their YAML file.
+
+    Environment and CLI overrides are applied later and intentionally retain
+    their caller-relative semantics.  Only paths literally read from YAML are
+    rebased here, including independent role fallback chains.
+    """
+
+    def resolve_route(route: object) -> None:
+        if not isinstance(route, dict):
+            return
+        service_account = route.get("service_account_file")
+        if isinstance(service_account, str) and service_account.strip():
+            account_path = Path(service_account).expanduser()
+            if not account_path.is_absolute():
+                route["service_account_file"] = str((config_path.parent / account_path).resolve())
+        fallbacks = route.get("fallbacks", [])
+        if isinstance(fallbacks, list):
+            for fallback in fallbacks:
+                resolve_route(fallback)
+
+    resolve_route(raw.get("llm"))
+    agents = raw.get("agents")
+    if isinstance(agents, dict):
+        resolve_route(agents.get("reverser"))
+        resolve_route(agents.get("checker"))
+
+
+def discover_config_path() -> Path | None:
+    """Find the default configuration for an installed or editable checkout.
+
+    The CLI is commonly launched from the directory that contains the target
+    binary rather than from the re-agent repository.  In an editable install,
+    silently falling back to dataclass defaults in that situation changes the
+    configured provider and data-handling policy.  Prefer an explicit
+    ``RE_AGENT_CONFIG`` path, then the current directory, then the editable
+    checkout root.  A normal wheel install has no checkout-level YAML and
+    therefore continues to use schema defaults unless the user supplies one.
+    """
+    configured = os.environ.get("RE_AGENT_CONFIG")
+    if configured:
+        configured_path = Path(configured).expanduser()
+        if not configured_path.is_file():
+            raise FileNotFoundError(f"Config file not found: {configured_path}")
+        return configured_path.resolve()
+
+    cwd_config = Path.cwd() / "re-agent.yaml"
+    if cwd_config.is_file():
+        return cwd_config.resolve()
+
+    # loader.py -> config -> re_agent -> src -> repository root
+    checkout_config = Path(__file__).resolve().parents[3] / "re-agent.yaml"
+    if checkout_config.is_file():
+        return checkout_config.resolve()
+    return None
+
+
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
     """Overlay RE_AGENT_* environment variables onto the raw config dict."""
     env_mappings: list[tuple[str, list[str], type]] = [
@@ -348,16 +405,22 @@ def load_config(
     raw: dict[str, Any] = {}
 
     # 1. Load YAML file if available.
+    loaded_yaml_path: Path | None = None
     if yaml_path is not None:
         yaml_p = Path(yaml_path)
         if yaml_p.exists():
             raw = _load_yaml_file(yaml_p)
+            loaded_yaml_path = yaml_p.resolve()
         else:
             raise FileNotFoundError(f"Config file not found: {yaml_p}")
     else:
-        default_path = Path("re-agent.yaml")
-        if default_path.exists():
+        default_path = discover_config_path()
+        if default_path is not None:
             raw = _load_yaml_file(default_path)
+            loaded_yaml_path = default_path.resolve()
+
+    if loaded_yaml_path is not None:
+        _resolve_yaml_relative_provider_paths(raw, loaded_yaml_path)
 
     # 2. Overlay environment variables.
     raw = _apply_env_overrides(raw)

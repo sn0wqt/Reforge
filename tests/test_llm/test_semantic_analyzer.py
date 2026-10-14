@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -10,8 +11,11 @@ import pytest
 from re_agent.llm.analyzed_target import AnalyzedTarget
 from re_agent.llm.semantic_analyzer import (
     _build_metadata_summary,
+    _deduplicate_targets,
     _parse_llm_response,
+    _target_score,
     analyze_metadata_with_llm,
+    create_gemini_provider,
 )
 
 
@@ -128,6 +132,112 @@ def test_goal_relevant_method_survives_per_class_summary_limit() -> None:
 
     assert "GetCurrency" in selected_names
     assert len(selected_names) == 12
+
+
+def test_unknown_goal_entity_after_first_fifty_classes_is_submitted_and_grounded() -> None:
+    candidates = [
+        (
+            f"UnrelatedComponent{index}",
+            [{"method_name": "readStatus", "return_type": "boolean", "descriptor": "()Z"}],
+            [],
+        )
+        for index in range(60)
+    ]
+    candidates.append(
+        (
+            "org.example.GlimmerRepository",
+            [
+                {
+                    "method_name": "getGlimmers",
+                    "return_type": "long",
+                    "descriptor": "()J",
+                    "parameter_types": (),
+                    "is_declared": True,
+                    "is_executable": True,
+                    "is_constructor": False,
+                    "is_static": False,
+                }
+            ],
+            [],
+        )
+    )
+    response = json.dumps(
+        [
+            {
+                "class_name": "org.example.GlimmerRepository",
+                "target": "getGlimmers",
+                "hook_type": "return_override",
+                "return_value": "9223372036854775807",
+                "return_type": "int64_t",
+                "confidence": 97,
+                "reason": "Exact primitive getter for the requested entity",
+            }
+        ]
+    )
+    provider = MockLLMProvider(response)
+
+    targets = analyze_metadata_with_llm(provider, "set glimmers to maximum", candidates)
+
+    submitted_prompt = provider.last_messages[-1].content
+    assert "org.example.GlimmerRepository" in submitted_prompt
+    assert '"class":"UnrelatedComponent49"' not in submitted_prompt
+    assert len(targets) == 1
+    assert targets[0].target == "getGlimmers"
+    assert targets[0].return_type == "int64_t"
+    assert targets[0].implementation_ready is True
+
+
+def test_semantic_prompt_is_binary_neutral_and_fail_closed() -> None:
+    provider = MockLLMProvider("[]")
+    analyze_metadata_with_llm(
+        provider,
+        "enable custom capability",
+        [("CapabilityState", [], [])],
+    )
+
+    system_prompt = provider.last_messages[0].content
+    user_prompt = provider.last_messages[1].content
+    assert "do not assume the application is a game" in system_prompt.lower()
+    assert "verified primitive scalar return type" in system_prompt
+    assert "DEX or IL2CPP" in user_prompt
+    assert "Wallet, Balance, Currency" not in system_prompt
+
+
+def test_grounding_excludes_ranked_classes_omitted_by_character_budget() -> None:
+    methods = [
+        {
+            "method_name": "getCapability" if index == 0 else f"CapabilityDetail{index}",
+            "return_type": "int32_t",
+            "descriptor": "(" + ("I" * 500) + ")I",
+            "parameter_types": (),
+            "is_declared": True,
+            "is_executable": True,
+            "is_constructor": False,
+            "is_static": False,
+        }
+        for index in range(12)
+    ]
+    candidates = [(f"CapabilityStore{index}", methods, []) for index in range(50)]
+    omitted_class = "CapabilityStore20"
+    response = json.dumps(
+        [
+            {
+                "class_name": omitted_class,
+                "target": "getCapability",
+                "hook_type": "return_override",
+                "return_value": "1",
+                "return_type": "int32_t",
+                "confidence": 100,
+                "reason": "Must be rejected when its class was not submitted",
+            }
+        ]
+    )
+    provider = MockLLMProvider(response)
+
+    targets = analyze_metadata_with_llm(provider, "enable capability", candidates)
+
+    assert omitted_class not in provider.last_messages[-1].content
+    assert targets == []
 
 
 def test_parse_llm_response_json() -> None:
@@ -262,8 +372,8 @@ def test_llm_target_after_first_twelve_members_is_still_grounded() -> None:
     assert targets[0].method_rva == 0x4C3A9DC
     assert targets[0].parameter_types == ("CurrencyType",)
     assert targets[0].address_verified is True
-    assert targets[0].signature_verified is False
-    assert targets[0].implementation_ready is False
+    assert targets[0].signature_verified is True
+    assert targets[0].implementation_ready is True
 
 
 def test_analyze_metadata_can_surface_provider_failure() -> None:
@@ -368,3 +478,103 @@ def test_analyze_metadata_rejects_hallucinated_or_changed_offset() -> None:
         )
         == []
     )
+
+
+def test_deduplication_preserves_getter_and_setter_with_same_stem() -> None:
+    getter = AnalyzedTarget(
+        class_name="FeatureState",
+        target="get_Value",
+        hook_type="return_override",
+        confidence=90,
+    )
+    setter = AnalyzedTarget(
+        class_name="FeatureState",
+        target="set_Value",
+        hook_type="skip_call",
+        return_type="void",
+        return_value=None,
+        confidence=89,
+    )
+
+    assert _deduplicate_targets([getter, setter]) == [getter, setter]
+
+
+def test_deduplication_keeps_highest_scored_true_duplicate_only() -> None:
+    lower = AnalyzedTarget(
+        class_name="FeatureState",
+        target="get_Value",
+        hook_type="return_override",
+        confidence=70,
+    )
+    higher = AnalyzedTarget(
+        class_name="FeatureState",
+        target="get_Value",
+        hook_type="return_override",
+        confidence=90,
+    )
+
+    assert _deduplicate_targets([lower, higher]) == [higher]
+
+
+def test_deduplication_preserves_overloaded_exact_methods() -> None:
+    integer_overload = AnalyzedTarget(
+        class_name="FeatureState",
+        target="getValue",
+        hook_type="return_override",
+        method_descriptor="(I)I",
+        parameter_types=("int",),
+        confidence=90,
+    )
+    string_overload = AnalyzedTarget(
+        class_name="FeatureState",
+        target="getValue",
+        hook_type="return_override",
+        method_descriptor="(Ljava/lang/String;)I",
+        parameter_types=("java.lang.String",),
+        confidence=89,
+    )
+
+    assert _deduplicate_targets([integer_overload, string_overload]) == [
+        integer_overload,
+        string_overload,
+    ]
+
+
+def test_ui_names_have_no_unconditional_ranking_penalty() -> None:
+    ui_backed_state = AnalyzedTarget(
+        class_name="FeatureUIState",
+        target="get_Entitlement",
+        hook_type="return_override",
+        confidence=90,
+    )
+    neutral_state = AnalyzedTarget(
+        class_name="FeatureState",
+        target="get_Entitlement",
+        hook_type="return_override",
+        confidence=90,
+    )
+
+    assert _target_score(ui_backed_state) == _target_score(neutral_state)
+
+
+def test_gemini_provider_uses_central_config_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configured_provider = MockLLMProvider("[]")
+    config = SimpleNamespace(
+        llm=SimpleNamespace(provider="gemini", model="configured-model")
+    )
+    loaded_paths: list[object] = []
+
+    def fake_load_config(path: object) -> object:
+        loaded_paths.append(path)
+        return config
+
+    monkeypatch.setattr("re_agent.config.loader.load_config", fake_load_config)
+    monkeypatch.setattr(
+        "re_agent.llm.registry.create_provider",
+        lambda _config: configured_provider,
+    )
+
+    assert create_gemini_provider() is configured_provider
+    assert loaded_paths == [None]

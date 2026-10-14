@@ -264,6 +264,25 @@ def detect_application_name(path: str | Path) -> str:
     return safe_filename(candidate)
 
 
+def detect_application_identifier(path: str | Path) -> str | None:
+    """Return the declared Android package or iOS bundle identifier.
+
+    Unlike :func:`detect_application_name`, this value is not intended for a
+    filename.  Candidate discovery uses it to distinguish application-owned
+    DEX classes from bundled platform and third-party dependencies.
+    """
+    target = Path(path)
+    if not target.is_file():
+        return None
+    if target.suffix.casefold() == ".apk":
+        _display_name, identifier = _android_archive_identity(target)
+        return identifier
+    if target.suffix.casefold() == ".ipa":
+        _display_name, identifier = _ios_archive_identity(target)
+        return identifier
+    return None
+
+
 def default_pipeline_output_dir(
     input_path: str | Path,
     *,

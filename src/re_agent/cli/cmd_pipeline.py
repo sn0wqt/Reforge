@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import bisect
+import copy
 import difflib
 import json
 import os
@@ -18,10 +20,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from re_agent.config.domain_keywords import (
-    CURRENCY_KEYWORDS,
-    DOMAIN_EXPANSION_GROUPS,
+    MAXIMUM_TIER_ENTITY_KEYWORDS,
+    NAMED_TIER_ENTITY_KEYWORDS,
     UI_PENALTY_HINTS,
     identifier_tokens,
+    is_named_tier_match_contextual,
     matches_identifier_keyword,
 )
 from re_agent.core.app_identity import default_pipeline_output_dir
@@ -35,7 +38,6 @@ from re_agent.core.engine_detector import (
     detect_architecture_from_path,
     iter_directory_files_bounded,
 )
-from re_agent.core.web_knowledge import lookup_game_knowledge
 from re_agent.llm.analyzed_target import AnalyzedTarget
 from re_agent.packaging.frida_gadget import (
     GadgetEmbedding,
@@ -44,6 +46,14 @@ from re_agent.packaging.frida_gadget import (
     verify_gadget_archive,
     write_gadget_deployment_notes,
 )
+from re_agent.packaging.split_apks import (
+    AndroidPackageSet,
+    SplitApkError,
+    copy_unique_apks,
+    resolve_android_package_set,
+    validate_installer_package,
+    write_split_deployment_artifacts,
+)
 from re_agent.utils.archives import (
     ArchiveSafetyError,
     extract_member_bounded,
@@ -51,9 +61,15 @@ from re_agent.utils.archives import (
     normalized_member_name,
     read_member_bounded,
 )
-from re_agent.utils.goal_parser import extract_entity_keywords
+from re_agent.utils.goal_parser import expand_goal_terms, extract_entity_keywords
+from re_agent.utils.mutation_intent import (
+    infer_primitive_replacement,
+    primitive_literal_kind,
+    replacement_matches_literal,
+)
 from re_agent.utils.toolchain import (
     resolve_apk_signer,
+    resolve_apktool,
     resolve_frida_gadget_path,
 )
 
@@ -299,41 +315,79 @@ def _prepare_il2cpp_sidecars(
     return work_dir, "IL2CPP metadata sidecars generated"
 
 
-def _goal_terms(goal: str) -> list[str]:
-    terms = extract_entity_keywords(goal)
-    tokens = set(re.findall(r"\b\w+\b", goal.lower()))
-    for triggers, expansions in DOMAIN_EXPANSION_GROUPS:
-        if tokens & triggers:
-            terms.extend(sorted(expansions))
-    return list(dict.fromkeys(terms))
-
-
 def _discover_hermes_candidates(
     source_text: str,
     goal: str,
     bundle_name: str,
+    *,
+    source_is_deployable: bool = True,
 ) -> list[AnalyzedTarget]:
-    """Find JS property candidates and assign evidence-based confidence scores."""
+    """Find JS property candidates and assign evidence-based confidence scores.
+
+    A property in deployable textual JavaScript can be patched and validated.
+    A similarly named property in decompiler pseudo-JavaScript is only an
+    analysis lead: it has no stable source location or runtime binding.  The
+    two evidence classes must never receive the same confidence.
+    """
     direct_terms = extract_entity_keywords(goal)
-    terms = _goal_terms(goal)
+    terms = expand_goal_terms(goal)
     properties = _scan_js_primitive_properties(source_text)
     occurrence_counts = Counter(name for name, _start, _end in properties)
+    property_positions: dict[str, list[int]] = {}
+    all_property_positions: list[int] = []
+    for name, start, _end in properties:
+        property_positions.setdefault(name, []).append(start)
+        all_property_positions.append(start)
+    all_property_positions.sort()
     targets: list[AnalyzedTarget] = []
-    is_currency_goal = bool(set(re.findall(r"\b\w+\b", goal.lower())) & CURRENCY_KEYWORDS)
-    replacement = "999999999" if is_currency_goal else "true"
 
     for property_name in sorted(occurrence_counts):
         direct_matching_terms = [term for term in direct_terms if matches_identifier_keyword(term, property_name)]
         matching_terms = [term for term in terms if matches_identifier_keyword(term, property_name)]
         if not matching_terms:
             continue
+        tier_matches = [
+            term for term in direct_matching_terms if term in NAMED_TIER_ENTITY_KEYWORDS
+        ]
+        tier_contextual = not tier_matches or any(
+            is_named_tier_match_contextual(term, "", property_name)
+            for term in tier_matches
+        )
+        # A named tier such as ``maxPlan`` is meaningful, while bare ALL_CAPS
+        # MAX constants are framework implementation details. Use identifier
+        # shape rather than any application-specific class or product list.
+        if (
+            set(direct_matching_terms) <= MAXIMUM_TIER_ENTITY_KEYWORDS
+            and direct_matching_terms
+            and property_name == property_name.upper()
+        ):
+            continue
+        if tier_matches and not tier_contextual:
+            # A bare magnitude/product word is not a discovered behavior.
+            # Keep ``subscriptionMax``/``ProEntitlement`` through the
+            # contextual rule above, but discard layout limits and device
+            # model suffixes entirely instead of padding the review list.
+            continue
+        current_literals = {
+            source_text[start:end]
+            for name, start, end in properties
+            if name == property_name
+        }
+        replacements = {
+            replacement
+            for literal in current_literals
+            for replacement in [infer_primitive_replacement(goal, current_literal=literal)]
+            if replacement is not None and replacement_matches_literal(replacement, literal)
+        }
+        replacement = next(iter(replacements)) if len(replacements) == 1 else None
+        replacement_kind = primitive_literal_kind(replacement) if replacement is not None else None
         if direct_matching_terms:
             exact = any(property_name.casefold() == term.casefold() for term in direct_matching_terms)
-            confidence = 95 if exact else 90
+            confidence = (95 if exact else 90) if source_is_deployable else 74 if exact else 70
             relevance = "direct goal entity"
         else:
             exact = any(property_name.casefold() == term.casefold() for term in matching_terms)
-            confidence = 78 if exact else 70
+            confidence = (78 if exact else 70) if source_is_deployable else 58 if exact else 54
             relevance = "domain expansion"
 
         candidate_tokens = identifier_tokens(property_name)
@@ -347,30 +401,118 @@ def _discover_hermes_candidates(
         penalty_reason = ""
         if framework_literal:
             confidence = min(confidence, 40)
-            penalty_reason = "; framework/resource literal"
+            penalty_reason += "; framework/resource literal"
         elif ui_tokens:
             confidence = min(confidence, 74)
-            penalty_reason = f"; UI/display token(s): {', '.join(sorted(ui_tokens))}"
+            penalty_reason += f"; UI/display token(s): {', '.join(sorted(ui_tokens))}"
+
+        if not source_is_deployable:
+            table_shaped_context = False
+            module_export_context = False
+            for position in property_positions[property_name]:
+                left = bisect.bisect_left(all_property_positions, position - 1_500)
+                right = bisect.bisect_right(all_property_positions, position + 1_500)
+                if right - left >= 8:
+                    table_shaped_context = True
+                context = source_text[max(0, position - 3_000) : position + 3_000]
+                if "__esModule" in context and ("defineProperty" in context or "exportAll" in context):
+                    module_export_context = True
+            if module_export_context:
+                confidence = min(confidence, 48)
+                penalty_reason += "; module/library export registry context"
+            elif table_shaped_context:
+                confidence = min(
+                    confidence,
+                    62 if direct_matching_terms else 55,
+                )
+                penalty_reason += "; aggregate/table-shaped context"
 
         occurrences = occurrence_counts[property_name]
         if occurrences != 1:
+            confidence = min(confidence, 84 if source_is_deployable else 62)
+        if replacement is None:
             confidence = min(confidence, 84)
+            penalty_reason += "; requested mutation is ambiguous for the recovered primitive value"
+        evidence_kind = (
+            "deployable textual property"
+            if source_is_deployable
+            else "analysis-only decompiler property without a stable runtime binding"
+        )
         targets.append(
             AnalyzedTarget(
                 class_name="HermesBundle",
                 target=property_name,
                 hook_type="js_property_patch",
                 return_value=replacement,
-                return_type="int32_t" if is_currency_goal else "bool",
+                return_type=(
+                    "bool"
+                    if replacement_kind == "bool"
+                    else "double"
+                    if replacement_kind == "float"
+                    else "int64_t"
+                    if replacement_kind == "integer"
+                    else "unknown"
+                ),
                 confidence=confidence,
                 reason=(
-                    f"Property matched {', '.join(matching_terms)} as {relevance} "
+                    f"{evidence_kind.capitalize()} matched {', '.join(matching_terms)} as {relevance} "
                     f"in {bundle_name} ({occurrences} syntax-aware "
                     f"occurrence{'s' if occurrences != 1 else ''}{penalty_reason})"
                 ),
             )
         )
     return list(rank_candidates(targets))
+
+
+def _write_hermes_candidate_evidence(
+    output_dir: Path,
+    source_text: str,
+    candidates: list[AnalyzedTarget],
+    *,
+    max_candidates: int = 50,
+) -> Path:
+    """Write bounded source locations for Hermes review candidates.
+
+    The decompiled file may exceed 100 MiB and individual localization objects
+    may occupy a single enormous line.  Snippets are therefore character-
+    bounded and are evidence only, never presented as executable JavaScript.
+    """
+    evidence_path = output_dir / "Hermes_Candidate_Evidence.txt"
+    lines = [
+        "Hermes Candidate Evidence",
+        "=========================",
+        "Decompiler output is analysis-only and cannot be loaded as a Frida script or recompiled as-is.",
+        "Locations below help identify app-owned state logic versus framework/library export tables.",
+        "",
+    ]
+    for index, candidate in enumerate(candidates[:max_candidates], 1):
+        property_name = candidate.target
+        patterns = (f"'{property_name}'", f'"{property_name}"')
+        positions = sorted(
+            position for pattern in patterns for position in [source_text.find(pattern)] if position >= 0
+        )
+        lines.append(f"{index}. [{candidate.confidence}%] {property_name}")
+        lines.append(f"   Evidence: {candidate.reason}")
+        if not positions:
+            lines.append("   Location: not recovered")
+            lines.append("")
+            continue
+        position = positions[0]
+        line_number = source_text.count("\n", 0, position) + 1
+        function_window_start = max(0, position - 120_000)
+        function_window = source_text[function_window_start:position]
+        function_matches = list(re.finditer(r"_fun\d+", function_window))
+        function_name = function_matches[-1].group(0) if function_matches else "unknown"
+        snippet_start = max(0, position - 220)
+        snippet_end = min(len(source_text), position + len(patterns[0]) + 280)
+        snippet = " ".join(source_text[snippet_start:snippet_end].split())
+        if len(snippet) > 520:
+            snippet = snippet[:517] + "..."
+        lines.append(f"   Location: line {line_number}, nearest decompiler function {function_name}")
+        lines.append(f"   Context: {snippet}")
+        lines.append("")
+    evidence_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return evidence_path
 
 
 def _scan_js_primitive_properties(source: str) -> list[tuple[str, int, int]]:
@@ -422,7 +564,10 @@ def _patch_textual_bundle(
     for target in candidates:
         if len(replacements) >= max(0, max_patches):
             break
-        value = str(target.return_value or "true")
+        if target.return_value is None:
+            notes.append(f"Skipped {target.target}: no unambiguous primitive mutation was inferred.")
+            continue
+        value = str(target.return_value)
         if not re.fullmatch(
             r"-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null",
             value,
@@ -435,6 +580,13 @@ def _patch_textual_bundle(
             notes.append(f"Skipped {target.target}: expected one syntax-aware property, found {len(matches)}.")
             continue
         start, end = matches[0]
+        current_literal = original[start:end]
+        if not replacement_matches_literal(value, current_literal):
+            notes.append(
+                f"Skipped {target.target}: replacement type does not match recovered "
+                f"literal {current_literal!r}."
+            )
+            continue
         replacements.append((start, end, value, target))
 
     patched = original
@@ -533,11 +685,8 @@ def _run_tool(command: list[str], *, cwd: Path | None = None) -> tuple[bool, str
 
 
 def _find_apktool() -> str | None:
-    configured = os.environ.get("RE_AGENT_APKTOOL")
-    if configured:
-        candidate = Path(configured).expanduser()
-        return str(candidate.resolve()) if candidate.is_file() else None
-    return shutil.which("apktool") or shutil.which("apktool.bat")
+    resolved = resolve_apktool()
+    return str(resolved) if resolved is not None else None
 
 
 def _local_frida_version() -> str | None:
@@ -549,6 +698,45 @@ def _local_frida_version() -> str | None:
         return None
     version = output.strip().splitlines()[0] if output.strip() else ""
     return version or None
+
+
+def _rewrite_apk_member(
+    source_apk: Path,
+    output_apk: Path,
+    member: str,
+    replacement: bytes,
+) -> tuple[bool, str]:
+    """Copy an APK while replacing exactly one validated archive member."""
+    safe_member = normalized_member_name(member)
+    replaced = 0
+    try:
+        with (
+            zipfile.ZipFile(source_apk, "r") as source,
+            zipfile.ZipFile(output_apk, "w", allowZip64=True) as destination,
+        ):
+            infos = inspect_archive(source)
+            for info in infos:
+                if info.filename == safe_member:
+                    destination.writestr(info, replacement)
+                    replaced += 1
+                    continue
+                if info.is_dir():
+                    destination.writestr(info, b"")
+                    continue
+                with source.open(info, "r") as input_stream, destination.open(
+                    info,
+                    "w",
+                ) as output_stream:
+                    shutil.copyfileobj(input_stream, output_stream, length=1024 * 1024)
+    except (ArchiveSafetyError, OSError, ValueError, zipfile.BadZipFile) as exc:
+        output_apk.unlink(missing_ok=True)
+        return False, f"Direct APK asset replacement failed: {exc}"
+    if replaced != 1:
+        output_apk.unlink(missing_ok=True)
+        return False, (
+            f"Expected exactly one deployable member {safe_member!r}; found {replaced}."
+        )
+    return True, "APK asset member replaced without resource/manifest decoding."
 
 
 def _repackage_android(
@@ -563,13 +751,13 @@ def _repackage_android(
     gadget_on_load: str = "resume",
     gadget_port: int = 27042,
     gadget_version: str | None = None,
+    split_apks: tuple[Path, ...] = (),
+    installer_package: str | None = None,
 ) -> tuple[bool, str]:
-    """Decode with apktool, inject generated artifacts, rebuild, and sign."""
+    """Apply a verified APK modification, sign it, and verify exact bytes."""
     apktool = _find_apktool()
     java = shutil.which("java")
     signer = resolve_apk_signer()
-    if not apktool:
-        return False, "apktool was not found on PATH and RE_AGENT_APKTOOL is not a valid file."
     if not java:
         return False, "Java was not found on PATH."
     if signer is None:
@@ -587,24 +775,49 @@ def _repackage_android(
         temporary_path = Path(temporary)
         decoded = temporary_path / "decoded"
         unsigned_apk = temporary_path / "modded_app.apk"
-        ok, output = _run_tool([apktool, "d", "-f", str(binary_path), "-o", str(decoded)])
-        if not ok:
-            return False, f"apktool decode failed:\n{output[-2000:]}"
-
-        artifact_dir = decoded / "assets" / "re-agent"
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        for artifact in generated_files:
-            if artifact.exists():
-                shutil.copy2(artifact, artifact_dir / artifact.name)
-
-        if modified_bundle and architecture.bundle_member:
-            safe_member = normalized_member_name(architecture.bundle_member)
-            bundle_target = (decoded / Path(safe_member)).resolve()
-            bundle_target.relative_to(decoded.resolve())
-            bundle_target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(modified_bundle, bundle_target)
-
         gadget_embedding: GadgetEmbedding | None = None
+        direct_asset_replacement = (
+            gadget_path is None
+            and modified_bundle is not None
+            and architecture.bundle_member is not None
+        )
+        if direct_asset_replacement:
+            assert modified_bundle is not None
+            assert architecture.bundle_member is not None
+            ok, output = _rewrite_apk_member(
+                binary_path,
+                unsigned_apk,
+                architecture.bundle_member,
+                modified_bundle.read_bytes(),
+            )
+            if not ok:
+                return False, output
+        else:
+            if not apktool:
+                return (
+                    False,
+                    "apktool is required for manifest/native structural changes, but "
+                    "was not found on PATH and RE_AGENT_APKTOOL is not a valid launcher.",
+                )
+            ok, output = _run_tool(
+                [apktool, "d", "-f", str(binary_path), "-o", str(decoded)]
+            )
+            if not ok:
+                return False, f"apktool decode failed:\n{output[-2000:]}"
+
+            artifact_dir = decoded / "assets" / "re-agent"
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            for artifact in generated_files:
+                if artifact.exists():
+                    shutil.copy2(artifact, artifact_dir / artifact.name)
+
+            if modified_bundle and architecture.bundle_member:
+                safe_member = normalized_member_name(architecture.bundle_member)
+                bundle_target = (decoded / Path(safe_member)).resolve()
+                bundle_target.relative_to(decoded.resolve())
+                bundle_target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(modified_bundle, bundle_target)
+
         if gadget_path is not None:
             try:
                 gadget_embedding = embed_frida_gadget(
@@ -617,22 +830,120 @@ def _repackage_android(
                 )
             except GadgetPackagingError as exc:
                 return False, f"Frida Gadget embedding failed: {exc}"
+            assert apktool is not None
+            ok, output = _run_tool(
+                [apktool, "b", str(decoded), "-o", str(unsigned_apk)]
+            )
+            if not ok or not unsigned_apk.exists():
+                return False, f"apktool build failed:\n{output[-2000:]}"
 
-        ok, output = _run_tool([apktool, "b", str(decoded), "-o", str(unsigned_apk)])
-        if not ok or not unsigned_apk.exists():
-            return False, f"apktool build failed:\n{output[-2000:]}"
-
-        ok, output = _run_tool(
-            [
-                java,
-                "-jar",
-                str(signer.resolve()),
-                "--apks",
-                str(unsigned_apk),
-            ]
-        )
+        signing_input = unsigned_apk
+        signed_set_output: Path | None = None
+        unsigned_set_inputs: tuple[Path, ...] = ()
+        signing_command = [java, "-jar", str(signer.resolve()), "--apks"]
+        if split_apks:
+            unsigned_set = temporary_path / "unsigned-split-set"
+            unsigned_set_inputs = copy_unique_apks(
+                (unsigned_apk, *split_apks),
+                unsigned_set,
+            )
+            base_input = unsigned_set_inputs[0]
+            canonical_base = unsigned_set / "base.apk"
+            if base_input != canonical_base:
+                base_input.replace(canonical_base)
+                unsigned_set_inputs = (canonical_base, *unsigned_set_inputs[1:])
+            signed_set_output = temporary_path / "signed-split-set"
+            signing_input = unsigned_set
+            signing_command.extend(
+                [
+                    str(signing_input),
+                    "--out",
+                    str(signed_set_output),
+                    "--allowResign",
+                ]
+            )
+        else:
+            signing_command.append(str(signing_input))
+        ok, output = _run_tool(signing_command)
         if not ok:
             return False, f"APK signing failed:\n{output[-2000:]}"
+        if split_apks:
+            assert signed_set_output is not None
+            signed_outputs = tuple(sorted(signed_set_output.glob("*.apk")))
+            if len(signed_outputs) != len(unsigned_set_inputs):
+                return (
+                    False,
+                    "Signer did not produce exactly one output for every APK in the split set "
+                    f"({len(signed_outputs)} produced, {len(unsigned_set_inputs)} expected).",
+                )
+            base_matches = tuple(
+                path
+                for path in signed_outputs
+                if path.stem.casefold() == "base" or path.stem.casefold().startswith("base-")
+            )
+            if len(base_matches) != 1:
+                return False, "Signer output did not identify exactly one signed base APK."
+            if modified_bundle and architecture.bundle_member:
+                member = normalized_member_name(architecture.bundle_member)
+                try:
+                    with zipfile.ZipFile(base_matches[0], "r") as signed_archive:
+                        infos = inspect_archive(signed_archive)
+                        matching_infos = [info for info in infos if info.filename == member]
+                        if len(matching_infos) != 1:
+                            return (
+                                False,
+                                f"Signed base APK is missing the modified bundle member: {member}",
+                            )
+                        signed_bytes = read_member_bounded(
+                            signed_archive,
+                            matching_infos[0],
+                            max_bytes=max(1, modified_bundle.stat().st_size),
+                        )
+                except (ArchiveSafetyError, OSError, zipfile.BadZipFile) as exc:
+                    return False, f"Signed base APK validation failed: {exc}"
+                if signed_bytes != modified_bundle.read_bytes():
+                    return False, "Signed base APK bundle does not match the generated patch."
+            ok, verification_output = _run_tool(
+                [
+                    java,
+                    "-jar",
+                    str(signer.resolve()),
+                    "--apks",
+                    str(signed_set_output),
+                    "--onlyVerify",
+                ]
+            )
+            if not ok:
+                return (
+                    False,
+                    "Split APK signature/alignment verification failed:\n"
+                    + verification_output[-2000:],
+                )
+            final_set = output_dir / "modded_split_apks"
+            suffix = 2
+            while final_set.exists():
+                final_set = output_dir / f"modded_split_apks_{suffix}"
+                suffix += 1
+            final_set.mkdir(parents=True)
+            ordered_outputs = (
+                base_matches[0],
+                *(path for path in signed_outputs if path != base_matches[0]),
+            )
+            deployed: list[Path] = []
+            for index, source in enumerate(ordered_outputs):
+                name = "base.apk" if index == 0 else f"split-{index:03d}.apk"
+                target = final_set / name
+                shutil.copy2(source, target)
+                deployed.append(target)
+            notes, split_archive = write_split_deployment_artifacts(
+                output_dir,
+                tuple(deployed),
+                base_apk=deployed[0],
+                installer_package=installer_package,
+            )
+            if notes not in generated_files:
+                generated_files.append(notes)
+            return True, str(split_archive)
         matches = sorted(
             (
                 candidate
@@ -791,7 +1102,7 @@ def _write_patch_summary(
     return summary
 
 
-def cmd_pipeline(args: argparse.Namespace) -> int:
+def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
     """Execute the eight-pathway analysis and artifact-generation pipeline."""
     binary_value = getattr(args, "binary", None)
     metadata_dir = getattr(args, "metadata_dir", None) or "."
@@ -805,6 +1116,14 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         detection_target,
         platform_hint=getattr(args, "platform", None),
     )
+    split_package: AndroidPackageSet | None = getattr(args, "_android_package_set", None)
+    try:
+        installer_package = validate_installer_package(
+            getattr(args, "installer_package", None)
+        )
+    except SplitApkError as exc:
+        print(f"[!] {exc}")
+        return 2
     gadget_requested = bool(getattr(args, "embed_frida_gadget", False))
     gadget_cli_value = getattr(args, "frida_gadget_path", None)
     gadget_hash = getattr(args, "frida_gadget_sha256", None)
@@ -827,6 +1146,12 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     if gadget_requested:
         if bool(getattr(args, "no_repack", False)):
             print("[!] --embed-frida-gadget cannot be combined with --no-repack.")
+            return 2
+        if split_package is not None:
+            print(
+                "[!] Frida Gadget embedding for split-required packages is not yet "
+                "supported; use a static patch or a standalone APK."
+            )
             return 2
         if binary_path is None or binary_path.suffix.casefold() != ".apk" or not architecture.is_android:
             print("[!] Frida Gadget embedding currently supports a single Android APK input only.")
@@ -890,6 +1215,11 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         print(f"[!] Pathway unresolved: {architecture.display_name} ({architecture.pathway})")
     if architecture.detected_components:
         print(f"[+] Detected components: {', '.join(architecture.detected_components)}")
+    if split_package is not None:
+        print(
+            f"[+] Split package set: 1 base + {len(split_package.split_apks)} "
+            f"split APK(s) from {split_package.source_kind} input"
+        )
     for note in architecture.detection_notes:
         print(f"[+] Detection evidence: {note}")
     if len(architecture.detected_components) > 1:
@@ -897,10 +1227,6 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             "[!] Hybrid package detected. The selected pathway is the primary "
             "route; all additional components remain explicit evidence."
         )
-
-    game_knowledge = lookup_game_knowledge(binary_path.name if binary_path else "")
-    if game_knowledge:
-        print(f"[+] Matched known framework pattern: {game_knowledge.game_name} ({game_knowledge.description})")
 
     if architecture.engine_type == "unity-il2cpp" and binary_path is not None:
         from re_agent.core.il2cpp_parser import find_il2cpp_dumper
@@ -937,7 +1263,51 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     bundle_path: Path | None = None
     decompiled_path: Path | None = None
     hermes_targets: list[AnalyzedTarget] = []
-    if architecture.pathway_id in {1, 2} and binary_path is not None:
+    web_targets: list[AnalyzedTarget] = []
+    web_evidence_path: Path | None = None
+    source_text = ""
+    if architecture.engine_type == "android-webview-js" and binary_path is not None:
+        print("\n[*] Step 1/5: Preparing packaged WebView JavaScript analysis input...")
+        bundle_path = _extract_hermes_bundle(binary_path, architecture, output_dir)
+        if bundle_path is None or _read_text_bundle(bundle_path) is None:
+            stages.append(
+                PipelineStage(
+                    "input_preparation",
+                    "FAILED",
+                    "Packaged WebView entry JavaScript could not be extracted as text.",
+                )
+            )
+            _write_pipeline_manifest(
+                output_dir,
+                architecture,
+                stages,
+                exit_code=3,
+                candidate_count=0,
+                modified_bundle=None,
+            )
+            print("[!] INSUFFICIENT_EVIDENCE: packaged web entry extraction failed.")
+            return 3
+        from re_agent.core.web_asset_analyzer import discover_web_asset_candidates
+
+        print("[*] Recovering original application sources from packaged JavaScript source maps...")
+        web_started = time.perf_counter()
+        web_targets, web_evidence_path, recovered_source_count = (
+            discover_web_asset_candidates(binary_path, goal, output_dir)
+        )
+        print(
+            f"[+] Web source-map analysis completed in {time.perf_counter() - web_started:.1f}s; "
+            f"recovered {recovered_source_count} original source file(s) and retained "
+            f"{len(web_targets)} evidence-ranked candidate(s)."
+        )
+        stages.append(
+            PipelineStage(
+                "input_preparation",
+                "SUCCEEDED",
+                "Textual WebView entry and original source-map evidence recovered.",
+                (str(bundle_path), str(web_evidence_path)),
+            )
+        )
+    elif architecture.pathway_id in {1, 2} and binary_path is not None:
         print("\n[*] Step 1/5: Preparing React Native Hermes analysis input...")
         bundle_path = _extract_hermes_bundle(binary_path, architecture, output_dir)
         if bundle_path:
@@ -993,10 +1363,12 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             )
             scan_started = time.perf_counter()
             source_text = decompiled_path.read_text(encoding="utf-8", errors="ignore")
+            source_is_deployable = bool(bundle_path and _read_text_bundle(bundle_path) is not None)
             hermes_targets = _discover_hermes_candidates(
                 source_text,
                 goal,
                 architecture.bundle_member or (bundle_path.name if bundle_path else decompiled_path.name),
+                source_is_deployable=source_is_deployable,
             )
             print(
                 f"[+] Hermes candidate scan completed in "
@@ -1013,7 +1385,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         stages.append(
             PipelineStage(
                 "input_preparation",
-                "SUCCESS",
+                "SUCCEEDED",
                 "Extracted binary and metadata components from application archive.",
             )
         )
@@ -1041,32 +1413,40 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         )
         return 2
 
-    print("\n[*] Step 2/5: Loading metadata and discovering candidates...")
-    from re_agent.cli.cmd_batch import cmd_batch
-
-    batch_args = argparse.Namespace(
-        config=getattr(args, "config", "re-agent.yaml"),
-        auto_discover=True,
-        goal=goal or None,
-        symbol=None,
-        string=None,
-        class_name=None,
-        binary=str(binary_path) if binary_path else None,
-        metadata=getattr(args, "metadata", None),
-        metadata_dir=effective_metadata_dir,
-        platform=getattr(args, "platform", None),
-        output_dir=str(output_dir),
-        limit=50,
-        _return_matches=True,
-        _suppress_candidate_display=True,
-    )
-    batch_result = cmd_batch(batch_args)
     discovered_targets: list[tuple[str, str, int]] = []
     batch_targets: list[AnalyzedTarget] = []
-    batch_exit = batch_result if isinstance(batch_result, int) else batch_result[0]
-    if isinstance(batch_result, tuple):
-        discovered_targets = batch_result[1]
-        batch_targets = batch_result[2]
+    if architecture.engine_type == "android-webview-js":
+        print("\n[*] Step 2/5: Resolving endpoint and client-state mutation evidence...")
+        print(
+            "[+] Skipping Android shell DEX ranking because deployed application "
+            "behavior is provided by packaged web assets."
+        )
+        batch_exit = 0
+    else:
+        print("\n[*] Step 2/5: Loading metadata and discovering candidates...")
+        from re_agent.cli.cmd_batch import cmd_batch
+
+        batch_args = argparse.Namespace(
+            config=getattr(args, "config", "re-agent.yaml"),
+            auto_discover=True,
+            goal=goal or None,
+            symbol=None,
+            string=None,
+            class_name=None,
+            binary=str(binary_path) if binary_path else None,
+            metadata=getattr(args, "metadata", None),
+            metadata_dir=effective_metadata_dir,
+            platform=getattr(args, "platform", None),
+            output_dir=str(output_dir),
+            limit=50,
+            _return_matches=True,
+            _suppress_candidate_display=True,
+        )
+        batch_result = cmd_batch(batch_args)
+        batch_exit = batch_result if isinstance(batch_result, int) else batch_result[0]
+        if isinstance(batch_result, tuple):
+            discovered_targets = batch_result[1]
+            batch_targets = batch_result[2]
     if batch_exit != 0 and not hermes_targets:
         print(f"[!] Candidate discovery failed with exit code {batch_exit}.")
         stages.append(
@@ -1111,7 +1491,9 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
         )
         for class_name, field_name, offset in discovered_targets
     ]
-    candidates = list(rank_candidates(hermes_targets + batch_targets + raw_targets))
+    candidates = list(
+        rank_candidates(web_targets + hermes_targets + batch_targets + raw_targets)
+    )
     if not candidates:
         print(
             "[!] INSUFFICIENT_EVIDENCE: no grounded candidates were discovered. "
@@ -1178,12 +1560,21 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     patch_notes: list[str] = []
     if bool(getattr(args, "patch_bundle", False)):
         if bundle_path:
-            modified_bundle, patch_notes = _patch_textual_bundle(
-                bundle_path,
-                list(groups.primary),
-                output_dir,
-                int(getattr(args, "max_patches", 5)),
-            )
+            if architecture.engine_type == "android-webview-js":
+                from re_agent.core.web_asset_analyzer import patch_web_entry_bundle
+
+                modified_bundle, patch_notes = patch_web_entry_bundle(
+                    bundle_path,
+                    list(groups.primary),
+                    output_dir,
+                )
+            else:
+                modified_bundle, patch_notes = _patch_textual_bundle(
+                    bundle_path,
+                    list(groups.primary),
+                    output_dir,
+                    int(getattr(args, "max_patches", 5)),
+                )
         else:
             patch_notes.append("Static patch requested, but this pathway has no JavaScript bundle.")
         stages.append(
@@ -1214,7 +1605,28 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     )
 
     generated_files: list[Path] = []
-    if architecture.uses_frida_javascript:
+    if web_evidence_path is not None:
+        generated_files.append(web_evidence_path)
+        print(f"[+] Generated {web_evidence_path}")
+    if decompiled_path is not None and hermes_targets:
+        hermes_evidence_path = _write_hermes_candidate_evidence(
+            output_dir,
+            source_text,
+            list(rank_candidates(hermes_targets)),
+        )
+        generated_files.append(hermes_evidence_path)
+        print(f"[+] Generated {hermes_evidence_path}")
+    if architecture.engine_type == "android-webview-js":
+        from re_agent.core.web_asset_analyzer import render_web_response_interceptor
+
+        web_hook_path = output_dir / "Hook_Web.js"
+        web_hook_path.write_text(
+            render_web_response_interceptor(list(groups.primary)),
+            encoding="utf-8",
+        )
+        generated_files.append(web_hook_path)
+        print(f"[+] Generated {web_hook_path}")
+    elif architecture.uses_frida_javascript:
         frida_path = output_dir / "Hook_Frida.js"
         frida_path.write_text(
             generate_frida_java_script(
@@ -1319,7 +1731,8 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     if architecture.is_android and not android_repackage_available:
         if bundle_path is not None and _read_text_bundle(bundle_path) is None:
             unavailable_reason = (
-                "the Hermes bundle is compiled bytecode and no verified runtime injection strategy was installed"
+                "the Hermes bundle is compiled bytecode and Frida Gadget embedding was not requested "
+                "(use --embed-frida-gadget for a signed instrumentation APK)"
             )
         else:
             unavailable_reason = "no verified static or runtime modification was produced"
@@ -1347,12 +1760,21 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
             return 2
         if modified_bundle is None and can_attempt_textual_patch and not gadget_requested:
             assert bundle_path is not None
-            modified_bundle, patch_notes = _patch_textual_bundle(
-                bundle_path,
-                list(groups.primary),
-                output_dir,
-                int(getattr(args, "max_patches", 5)),
-            )
+            if architecture.engine_type == "android-webview-js":
+                from re_agent.core.web_asset_analyzer import patch_web_entry_bundle
+
+                modified_bundle, patch_notes = patch_web_entry_bundle(
+                    bundle_path,
+                    list(groups.primary),
+                    output_dir,
+                )
+            else:
+                modified_bundle, patch_notes = _patch_textual_bundle(
+                    bundle_path,
+                    list(groups.primary),
+                    output_dir,
+                    int(getattr(args, "max_patches", 5)),
+                )
             replacement_stage = PipelineStage(
                 "static_patch",
                 "SUCCEEDED" if modified_bundle is not None else "FAILED",
@@ -1424,6 +1846,8 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 gadget_on_load=str(gadget_on_load or "resume"),
                 gadget_port=int(gadget_port or 27042),
                 gadget_version=str(gadget_version) if gadget_version else None,
+                split_apks=split_package.split_apks if split_package else (),
+                installer_package=installer_package,
             )
         else:
             ok, result = _repackage_android(
@@ -1432,6 +1856,8 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 architecture,
                 generated_files,
                 modified_bundle,
+                split_apks=split_package.split_apks if split_package else (),
+                installer_package=installer_package,
             )
         if not ok:
             print(f"[!] Repackaging failed: {result}")
@@ -1458,7 +1884,10 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
                 (result,),
             )
         )
-        print(f"[+] Rebuilt and signed APK: {result}")
+        if split_package is not None:
+            print(f"[+] Rebuilt and consistently signed split-APK set: {result}")
+        else:
+            print(f"[+] Rebuilt and signed APK: {result}")
     elif should_repack and architecture.is_windows:
         if binary_path is None:
             print("[!] Windows packaging requires a binary input.")
@@ -1518,3 +1947,30 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     print(f"[+] Capability manifest: {manifest}")
     print("==========================================================")
     return 0
+
+
+def cmd_pipeline(args: argparse.Namespace) -> int:
+    """Normalize split-package inputs before running the regular pipeline."""
+
+    binary_value = getattr(args, "binary", None)
+    if not binary_value:
+        return _cmd_pipeline_impl(args)
+    source = Path(binary_value)
+    if not source.exists() or (source.is_file() and source.suffix.casefold() == ".apk"):
+        return _cmd_pipeline_impl(args)
+
+    with tempfile.TemporaryDirectory(prefix="re-agent-split-input-") as temporary:
+        try:
+            package_set = resolve_android_package_set(
+                source,
+                Path(temporary) / "apks",
+            )
+        except SplitApkError as exc:
+            print(f"[!] Split-APK input rejected: {exc}")
+            return 2
+        if package_set is None:
+            return _cmd_pipeline_impl(args)
+        normalized_args = copy.copy(args)
+        normalized_args.binary = str(package_set.base_apk)
+        normalized_args._android_package_set = package_set
+        return _cmd_pipeline_impl(normalized_args)

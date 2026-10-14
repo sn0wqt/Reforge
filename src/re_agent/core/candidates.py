@@ -2,35 +2,38 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from typing import Any, TextIO
+from typing import Any, TextIO, TypedDict
 
 from re_agent.config.domain_keywords import (
-    CORE_CURRENCY_VALUE_KEYWORDS,
-    ECONOMY_DATA_HINTS,
-    NON_BALANCE_VALUE_HINTS,
-    NON_RUNTIME_CLASS_HINTS,
-    UI_PENALTY_HINTS,
+    COLLISION_KEYWORDS,
+    CURRENCY_KEYWORDS,
+    ENTITY_KEYWORDS,
+    MOVEMENT_KEYWORDS,
+    NAMED_TIER_ENTITY_KEYWORDS,
+    SUBSCRIPTION_KEYWORDS,
+    canonical_entity_token,
     identifier_tokens,
+    matches_identifier_keyword,
 )
 from re_agent.llm.analyzed_target import AnalyzedTarget
+from re_agent.utils.goal_parser import extract_entity_keywords
+from re_agent.utils.mutation_intent import DEX_SCALAR_TYPE_MAP, primitive_type_kind
 
 PRIMARY_CONFIDENCE_THRESHOLD = 85
 PRIMARY_CANDIDATE_LIMIT = 5
 _JAVA_DEX_ENGINES = frozenset({"android-java-dex", "react-native-hermes"})
-_DEX_PRIMITIVE_RETURN_TYPES = frozenset(
-    {
-        "boolean",
-        "byte",
-        "char",
-        "double",
-        "float",
-        "int",
-        "long",
-        "short",
-    }
-)
+_DEX_PRIMITIVE_RETURN_TYPES = frozenset(DEX_SCALAR_TYPE_MAP)
+
+
+class ActivationFacts(TypedDict):
+    """Exactly the readiness fields accepted by :class:`AnalyzedTarget`."""
+
+    signature_verified: bool
+    address_verified: bool
+    implementation_ready: bool
 
 
 def target_activation_facts(
@@ -39,12 +42,13 @@ def target_activation_facts(
     engine_type: str = "",
     hook_type: str = "",
     evidence: dict[str, Any] | None = None,
-) -> dict[str, bool]:
+) -> ActivationFacts:
     """Return evidence facts without treating native address evidence as ABI proof.
 
-    Only the narrowly grounded Java/DEX primitive return-override pathway is
-    implementation-ready. A native RVA or field offset may prove an address,
-    but never proves the callable signature, ABI, or safe mutation behavior.
+    Exact Java/DEX primitive overrides and exact IL2CPP integer/bool method-RVA
+    overrides are implementation-ready for their corresponding Frida
+    generators. Other native RVAs and field offsets may prove an address but
+    do not prove mutation safety.
     """
     ev = evidence or {}
     h_type = hook_type or (target.hook_type if target is not None else "")
@@ -78,10 +82,23 @@ def target_activation_facts(
         and not isinstance(offset, bool)
         and offset >= 0
     )
+    native_return_type = (
+        target.return_type
+        if target is not None and target.return_type
+        else ev.get("return_type", "")
+    )
+    exact_il2cpp_integral_override = (
+        engine_type.startswith("unity-il2cpp")
+        and h_type == "return_override"
+        and native_method_address
+        and "parameter_types" in ev
+        and isinstance(ev.get("parameter_types"), (list, tuple))
+        and primitive_type_kind(native_return_type) in {"bool", "integer"}
+    )
     return {
-        "signature_verified": exact_java_override,
+        "signature_verified": exact_java_override or exact_il2cpp_integral_override,
         "address_verified": exact_java_override or native_method_address or native_field_address,
-        "implementation_ready": exact_java_override,
+        "implementation_ready": exact_java_override or exact_il2cpp_integral_override,
     }
 
 
@@ -111,47 +128,16 @@ def _candidate_key(
 
 
 def _semantic_priority(target: AnalyzedTarget) -> int:
-    """Break confidence ties in favor of state storage and direct value access."""
-    class_tokens = identifier_tokens(target.class_name)
-    member_tokens = identifier_tokens(target.target)
+    """Break confidence ties using only domain-neutral evidence readiness."""
     score = 0
-
-    score += 45 * len(class_tokens & (ECONOMY_DATA_HINTS - frozenset({"model", "runner", "state"})))
-    score += 20 * len(class_tokens & {"model", "runner", "state"})
-
-    ignored_member_words = {
-        "available",
-        "current",
-        "for",
-        "get",
-        "has",
-        "m",
-        "raw",
-        "the",
-        "total",
-        "use",
-    }
-    value_words = member_tokens - ignored_member_words
-    if value_words and value_words <= CORE_CURRENCY_VALUE_KEYWORDS:
-        score += 90
-    elif member_tokens & CORE_CURRENCY_VALUE_KEYWORDS:
-        score += 20
-
-    score -= 45 * len(member_tokens & NON_BALANCE_VALUE_HINTS)
-    score -= 40 * len(class_tokens & UI_PENALTY_HINTS)
-    score -= 50 * len(class_tokens & NON_RUNTIME_CLASS_HINTS)
-    if target.return_type == "bool":
-        score -= 15
     if target.method_rva is not None or target.offset is not None:
         score += 5
     if target.signature_verified:
-        score += 10
+        score += 20
     if target.address_verified:
-        score += 10
+        score += 20
     if target.implementation_ready:
-        score += 10
-    if target.parameter_types:
-        score -= 30
+        score += 30
     return score
 
 
@@ -243,11 +229,97 @@ def rank_candidates(
 
 def _extract_entity_concept(target: AnalyzedTarget) -> str:
     """Extract the primary domain entity concept (e.g., coins, keys) for entity disambiguation."""
-    tokens = identifier_tokens(target.target) | identifier_tokens(target.class_name)
-    currency_hits = tokens & CORE_CURRENCY_VALUE_KEYWORDS
-    if currency_hits:
-        return sorted(currency_hits)[0]
+    for tokens in (identifier_tokens(target.target), identifier_tokens(target.class_name)):
+        entity_hits = {
+            canonical_entity_token(token)
+            for token in tokens
+            if token in ENTITY_KEYWORDS
+        }
+        if entity_hits:
+            return sorted(entity_hits)[0]
     return f"{target.class_name.casefold()}::{target.target.casefold()}"
+
+
+def _goal_entity_concepts(goal_prompt: str | None) -> tuple[str, ...]:
+    if not goal_prompt:
+        return ()
+    concepts = tuple(
+        dict.fromkeys(
+            canonical_entity_token(token)
+            for token in extract_entity_keywords(goal_prompt)
+            if canonical_entity_token(token)
+        )
+    )
+    return concepts
+
+
+def _goal_entity_structure(
+    goal_prompt: str | None,
+) -> tuple[tuple[str, ...], dict[str, frozenset[str]]]:
+    """Return requested concepts with contiguous multi-word entities first."""
+    individual = _goal_entity_concepts(goal_prompt)
+    if not goal_prompt or not individual:
+        return individual, {}
+
+    individual_set = set(individual)
+    runs: list[list[str]] = []
+    current: list[str] = []
+    for raw_token in re.findall(r"\b\w+\b", goal_prompt.casefold()):
+        token = canonical_entity_token(raw_token)
+        if token in individual_set:
+            current.append(token)
+        elif current:
+            runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+
+    compounds: dict[str, frozenset[str]] = {}
+    ordered_compounds: list[str] = []
+    for run in runs:
+        for width in range(min(4, len(run)), 1, -1):
+            for start in range(len(run) - width + 1):
+                parts = run[start : start + width]
+                compound = "".join(parts)
+                if compound not in compounds:
+                    compounds[compound] = frozenset(parts)
+                    ordered_compounds.append(compound)
+    return tuple(ordered_compounds) + individual, compounds
+
+
+def _goal_concept_for_target(
+    target: AnalyzedTarget,
+    requested: tuple[str, ...],
+) -> str | None:
+    """Map a candidate to one explicitly requested entity concept."""
+    member_tokens = identifier_tokens(target.target)
+    class_tokens = identifier_tokens(target.class_name)
+    canonical_member_tokens = {canonical_entity_token(token) for token in member_tokens}
+    canonical_class_tokens = {canonical_entity_token(token) for token in class_tokens}
+    for concept in requested:
+        if concept in canonical_member_tokens or matches_identifier_keyword(concept, target.target):
+            return concept
+    for concept in requested:
+        if concept in canonical_class_tokens or matches_identifier_keyword(concept, target.class_name):
+            return concept
+
+    # Generic family requests intentionally select only one best member of the
+    # family. Specific resources (coin, key, gem, etc.) still require an exact
+    # entity token and therefore cannot activate an unrelated resource.
+    family_requests = (
+        ("currency", CURRENCY_KEYWORDS),
+        ("collision", COLLISION_KEYWORDS),
+        ("movement", MOVEMENT_KEYWORDS),
+        ("subscription", SUBSCRIPTION_KEYWORDS),
+    )
+    requested_set = set(requested)
+    for concept, family in family_requests:
+        if concept in requested_set and member_tokens & family:
+            return concept
+    for concept, family in family_requests:
+        if concept in requested_set and class_tokens & family:
+            return concept
+    return None
 
 
 def split_candidates(
@@ -261,20 +333,46 @@ def split_candidates(
     ranked = rank_candidates(targets)
     high_conf = [t for t in ranked if t.confidence >= confidence_threshold]
 
-    primary: list[AnalyzedTarget] = []
-    seen_entities: set[str] = set()
-    specific_entities = {"coins", "keys", "gems"}
-    has_specific_currency_targets = any(_extract_entity_concept(t) in specific_entities for t in high_conf)
+    selected_by_entity: dict[str, AnalyzedTarget] = {}
+    requested, compound_parts = _goal_entity_structure(goal_prompt)
 
     for target in high_conf:
-        entity = _extract_entity_concept(target)
-        if has_specific_currency_targets and entity not in specific_entities:
+        entity = (
+            _goal_concept_for_target(target, requested)
+            if requested
+            else _extract_entity_concept(target)
+        )
+        if entity is None:
             continue
-        if entity not in seen_entities:
-            seen_entities.add(entity)
-            primary.append(target)
-            if len(primary) >= primary_limit:
-                break
+        if entity not in selected_by_entity:
+            selected_by_entity[entity] = target
+
+    selected_compounds = sorted(
+        (entity for entity in compound_parts if entity in selected_by_entity),
+        key=lambda entity: len(compound_parts[entity]),
+        reverse=True,
+    )
+    for compound in selected_compounds:
+        if compound not in selected_by_entity:
+            continue
+        parts = compound_parts[compound]
+        for entity in tuple(selected_by_entity):
+            if entity == compound:
+                continue
+            entity_parts = compound_parts.get(entity, frozenset({entity}))
+            if entity_parts < parts:
+                selected_by_entity.pop(entity)
+
+    # A generic family property remains useful when it is the only grounded
+    # target.  It becomes redundant only when the metadata also supplies a
+    # concrete named-tier target such as Pro or Max.
+    if "subscription" in selected_by_entity and any(
+        entity in selected_by_entity for entity in NAMED_TIER_ENTITY_KEYWORDS
+    ):
+        selected_by_entity.pop("subscription")
+
+    selected_ids = {id(target) for target in selected_by_entity.values()}
+    primary = [target for target in high_conf if id(target) in selected_ids][:primary_limit]
 
     primary_ids = {id(target) for target in primary}
     secondary = tuple(target for target in ranked if id(target) not in primary_ids)
@@ -318,12 +416,15 @@ def render_candidate_summary(
         targets,
         confidence_threshold=confidence_threshold,
         primary_limit=primary_limit,
+        goal_prompt=goal_prompt,
     )
     lines = [
         f"TOP HIGH-CONFIDENCE TARGETS (>={confidence_threshold}%, max {primary_limit})",
     ]
     if groups.primary:
         lines.extend(f"  {index}. {format_candidate(target)}" for index, target in enumerate(groups.primary, 1))
+    elif goal_prompt and any(target.confidence >= confidence_threshold for target in groups.secondary):
+        lines.append("  High-confidence candidates were found, but none matched the requested goal entities.")
     else:
         lines.append("  No candidate met the high-confidence threshold.")
 

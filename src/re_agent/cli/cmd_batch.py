@@ -14,9 +14,10 @@ from re_agent.config.domain_keywords import (
     COLLISION_KEYWORDS,
     CORE_CURRENCY_VALUE_KEYWORDS,
     CURRENCY_KEYWORDS,
-    DOMAIN_EXPANSION_GROUPS,
+    IGNORED_SDK_PREFIXES,
     MODEL_HINTS,
     MOVEMENT_KEYWORDS,
+    NAMED_TIER_ENTITY_KEYWORDS,
     NON_RUNTIME_CLASS_HINTS,
     UI_PENALTY_HINTS,
     filter_entity_terms,
@@ -25,17 +26,21 @@ from re_agent.config.domain_keywords import (
     is_balance_value_member,
     is_contextual_currency_match,
     is_entity_keyword,
+    is_named_tier_match_contextual,
+    is_platform_library_class,
     matches_identifier_keyword,
 )
 from re_agent.config.loader import load_config
 from re_agent.core.candidates import (
+    ActivationFacts,
     print_candidate_summary,
     rank_candidates,
     target_activation_facts,
 )
 from re_agent.core.il2cpp_parser import find_il2cpp_metadata_in_dir
 from re_agent.llm.analyzed_target import AnalyzedTarget
-from re_agent.utils.goal_parser import extract_entity_keywords
+from re_agent.utils.goal_parser import expand_goal_terms, extract_entity_keywords
+from re_agent.utils.mutation_intent import infer_primitive_replacement, primitive_type_kind
 from re_agent.utils.paths import safe_filename
 from re_agent.utils.vtable import generate_vtable_header
 
@@ -47,7 +52,7 @@ def _method_activation_facts(
     engine_type: str,
     evidence: dict[str, Any],
     hook_type: str,
-) -> dict[str, bool]:
+) -> ActivationFacts:
     """Prove activation readiness using centralized candidate facts."""
     return target_activation_facts(
         target=None,
@@ -75,10 +80,7 @@ def resolve_goal_keywords(goal_text: str, provider: Any = None) -> list[str]:
         except Exception:
             pass
 
-    goal_tokens = set(re.findall(r"\b\w+\b", goal_text.lower()))
-    for triggers, expansions in DOMAIN_EXPANSION_GROUPS:
-        if goal_tokens & triggers:
-            keywords.extend(sorted(expansions))
+    keywords.extend(term for term in expand_goal_terms(goal_text) if term not in keywords)
 
     clean = filter_entity_terms(keywords)
     return clean
@@ -93,51 +95,39 @@ def _match_candidate_keyword(
     keyword: str,
     class_name: str,
     member_name: str,
+    *,
+    direct: bool = False,
 ) -> bool:
     """Match one entity while rejecting overloaded framework terminology."""
-    return _match_keyword(keyword, member_name) and (
-        keyword not in CURRENCY_KEYWORDS or is_contextual_currency_match(keyword, class_name, member_name)
+    if not _match_keyword(keyword, member_name):
+        return False
+    if keyword in NAMED_TIER_ENTITY_KEYWORDS and not is_named_tier_match_contextual(
+        keyword,
+        class_name,
+        member_name,
+    ):
+        return False
+    return (
+        direct
+        or keyword not in CURRENCY_KEYWORDS
+        or is_contextual_currency_match(keyword, class_name, member_name)
+    )
+
+
+def _is_application_owned_class(class_name: object, application_identifier: str | None) -> bool:
+    """Match a DEX class to the manifest package without publisher guesses."""
+    if not application_identifier:
+        return False
+    normalized_class = str(class_name).strip().casefold()
+    normalized_package = application_identifier.strip().casefold().rstrip(".")
+    return normalized_class == normalized_package or normalized_class.startswith(
+        (f"{normalized_package}.", f"{normalized_package}$")
     )
 
 
 def _is_scalar_currency_field_type(type_name: object) -> bool:
-    """Accept only scalar numeric storage, never delegates or collections."""
-    normalized = re.sub(r"\s+", "", str(type_name)).casefold()
-    return normalized in {
-        "byte",
-        "double",
-        "float",
-        "int",
-        "int16",
-        "int16_t",
-        "int32",
-        "int32_t",
-        "int64",
-        "int64_t",
-        "long",
-        "safeint",
-        "safelong",
-        "sbyte",
-        "short",
-        "system.byte",
-        "system.double",
-        "system.int16",
-        "system.int32",
-        "system.int64",
-        "system.sbyte",
-        "system.single",
-        "system.uint16",
-        "system.uint32",
-        "system.uint64",
-        "uint",
-        "uint16",
-        "uint16_t",
-        "uint32",
-        "uint32_t",
-        "uint64",
-        "uint64_t",
-        "ulong",
-    }
+    """Compatibility wrapper for application-neutral primitive detection."""
+    return primitive_type_kind(type_name) in {"integer", "float"}
 
 
 def group_methods_by_class(methods: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -218,6 +208,7 @@ def rank_classes_by_relevance(
     candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]],
     keywords: list[str],
     direct_keywords: list[str] | None = None,
+    application_identifier: str | None = None,
 ) -> list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]]:
     """Rank candidate classes by keyword relevance with structural heuristics.
 
@@ -235,9 +226,12 @@ def rank_classes_by_relevance(
         direct_terms = set(direct_keywords or ())
         class_tokens = identifier_tokens(cls_name)
 
+        if _is_application_owned_class(cls_name, application_identifier):
+            score += 300
+
         matched_kw_count = 0
         for kw in keywords:
-            if not _match_candidate_keyword(kw, cls_name, cls_name):
+            if not _match_candidate_keyword(kw, cls_name, cls_name, direct=kw in direct_terms):
                 continue
             if kw.casefold() == cls_name.casefold():
                 score += 100 if kw in direct_terms else 80
@@ -252,14 +246,22 @@ def rank_classes_by_relevance(
         # Keyword matches on member fields
         for f in fields:
             f_name = str(f.get("name", ""))
-            matches = [kw for kw in keywords if _match_candidate_keyword(kw, cls_name, f_name)]
+            matches = [
+                kw
+                for kw in keywords
+                if _match_candidate_keyword(kw, cls_name, f_name, direct=kw in direct_terms)
+            ]
             if matches:
                 score += 20 if any(kw in direct_terms for kw in matches) else 10
 
         # Keyword matches on method names
         for m in methods:
             m_name = str(m.get("method_name", m.get("name", "")))
-            matches = [kw for kw in keywords if _match_candidate_keyword(kw, cls_name, m_name)]
+            matches = [
+                kw
+                for kw in keywords
+                if _match_candidate_keyword(kw, cls_name, m_name, direct=kw in direct_terms)
+            ]
             if matches:
                 score += 15 if any(kw in direct_terms for kw in matches) else 7
 
@@ -271,24 +273,7 @@ def rank_classes_by_relevance(
             score += 20
 
         # Heavy penalty for third-party SDK / logger / analytics packages
-        _SDK_PREFIXES = (
-            "com.facebook.",
-            "com.google.",
-            "com.tencent.",
-            "com.ss.bytertc.",
-            "com.nirvana.",
-            "com.mobile.auth.",
-            "com.reactnativecommunity.",
-            "com.horcrux.svg.",
-            "com.swmansion.",
-            "org.chromium.",
-            "io.sentry.",
-            "com.adjust.",
-            "com.appsflyer.",
-            "androidx.",
-            "android.support.",
-        )
-        if any(cls_name.startswith(p) or f".{p}" in cls_name for p in _SDK_PREFIXES):
+        if any(cls_name.startswith(prefix) or f".{prefix}" in cls_name for prefix in IGNORED_SDK_PREFIXES):
             score -= 200
 
         # Heavy penalty for UI / visual / audio / decor / wrapper classes
@@ -314,8 +299,8 @@ def cmd_batch(
             _return_matches=True is set on args by the pipeline.
             Each target is (class_name, field_name, hex_offset).
     """
-    config_path = Path(args.config)
-    config = load_config(config_path) if config_path.exists() else load_config(None)
+    configured = getattr(args, "config", None)
+    config = load_config(Path(configured) if configured else None)
     output_dir = Path(args.output_dir or config.project_profile.source_root)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -342,13 +327,30 @@ def cmd_batch(
     methods = il2cpp_meta.get("methods", []) if il2cpp_meta else []
     structs_list = il2cpp_meta.get("structs", []) if il2cpp_meta else []
     dump_cs_classes = il2cpp_meta.get("classes", []) if il2cpp_meta else []
+    dex_metadata_loaded = False
+    application_identifier: str | None = None
 
     # Check for Android DEX / APK binaries if no IL2CPP metadata found
     if not (methods or structs_list or dump_cs_classes) and binary_arg:
         from re_agent.core.dex_parser import parse_apk_or_dex
 
+        dex_started = time.monotonic()
+        dex_scan_expected = (
+            Path(binary_arg).suffix.casefold() in {".apk", ".dex"}
+            or engine_type in {"android-java-dex", "react-native-hermes"}
+        )
+        if dex_scan_expected:
+            print(
+                "[*] Parsing declared executable methods from Android DEX files "
+                "(local CPU; large APKs can take several minutes)...",
+                flush=True,
+            )
         dex_meta = parse_apk_or_dex(binary_arg)
         if dex_meta and dex_meta.get("classes"):
+            from re_agent.core.app_identity import detect_application_identifier
+
+            dex_metadata_loaded = True
+            application_identifier = detect_application_identifier(binary_arg)
             dex_classes = dex_meta["classes"]
             dump_cs_classes = [
                 {"name": cls_name, "methods": m_list, "fields": []} for cls_name, m_list in dex_classes.items()
@@ -356,8 +358,20 @@ def cmd_batch(
             methods = dex_meta.get("methods", [])
             print(
                 f"[+] Loaded Android DEX Java/Kotlin metadata from '{binary_arg}' "
-                f"({len(methods)} methods across {len(dump_cs_classes)} classes)."
+                f"({len(methods)} methods across {len(dump_cs_classes)} classes in "
+                f"{time.monotonic() - dex_started:.1f}s)."
             )
+            if application_identifier:
+                owned_count = sum(
+                    1
+                    for class_name in dex_classes
+                    if _is_application_owned_class(class_name, application_identifier)
+                )
+                print(
+                    f"[+] Manifest application namespace: {application_identifier} "
+                    f"({owned_count} application-owned executable DEX classes; "
+                    "remaining classes are bundled dependencies)."
+                )
 
     structs_map: dict[str, list[dict[str, Any]]] = {}
     struct_display_names: dict[str, str] = {}
@@ -419,18 +433,6 @@ def cmd_batch(
     if goal_prompt:
         print(f"[+] Resolved Target Patterns: {goal_keywords}")
 
-    # Pillar 1: bundled offline knowledge lookup
-    from re_agent.core.web_knowledge import lookup_game_knowledge
-
-    game_hint = getattr(args, "game_name", None) or ""
-    search_text = f"{game_hint} {meta_dir} {goal_prompt or ''}".lower()
-    known_pattern = lookup_game_knowledge(search_text)
-    if known_pattern:
-        print(f"[+] Bundled Knowledge Matched: '{known_pattern.game_name}'")
-        print(f"    • Known targets: {known_pattern.target_classes}")
-        print(f"    • Details: {known_pattern.description}")
-        goal_keywords.extend([c.lower() for c in known_pattern.target_classes])
-
     if methods or structs_list or dump_cs_classes:
         if methods and il2cpp_meta:
             print(f"[+] Loaded IL2CPP metadata from '{meta_dir}' with {len(methods)} methods.")
@@ -479,37 +481,45 @@ def cmd_batch(
 
         raw_candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]] = []
 
-        skip_packages = (
-            "java.",
-            "javax.",
-            "android.",
-            "androidx.",
-            "kotlin.",
-            "kotlinx.",
-            "com.google.",
-            "com.facebook.",
-            "io.sentry.",
-            "org.apache.",
-            "org.json.",
-            "com.squareup.",
-            "com.appsflyer.",
-            "com.adjust.",
-            "com.unity3d.",
-            "com.android.",
-            "com.amazon.",
-            "com.amplitude.",
-            "com.braze.",
-            "com.onesignal.",
-        )
-
         for cls_name, cls_methods in class_map.items():
-            if any(cls_name.startswith(pkg) for pkg in skip_packages):
-                continue
-
             cls_fields = structs_map.get(cls_name.lower(), [])
 
+            # DEX archives contain the full Android runtime/dependency surface.
+            # A direct word match must not allow platform or telemetry SDK code
+            # to masquerade as application behavior.
+            if dex_metadata_loaded and (
+                is_platform_library_class(cls_name)
+                or any(cls_name.casefold().startswith(prefix) for prefix in IGNORED_SDK_PREFIXES)
+            ):
+                continue
+
+            direct_member_match = any(
+                _match_candidate_keyword(term, cls_name, cls_name, direct=True)
+                or any(
+                    _match_candidate_keyword(term, cls_name, str(field.get("name", "")), direct=True)
+                    for field in cls_fields
+                )
+                or any(
+                    _match_candidate_keyword(
+                        term,
+                        cls_name,
+                        str(method.get("method_name", method.get("name", ""))),
+                        direct=True,
+                    )
+                    for method in cls_methods
+                )
+                for term in direct_goal_keywords
+            )
+            if (
+                any(cls_name.casefold().startswith(prefix) for prefix in IGNORED_SDK_PREFIXES)
+                and not direct_member_match
+            ):
+                continue
+
             if target_classes:
-                name_match = any(_match_candidate_keyword(term, cls_name, cls_name) for term in target_classes)
+                name_match = direct_member_match or any(
+                    _match_candidate_keyword(term, cls_name, cls_name) for term in target_classes
+                )
                 field_match = any(
                     any(
                         _match_candidate_keyword(
@@ -554,6 +564,7 @@ def cmd_batch(
             raw_candidates,
             target_classes,
             direct_goal_keywords,
+            application_identifier=application_identifier,
         )
         semantic_shortlist = ranked_candidates[:limit]
 
@@ -661,6 +672,17 @@ def cmd_batch(
                     semantic_shortlist,
                     raise_on_provider_error=True,
                 )
+                if dex_metadata_loaded:
+                    for target in llm_targets:
+                        if not _is_application_owned_class(
+                            target.class_name,
+                            application_identifier,
+                        ):
+                            target.confidence = min(target.confidence, 79)
+                            target.reason = (
+                                f"{target.reason}; bundled dependency rather than manifest-owned "
+                                "DEX code, so activation requires runtime confirmation"
+                            )
                 if is_currency_goal:
                     for target in llm_targets:
                         direct_match = any(
@@ -752,48 +774,6 @@ def cmd_batch(
                 "c",
             }
 
-            # Exclude non-gameplay/auth key methods
-            ignored_key_patterns = {
-                "authkey",
-                "cryptokey",
-                "iscompatiblekey",
-                "keycomposer",
-                "licensekey",
-                "providerkey",
-                "sshkey",
-            }
-            ignored_return_types = {
-                "action",
-                "delegate",
-                "ienumerable",
-                "string",
-                "system.string",
-                "task",
-                "void",
-            }
-
-            # Primitive C# types allowed for scalar return_override
-            primitive_numeric_types = {
-                "int",
-                "int32",
-                "int32_t",
-                "uint",
-                "uint32",
-                "uint32_t",
-                "long",
-                "int64",
-                "int64_t",
-                "ulong",
-                "uint64",
-                "float",
-                "double",
-                "short",
-                "int16",
-                "uint16",
-                "byte",
-                "sbyte",
-            }
-
             for cls_name, cls_methods, cls_fields in ranked_candidates:
                 if (
                     cls_name in skip_classes
@@ -818,7 +798,6 @@ def cmd_batch(
                             continue
                         if not isinstance(f_off, int) or f_off < 0:
                             continue
-                        f_lower = f_name.lower()
                         f_type = str(f.get("type", "int32_t")).lower().strip()
                         if not _is_scalar_currency_field_type(f_type) or not is_balance_value_member(f_name):
                             continue
@@ -835,8 +814,6 @@ def cmd_batch(
                             None,
                         )
                         if matched_kw:
-                            if any(ig in f_lower for ig in ignored_key_patterns):
-                                continue
                             direct_match = any(
                                 _match_candidate_keyword(
                                     keyword,
@@ -872,17 +849,13 @@ def cmd_batch(
                         # Skip C# event subscriptions (add_On*, remove_On*)
                         if m.get("is_event") or m_lower.startswith(("add_", "remove_", "subscribe", "unsubscribe")):
                             continue
-                        if any(ig in m_lower for ig in ignored_key_patterns):
-                            continue
                         if not is_balance_value_member(m_name):
                             continue
-                        if any(ig in m_ret for ig in ignored_return_types) or "*" in m_ret:
+                        return_kind = primitive_type_kind(m_ret)
+                        if return_kind not in {"bool", "integer", "float"}:
                             continue
 
-                        is_bool = "bool" in m_ret or m_lower.startswith(("is", "has"))
-                        if not is_bool and m_ret not in primitive_numeric_types:
-                            # Skip custom C# class objects (Product, CurrencyType, etc.)
-                            continue
+                        is_bool = return_kind == "bool"
                         if is_bool and not m_lower.startswith(("has_", "has")):
                             continue
 
@@ -1025,6 +998,163 @@ def cmd_batch(
                                     )
                                 )
 
+                # Application-neutral direct evidence. Unknown entity names
+                # must receive the same deterministic treatment as bundled
+                # vocabulary, but only when the member name, primitive type,
+                # and requested mutation direction are all explicit.
+                for field in cls_fields:
+                    field_name = str(field.get("name", ""))
+                    field_offset = field.get("offset")
+                    field_kind = primitive_type_kind(field.get("type", ""))
+                    matched_direct = next(
+                        (
+                            term
+                            for term in direct_goal_keywords
+                            if _match_candidate_keyword(
+                                term,
+                                cls_name,
+                                field_name,
+                                direct=True,
+                            )
+                        ),
+                        None,
+                    )
+                    if (
+                        matched_direct is None
+                        or not isinstance(field_offset, int)
+                        or isinstance(field_offset, bool)
+                        or field_offset < 0
+                        or field_kind not in {"bool", "integer", "float"}
+                    ):
+                        continue
+                    application_owned = (
+                        not dex_metadata_loaded
+                        or _is_application_owned_class(cls_name, application_identifier)
+                    )
+                    replacement = infer_primitive_replacement(
+                        goal_prompt,
+                        type_name=field.get("type", ""),
+                    )
+                    fallback_targets.append(
+                        AnalyzedTarget(
+                            class_name=cls_name,
+                            target=field_name,
+                            offset=field_offset,
+                            hook_type="memory_patch",
+                            return_value=replacement,
+                            return_type=(
+                                "bool"
+                                if field_kind == "bool"
+                                else "double"
+                                if field_kind == "float"
+                                else "int64_t"
+                            ),
+                            confidence=(
+                                92
+                                if replacement is not None
+                                and field_name.casefold() == matched_direct.casefold()
+                                and application_owned
+                                else 88
+                                if replacement is not None and application_owned
+                                else 74
+                            ),
+                            reason=(
+                                f"Direct requested entity {matched_direct!r} matched a primitive "
+                                f"field with an exact offset; "
+                                + (
+                                    "the requested mutation is type-compatible"
+                                    if replacement is not None and application_owned
+                                    else "the class is a bundled dependency and needs runtime confirmation"
+                                    if replacement is not None
+                                    else "the mutation direction remains ambiguous"
+                                )
+                            ),
+                        )
+                    )
+
+                for method in cls_methods:
+                    method_name = str(method.get("method_name", method.get("name", "")))
+                    method_lower = method_name.casefold()
+                    if (
+                        method.get("is_event")
+                        or method.get("is_constructor")
+                        or method_lower.startswith(("add_", "remove_", "set_", "subscribe", "unsubscribe"))
+                        or not method_lower.startswith(("get", "has", "is"))
+                    ):
+                        continue
+                    matched_direct = next(
+                        (
+                            term
+                            for term in direct_goal_keywords
+                            if _match_candidate_keyword(
+                                term,
+                                cls_name,
+                                method_name,
+                                direct=True,
+                            )
+                        ),
+                        None,
+                    )
+                    method_kind = primitive_type_kind(method.get("return_type", ""))
+                    if matched_direct is None or method_kind not in {"bool", "integer", "float"}:
+                        continue
+                    application_owned = (
+                        not dex_metadata_loaded
+                        or _is_application_owned_class(cls_name, application_identifier)
+                    )
+                    replacement = infer_primitive_replacement(
+                        goal_prompt,
+                        type_name=method.get("return_type", ""),
+                    )
+                    hook_return_type = (
+                        "bool"
+                        if method_kind == "bool"
+                        else "double"
+                        if method_kind == "float"
+                        else "int64_t"
+                    )
+                    fallback_targets.append(
+                        AnalyzedTarget(
+                            class_name=cls_name,
+                            target=method_name,
+                            hook_type="return_override",
+                            return_value=replacement,
+                            return_type=hook_return_type,
+                            confidence=(88 if replacement is not None and application_owned else 74),
+                            reason=(
+                                f"Direct requested entity {matched_direct!r} matched a primitive "
+                                f"getter/predicate with an exact signature; "
+                                + (
+                                    "the requested mutation is type-compatible"
+                                    if replacement is not None and application_owned
+                                    else "the class is a bundled dependency and needs runtime confirmation"
+                                    if replacement is not None
+                                    else "the mutation direction remains ambiguous"
+                                )
+                            ),
+                            method_rva=(
+                                method.get("rva")
+                                if method.get("address_kind") == "method_rva"
+                                and isinstance(method.get("rva"), int)
+                                and not isinstance(method.get("rva"), bool)
+                                else None
+                            ),
+                            parameter_types=(
+                                tuple(method.get("parameter_types", ()))
+                                if isinstance(method.get("parameter_types"), (list, tuple))
+                                else ()
+                            ),
+                            method_descriptor=(
+                                str(method["descriptor"]) if method.get("descriptor") else None
+                            ),
+                            **_method_activation_facts(
+                                engine_type,
+                                method,
+                                "return_override",
+                            ),
+                        )
+                    )
+
         candidate_targets = list(rank_candidates(llm_targets + fallback_targets + structural_targets))
         matched_offsets_summary: list[str] = []
         discovered_targets: list[tuple[str, str, int]] = []
@@ -1078,20 +1208,6 @@ def cmd_batch(
                     matched_offsets_summary.append(f"  . {cls_name}::{field_name} -> Offset: 0x{field_offset:X}")
                     discovered_targets.append((cls_name, field_name, field_offset))
 
-        raw_targets = [
-            AnalyzedTarget(
-                class_name=class_name,
-                target=field_name,
-                offset=offset,
-                hook_type="memory_patch",
-                return_value="999999",
-                return_type="int32_t",
-                confidence=30,
-                reason="Keyword-matched field offset without semantic verification",
-            )
-            for class_name, field_name, offset in discovered_targets
-        ]
-        candidate_targets = list(rank_candidates(candidate_targets + raw_targets))
         print(
             f"[+] Candidate synthesis completed in "
             f"{time.monotonic() - synthesis_started:.1f}s; retained "
@@ -1159,7 +1275,7 @@ def cmd_batch(
 
         if not getattr(args, "_suppress_candidate_display", False):
             print("\n[+] UNIVERSAL CANDIDATE SELECTION")
-            print_candidate_summary(candidate_targets, stream=sys.stdout)
+            print_candidate_summary(candidate_targets, stream=sys.stdout, goal_prompt=goal_prompt)
 
         if getattr(args, "_return_matches", False):
             return 0, discovered_targets, candidate_targets
@@ -1176,7 +1292,7 @@ def cmd_batch(
             print(f"[+] Retained {len(native_targets)} bounded native string/symbol evidence candidates (review-only).")
             if not getattr(args, "_suppress_candidate_display", False):
                 print("\n[+] UNIVERSAL CANDIDATE SELECTION")
-                print_candidate_summary(native_targets, stream=sys.stdout)
+                print_candidate_summary(native_targets, stream=sys.stdout, goal_prompt=goal_prompt)
             if getattr(args, "_return_matches", False):
                 return 0, [], native_targets
             return 0
@@ -1189,7 +1305,7 @@ def cmd_batch(
     )
     if not getattr(args, "_suppress_candidate_display", False):
         print("\n[+] UNIVERSAL CANDIDATE SELECTION")
-        print_candidate_summary([], stream=sys.stdout)
+        print_candidate_summary([], stream=sys.stdout, goal_prompt=goal_prompt)
     if getattr(args, "_return_matches", False):
         return 3, [], []
     return 3

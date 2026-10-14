@@ -50,6 +50,7 @@ def test_candidate_parity_is_blocking_and_uses_generated_body(tmp_path: Path) ->
     )
     config = ReAgentConfig.create_default()
     config.project_profile.source_root = str(source_root)
+    config.project_profile.stub_markers = ["NOTSA_UNREACHABLE"]
     config.output.report_dir = str(tmp_path / "reports")
     config.output.log_dir = str(tmp_path / "logs")
     config.output.session_file = str(tmp_path / "session.json")

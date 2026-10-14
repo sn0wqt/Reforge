@@ -11,6 +11,7 @@ Supported CLI overrides > supported environment variables > YAML config > defaul
 
 | Variable | Maps to |
 |----------|---------|
+| `RE_AGENT_CONFIG` | Explicit default YAML path used from any working directory |
 | `RE_AGENT_LLM_PROVIDER` | `llm.provider` |
 | `RE_AGENT_LLM_API_KEY` | `llm.api_key` |
 | `RE_AGENT_LLM_MODEL` | `llm.model` |
@@ -29,6 +30,10 @@ variables at user scope and adds ADB, JADX, and Il2CppDumper to the user PATH.
 `re-agent doctor` shows the resolved paths and versions. CLI paths always win;
 environment paths then override the pinned managed installation, which is
 preferred over an unrelated PATH copy.
+
+Without `--config`, discovery checks `RE_AGENT_CONFIG`, the current directory,
+and then the checkout root for editable installations. A missing explicit
+`RE_AGENT_CONFIG` path fails closed instead of falling back to another provider.
 
 ## LLM Config
 

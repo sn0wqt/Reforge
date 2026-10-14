@@ -9,6 +9,7 @@ from re_agent.utils.toolchain import (
     managed_tools_root,
     resolve_adb,
     resolve_apk_signer,
+    resolve_apktool,
     resolve_frida_gadget_path,
     resolve_il2cpp_dumper,
     resolve_jadx,
@@ -21,6 +22,7 @@ def test_managed_tool_resolvers_find_versioned_install(
 ) -> None:
     monkeypatch.setenv("RE_AGENT_TOOLS_DIR", str(tmp_path))
     monkeypatch.delenv("RE_AGENT_APK_SIGNER_JAR", raising=False)
+    monkeypatch.delenv("RE_AGENT_APKTOOL", raising=False)
     monkeypatch.delenv("RE_AGENT_FRIDA_GADGET_DIR", raising=False)
     monkeypatch.delenv("RE_AGENT_IL2CPP_DUMPER", raising=False)
     monkeypatch.setattr("re_agent.utils.toolchain.shutil.which", lambda _name: None)
@@ -30,13 +32,15 @@ def test_managed_tool_resolvers_find_versioned_install(
     adb = tmp_path / "platform-tools" / ("adb.exe" if os.name == "nt" else "adb")
     jadx = tmp_path / "jadx" / "1.5.6" / "bin" / "jadx.bat"
     dumper = tmp_path / "il2cpp-dumper" / "6.7.46" / "Il2CppDumper.exe"
-    for file_path in (signer, adb, jadx, dumper):
+    apktool = tmp_path / "apktool" / "3.0.3" / "apktool.bat"
+    for file_path in (signer, apktool, adb, jadx, dumper):
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"tool")
     gadget.mkdir(parents=True)
 
     assert managed_tools_root() == tmp_path
     assert resolve_apk_signer() == signer.resolve()
+    assert resolve_apktool() == apktool.resolve()
     assert resolve_frida_gadget_path(version="17.16.4") == gadget.resolve()
     assert resolve_adb() == adb.resolve()
     assert resolve_jadx() == jadx.resolve()
@@ -54,3 +58,14 @@ def test_explicit_invalid_tool_does_not_hide_managed_fallback(
     signer.write_bytes(b"jar")
 
     assert resolve_apk_signer(tmp_path / "missing.jar") == signer.resolve()
+
+
+def test_apktool_environment_override_is_shared_by_pipeline_and_doctor(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    launcher = tmp_path / "apktool.cmd"
+    launcher.write_text("@echo off\n", encoding="utf-8")
+    monkeypatch.setenv("RE_AGENT_APKTOOL", str(launcher))
+
+    assert resolve_apktool() == launcher.resolve()

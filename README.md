@@ -78,9 +78,12 @@ python3 -m pip install --upgrade \
 
 ## Android one-time setup
 
-On Windows, APK analysis/repackaging expects `apktool`, Java, and Frida to be
-on `PATH`. Once those three prerequisites are present, the repository setup
-script installs and configures everything else:
+Ordinary static analysis does not require Frida Gadget, ADB, or the APK signing
+toolchain. A verified single-asset JavaScript replacement requires Java and an
+APK signer, but not `apktool`. Manifest, smali, resource, or native-library
+changes require `apktool`; the optional non-root live-instrumentation workflow
+additionally requires Frida CLI and Gadget. The repository setup script
+installs and configures the managed Android tools:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup_android_tools.ps1
@@ -88,6 +91,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup_android_tools.ps1
 # Open a new terminal so the persistent PATH/environment updates are visible.
 re-agent doctor
 ```
+
+`re-agent doctor` reports core analysis, Android repackaging, and non-root
+Gadget readiness independently. A missing optional deployment tool therefore
+does not make core analysis fail. Its JSON `ready` field refers to core
+analysis; inspect `capabilities` for workflow-specific readiness.
 
 The script installs the following under
 `%LOCALAPPDATA%\auto-re-agent\tools` and does not add the downloaded binaries
@@ -98,7 +106,7 @@ to Git:
 | uber-apk-signer | 1.3.0 | Aligning, signing, and verifying rebuilt APKs |
 | Frida Gadget | 17.16.4, all four Android ABIs | Non-root runtime instrumentation |
 | Android platform-tools | 37.0.1 | `adb install`, port forwarding, and device communication |
-| JADX | 1.5.6 | Deeper Java/Kotlin/DEX decompilation |
+| JADX | 1.5.6 | Optional manual Java/Kotlin review; automatic discovery uses the bounded built-in DEX parser |
 | Il2CppDumper | 6.7.46 | Unity IL2CPP metadata sidecar generation |
 
 The installer verifies pinned SHA-256 values before extracting anything,
@@ -133,6 +141,54 @@ without packaging. `trace` observes a running app; it does not search a dump.
 `reverse` is the multi-round reverser/checker reconstruction workflow, not a
 replacement for `pipeline`.
 
+For packaged WebView/Capacitor APKs, `pipeline` follows the HTML entry into the
+deployed JavaScript and uses packaged source maps when they contain original
+`sourcesContent`. This avoids treating the Android shell and its dependencies
+as the app's business logic. With `--patch-bundle`, grounded API response rules
+are written to `Hook_Web.js` and prepended to a syntax-checked modified entry;
+`--repack-apk` can install that entry into a rebuilt, signed APK without Frida
+Gadget or root. These are client-side changes: server-enforced purchases,
+entitlements, integrity checks, and authorization remain authoritative.
+
+### Split APK / XAPK packaging
+
+`pipeline --binary` also accepts a directory or outer ZIP/XAPK/APKS archive
+containing `base.apk` plus configuration splits. The pipeline safely extracts
+the set, selects the base without treating ABI/language splits as application
+code, patches the base, re-signs every APK in one signer invocation, verifies
+the complete set, and writes:
+
+- `modded_split_apks/`: the base and all consistently signed splits;
+- `modded_split_apks.zip`: a portable copy of the complete set;
+- `INSTALL_SPLIT_APKS.txt`: exact ADB and Shizuku/InstallWithOptions steps.
+
+```powershell
+re-agent pipeline `
+  --binary "C:\path\downloaded-app.xapk" `
+  --goal "authorized test goal" `
+  --repack-apk `
+  --installer-package com.example.installer
+```
+
+`--installer-package` is optional and only changes the installer metadata in
+the generated ADB command/instructions. It does not reproduce store licensing,
+originating-package state, purchases, or integrity verdicts. On Android 14 and
+later an ADB/Shizuku install remains attributable to shell even when an
+installer name is supplied.
+
+For an on-device install, start Shizuku through Wireless Debugging, grant
+InstallWithOptions access, choose its split/multiple-APK mode, and select every
+APK from `modded_split_apks/` in one session. Alternatively, run the generated
+`adb install-multiple` command from that directory. Executable dynamic-feature
+splits are rejected rather than silently ignored, and Frida Gadget embedding
+remains limited to standalone APKs.
+
+The CLI may be launched from any directory. Configuration discovery checks
+`RE_AGENT_CONFIG`, then `./re-agent.yaml`, then the repository-level YAML for
+an editable installation. Use `--config C:\path\re-agent.yaml` for an explicit
+per-run override. This prevents a run launched from the target directory from
+silently changing providers or data-handling policy.
+
 ### Non-root Android workflow
 
 After setup, no signer or Gadget path is required:
@@ -158,8 +214,8 @@ If the original app is installed with a different certificate, Android will
 normally require uninstalling it first, which removes that app's local data.
 Without a user-supplied release keystore, uber-apk-signer uses its debug-signing
 mode; the result is suitable for local testing, not Play Store distribution.
-Signature pinning, anti-tamper logic, split delivery, or Play Integrity may
-still reject a rebuilt APK; setup tooling cannot truthfully guarantee otherwise.
+Signature pinning, anti-tamper logic, store provenance checks, or Play Integrity
+may still reject a rebuilt APK; setup tooling cannot truthfully guarantee otherwise.
 
 ## Set up Ghidra evidence
 
@@ -196,8 +252,9 @@ re-agent init --profile generic-cpp
 # re-agent init --profile openrct2
 ```
 
-Running `re-agent init` without `--profile` preserves the original
-GTA-reversed defaults. Prefer an explicit profile for new projects.
+Running `re-agent init` without `--profile` now creates the portable
+`generic-cpp` template. Project-specific behavior, including the original
+GTA-reversed patterns, remains available through an explicit profile.
 
 Then edit `re-agent.yaml`. At minimum, select an LLM, point the backend at the
 installed bridge executable, set the source paths, and configure validation.
@@ -507,7 +564,7 @@ Global options must precede the subcommand, for example
 
 | Command | Purpose |
 |---|---|
-| `re-agent doctor [--json]` | Verify analysis, packaging, Gadget, and ADB tooling |
+| `re-agent doctor [--json]` | Report analysis, packaging, and Gadget capabilities independently |
 | `re-agent init --profile generic-cpp` | Create `re-agent.yaml` from a profile |
 | `re-agent reverse --address ADDR` | Reverse one function |
 | `re-agent reverse --class CLASS --max-functions N` | Reverse a bounded class batch |
@@ -541,11 +598,13 @@ receives only the bounded local shortlist, and policy denial, quota exhaustion,
 timeouts, or provider errors leave deterministic local discovery running.
 
 Native addresses and offsets are never equated with mutation safety. An
-IL2CPP/native RVA may be displayed as verified address evidence, but generated
-native interceptors log only until the return ABI, calling convention, module
-lifecycle, and replacement behavior have been independently verified. The
-narrow active path is an exact executable Java/DEX method with a recovered
-descriptor and primitive return type.
+IL2CPP/native RVA may be displayed as verified address evidence without making
+an arbitrary native hook active. The active paths are deliberately narrow: an
+exact executable Java/DEX method with a recovered descriptor and primitive
+return type, or a Frida IL2CPP `bool`/integer return override with an exact
+nonzero method RVA and type-compatible replacement. Floating-point, object,
+struct, field, argument, and C++ behavior changes remain review-only until the
+required ABI, module-lifecycle, and installation evidence is available.
 
 ## Configuration precedence
 

@@ -9,28 +9,27 @@ DEFAULT_CONFIG_YAML: str = """\
 # See: https://github.com/sn0wqt/auto-re-agent for documentation.
 
 project_profile:
-  name: "auto-re-agent"
-  language_standard: "C++23"
+  name: "generic-cpp"
+  language_standard: "C++20"
   prompt_rules:
-    - "Use real member names from the existing project and reference headers"
-    - "Never call virtual methods on this inside hook implementations"
-    - "Use matrix.TransformVector(vec) instead of deprecated Multiply3x3"
-    - "Verify struct offsets against project VALIDATE_OFFSET checks"
-  hook_patterns:
-    - "RH_ScopedInstall\\\\s*\\\\(\\\\s*(\\\\w+)\\\\s*,\\\\s*(0x[0-9A-Fa-f]+)"
-    - "RH_ScopedVirtualInstall\\\\s*\\\\(\\\\s*(\\\\w+)\\\\s*,\\\\s*(0x[0-9A-Fa-f]+)"
+    - "Preserve the detected ABI, calling convention, widths, and signedness"
+    - "Use evidence-backed names and retain address-based placeholders when unresolved"
+  hook_patterns: []
   stub_patterns:
-    - "plugin::Call"
+    - "TODO|NOT_IMPLEMENTED"
   stub_markers:
-    - "NOTSA_UNREACHABLE"
-  stub_call_prefix: "plugin::Call"
-  class_macro: "RH_ScopedClass"
-  source_root: "source/game_sa"
+    - "NOT_IMPLEMENTED"
+  stub_call_prefix: "__re_agent_no_stub_prefix__"
+  class_macro: ""
+  source_root: "output"
   source_extensions:
     - ".cpp"
+    - ".cc"
+    - ".cxx"
+    - ".c"
     - ".h"
     - ".hpp"
-  hooks_csv: "docs/hooks.csv"
+  hooks_csv: null
 
 llm:
   provider: "codex"
@@ -39,44 +38,6 @@ llm:
   effort: "high"
   timeout_s: 600
   max_retries: 0
-  fallbacks:
-    - provider: "gemini"
-      model: "gemini-3.6-flash"
-      service_account_file: "credentials/vertex-sa.json"
-      timeout_s: 600
-    - provider: "antigravity"
-      model: "gemini-3.6-flash"
-      cli_path: "agy"
-
-agents:
-  reverser:
-    provider: "gemini"
-    model: "gemini-3.6-flash"
-    service_account_file: "credentials/vertex-sa.json"
-    timeout_s: 600
-    fallbacks:
-      - provider: "codex"
-        model: "gpt-5.6-sol"
-        cli_path: "codex"
-        effort: "high"
-      - provider: "antigravity"
-        model: "gemini-3.6-flash"
-        cli_path: "agy"
-
-  checker:
-    provider: "codex"
-    model: "gpt-5.6-sol"
-    cli_path: "codex"
-    effort: "high"
-    timeout_s: 600
-    fallbacks:
-      - provider: "gemini"
-        model: "gemini-3.6-flash"
-        service_account_file: "credentials/vertex-sa.json"
-        timeout_s: 600
-      - provider: "antigravity"
-        model: "gemini-3.6-flash"
-        cli_path: "agy"
 
 backend:
   type: "ghidra-bridge"
@@ -103,7 +64,8 @@ orchestrator:
   max_attempts_per_function: 3
 
 validation:
-  enabled: true
+  # Fresh projects should configure meaningful build/test commands before enabling this.
+  enabled: false
   copy_project: false
   project_root: "."
   build_commands: []
@@ -112,24 +74,20 @@ validation:
   require_build: false
   require_tests: false
   require_runtime: false
-  # UNKNOWN (for example, no configured commands) is not accepted by default.
   require_verified: true
-  # Separate execution consent from whether passing commands count as proof.
   allow_host_commands: false
-  # Arbitrary shell commands are only evidence after an explicit trust decision.
   trust_configured_commands: false
-  # Secrets and provider credentials are not inherited by validation commands.
   environment_allowlist:
+    - "COMSPEC"
+    - "HOME"
+    - "LANG"
+    - "LC_ALL"
     - "PATH"
     - "PATHEXT"
     - "SYSTEMROOT"
-    - "COMSPEC"
     - "TEMP"
     - "TMP"
-    - "HOME"
     - "USERPROFILE"
-    - "LANG"
-    - "LC_ALL"
   parity_fail_on_red: true
   parity_fail_on_yellow: false
   command_timeout_s: 900
@@ -137,17 +95,9 @@ validation:
   keep_project_copy: false
 
 data_handling:
-  allow_external_llm: true
-  allowed_providers:
-    - "gemini"
-    - "google-gemini"
-    - "codex"
-    - "codex-cli"
-    - "antigravity"
-    - "antigravity-cli"
-    - "claude"
-    - "claude-cli"
-    - "openai"
+  # Explicitly authorize providers after reviewing the data boundary.
+  allow_external_llm: false
+  allowed_providers: []
   allow_prompt_logging: false
   allow_evidence_persistence: false
   max_prompt_chars: 120000

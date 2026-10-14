@@ -55,6 +55,37 @@ def resolve_apk_signer(explicit: str | Path | None = None) -> Path | None:
     return None
 
 
+def resolve_apktool(explicit: str | Path | None = None) -> Path | None:
+    """Resolve an executable apktool launcher consistently across commands."""
+    values = [explicit, os.environ.get("RE_AGENT_APKTOOL")]
+    for value in values:
+        if not value:
+            continue
+        candidate = Path(value).expanduser()
+        if candidate.is_file() and candidate.suffix.casefold() in {
+            "",
+            ".bat",
+            ".cmd",
+            ".exe",
+        }:
+            return candidate.resolve()
+
+    parent = managed_tools_root() / "apktool"
+    names = ("apktool.bat", "apktool.cmd", "apktool.exe", "apktool")
+    for version_dir in _version_directories(parent):
+        for name in names:
+            candidate = version_dir / name
+            if candidate.is_file():
+                return candidate.resolve()
+    resolved = (
+        shutil.which("apktool")
+        or shutil.which("apktool.bat")
+        or shutil.which("apktool.cmd")
+        or shutil.which("apktool.exe")
+    )
+    return Path(resolved).resolve() if resolved else None
+
+
 def resolve_frida_gadget_path(
     explicit: str | Path | None = None,
     *,

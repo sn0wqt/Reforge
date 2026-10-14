@@ -12,8 +12,8 @@ from re_agent.reports.formatter import format_result
 
 
 def cmd_reverse(args: argparse.Namespace) -> int:
-    config_path = Path(args.config) if (getattr(args, "config", None) and Path(args.config).exists()) else None
-    config = load_config(config_path)
+    configured = getattr(args, "config", None)
+    config = load_config(Path(configured) if configured else None)
 
     if args.max_rounds is not None:
         config.orchestrator.max_review_rounds = args.max_rounds

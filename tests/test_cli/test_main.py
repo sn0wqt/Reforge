@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from re_agent.cli.main import build_parser, main
+from re_agent.cli.main import _resolve_default_config_argument, build_parser, main
 
 
 def test_parser_builds() -> None:
@@ -25,19 +25,72 @@ def test_batch_parser_exposes_binary_and_semantic_limit() -> None:
             "batch",
             "--binary",
             "game.apk",
-            "--game-name",
-            "Example",
             "--limit",
             "25",
         ]
     )
     assert args.binary == "game.apk"
-    assert args.game_name == "Example"
     assert args.limit == 25
 
 
 def test_no_command_returns_zero() -> None:
     assert main([]) == 0
+
+
+def test_every_non_init_command_resolves_checkout_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = tmp_path / "resolved.yaml"
+    config_path.write_text("project_profile:\n  name: resolved\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "re_agent.config.loader.discover_config_path",
+        lambda: config_path,
+    )
+    args = build_parser().parse_args(["status"])
+
+    _resolve_default_config_argument(args)
+
+    assert args.config == str(config_path)
+
+
+def test_non_init_command_uses_schema_defaults_when_no_config_is_discovered(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "re_agent.config.loader.discover_config_path",
+        lambda: None,
+    )
+    args = build_parser().parse_args(["status"])
+
+    _resolve_default_config_argument(args)
+
+    assert args.config is None
+
+
+def test_init_keeps_current_directory_config_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = tmp_path / "repository.yaml"
+    config_path.write_text("project_profile: {}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "re_agent.config.loader.discover_config_path",
+        lambda: config_path,
+    )
+    args = build_parser().parse_args(["init"])
+
+    _resolve_default_config_argument(args)
+
+    assert args.config == "re-agent.yaml"
+
+
+def test_explicit_missing_config_fails_before_command_dispatch(tmp_path: Path, capsys) -> None:
+    missing = tmp_path / "missing.yaml"
+
+    assert main(["--config", str(missing), "doctor"]) == 2
+    assert f"Config file not found: {missing}" in capsys.readouterr().out
 
 
 def test_version_flag(capsys) -> None:

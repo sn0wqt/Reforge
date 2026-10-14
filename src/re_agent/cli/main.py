@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 from re_agent import __version__
@@ -14,6 +15,8 @@ _PLATFORM_CHOICES = (
     "ios-arm64",
     "windows",
     "windows-x64",
+    "linux",
+    "linux-x64",
 )
 
 
@@ -47,7 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--config", default="re-agent.yaml", help="Config file path")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Explicit config file path (otherwise use standard config discovery)",
+    )
 
     sub = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -94,35 +101,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Autonomous metadata discovery and evidence-ranked artifact generation",
     )
     batch_p.add_argument("--binary", help="Binary or package path")
-    batch_p.add_argument("--game-name", help="Game name filter")
     batch_p.add_argument("--symbol", help="Symbol search pattern")
     batch_p.add_argument("--string", help="Target string reference")
     batch_p.add_argument("--class", dest="class_name", help="Target class name")
     batch_p.add_argument("--metadata-dir", help="Metadata directory path")
     batch_p.add_argument("--metadata", help="Path to global-metadata.dat")
-    batch_p.add_argument("--il2cpp-dumper", "--dumper", dest="il2cpp_dumper", help="IL2CPP dumper executable path")
-    batch_p.add_argument("--auto-discover", action="store_true", help="Automatically discover candidates")
     batch_p.add_argument("--platform", choices=_PLATFORM_CHOICES, help="Target platform filter")
     batch_p.add_argument("--goal", help="Goal prompt for candidate ranking")
     batch_p.add_argument("--output-dir", help="Output directory path")
     batch_p.add_argument("--limit", type=_positive_int, default=50, help="Max candidates")
-    batch_p.add_argument("--output", help="Output file path")
 
     # hook
     hook_p = _command_parser(sub, "hook", help="Generate platform-specific hook scaffolding")
-    hook_p.add_argument("--binary", help="Binary path")
     hook_p.add_argument("--symbol", help="Target symbol")
     hook_p.add_argument("--class", dest="class_name", help="Target class name")
     hook_p.add_argument("--address", help="Target address")
-    hook_p.add_argument("--platform", help="Target platform")
-    hook_p.add_argument("--pathway", help="Target pathway")
+    hook_p.add_argument("--platform", choices=_PLATFORM_CHOICES, help="Target platform")
     hook_p.add_argument("--language", choices=["cpp", "rust"], default="cpp", help="Target language")
     hook_p.add_argument("--dynamic", action="store_true", help="Generate a dynamic IL2CPP/BNM resolver hook")
     hook_p.add_argument("--output", help="Output file path")
 
     # trace
     trace_p = _command_parser(sub, "trace", help="Generate Frida runtime trace scripts")
-    trace_p.add_argument("--binary", help="Binary path")
     trace_p.add_argument("--symbol", help="Target symbol")
     trace_p.add_argument("--class", dest="class_name", help="Target class")
     trace_p.add_argument("--address", help="Target address")
@@ -155,6 +155,13 @@ def build_parser() -> argparse.ArgumentParser:
     pipe_p.add_argument("--platform", choices=_PLATFORM_CHOICES, help="Explicit target platform for ambiguous metadata")
     pipe_p.add_argument("--goal", help="Reversing goal description")
     pipe_p.add_argument("--output-dir", help="Output directory")
+    pipe_p.add_argument(
+        "--installer-package",
+        help=(
+            "Installer package recorded in generated split-APK deployment commands; "
+            "this does not reproduce store licensing or integrity state"
+        ),
+    )
     pipe_p.add_argument("--patch-bundle", action="store_true", help="Enable bounded textual JS bundle patching")
     pipe_p.add_argument("--max-patches", type=_positive_int, default=5, help="Maximum textual bundle replacements")
     pipe_p.add_argument(
@@ -200,9 +207,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_default_config_argument(args: argparse.Namespace) -> None:
+    """Resolve implicit config discovery and reject missing explicit files."""
+    command = getattr(args, "command", None)
+    configured = getattr(args, "config", None)
+    if command == "init":
+        if configured is None:
+            args.config = "re-agent.yaml"
+        return
+    if command is None:
+        return
+
+    if configured is not None:
+        configured_path = Path(str(configured)).expanduser()
+        if not configured_path.is_file():
+            raise FileNotFoundError(f"Config file not found: {configured_path}")
+        args.config = str(configured_path.resolve())
+        return
+
+    from re_agent.config.loader import discover_config_path
+
+    discovered = discover_config_path()
+    args.config = str(discovered) if discovered is not None else None
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    _resolve_default_config_argument(args)
 
     if args.command is None:
         parser.print_help()
