@@ -26,3 +26,5 @@ decompiled_bundle.js
 # Service account credentials
 credentials/
 *.json.bak
+.test-tmp*/
+actual_*/

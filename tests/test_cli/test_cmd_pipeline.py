@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import struct
 import zipfile
@@ -12,6 +13,7 @@ from re_agent.cli.cmd_pipeline import (
     _patch_textual_bundle,
     _repackage_android,
     _scan_js_primitive_properties,
+    _write_hermes_candidate_evidence,
 )
 from re_agent.cli.main import main
 from re_agent.core.engine_detector import detect_architecture_from_path
@@ -220,6 +222,11 @@ project_profile:
     assert manifest["capabilities"]["analysis_complete"] is True
     assert manifest["capabilities"]["runtime_hook_installed"] is False
     assert manifest["capabilities"]["runtime_behavior_verified"] is False
+    assert {stage["status"] for stage in manifest["stages"]} <= {
+        "SUCCEEDED",
+        "FAILED",
+        "SKIPPED",
+    }
 
 
 def test_pipeline_stops_before_packaging_when_all_candidates_are_review_only(
@@ -305,6 +312,7 @@ def test_interactive_android_repack_applies_textual_patch_before_packaging(
         _architecture,
         _generated_files,
         modified_bundle,
+        **_kwargs,
     ):
         observed["modified_bytes"] = modified_bundle.read_bytes()
         signed = output_dir / "modded_app-aligned-signed.apk"
@@ -388,6 +396,76 @@ def test_cmd_pipeline_ios_hermes_bundle_and_deployment_notes(
     summary = (output_dir / "patch_diff_summary.txt").read_text(encoding="utf-8")
     assert "Pathway 2: React Native Hermes (iOS)" in summary
     assert "[95%] HermesBundle::diamonds" in summary
+
+
+def test_cmd_pipeline_webview_uses_source_maps_instead_of_shell_dex(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
+    apk_path = tmp_path / "capacitor.apk"
+    source_map = json.dumps(
+        {
+            "version": 3,
+            "file": "app.js",
+            "sources": [
+                "../../src/features/spark/api.ts",
+                "../../src/features/spark/useSparkBalance.ts",
+            ],
+            "sourcesContent": [
+                "const url = 'spark/wallet';\nPrivateApi.get(url).json();",
+                "function set(newBalance: number) {\n"
+                "  cache.set({ wallet: { balance: newBalance } });\n"
+                "}\n",
+            ],
+            "names": [],
+            "mappings": "",
+        }
+    )
+    with zipfile.ZipFile(apk_path, "w") as archive:
+        archive.writestr(
+            "assets/public/index.html",
+            '<script type="module" src="./assets/app.js"></script>',
+        )
+        archive.writestr("assets/public/assets/app.js", "export const app = true;\n")
+        archive.writestr("assets/public/assets/app.js.map", source_map)
+        archive.writestr("assets/capacitor.config.json", "{}")
+        archive.writestr("classes.dex", b"dex\n035\x00")
+
+    output_dir = tmp_path / "web-output"
+    result = main(
+        [
+            "--config",
+            config_file.as_posix(),
+            "pipeline",
+            "--binary",
+            apk_path.as_posix(),
+            "--goal",
+            "grant unlimited sparks",
+            "--patch-bundle",
+            "--no-repack",
+            "--output-dir",
+            output_dir.as_posix(),
+        ]
+    )
+
+    assert result == 0
+    terminal = capsys.readouterr().out
+    assert "Android WebView / Capacitor JavaScript" in terminal
+    assert "Parsing declared executable methods from Android DEX" not in terminal
+    hook = (output_dir / "Hook_Web.js").read_text(encoding="utf-8")
+    modified = (output_dir / "modified_app.js").read_text(encoding="utf-8")
+    assert '"endpoint":"spark/wallet"' in hook
+    assert '"path":["wallet","balance"]' in hook
+    assert "9007199254740991" in hook
+    assert hook in modified
+    assert not (output_dir / "Hook_Frida.js").exists()
+    manifest = json.loads(
+        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["pathway"]["engine_type"] == "android-webview-js"
+    assert manifest["capabilities"]["static_patch_created"] is True
 
 
 def test_pipeline_fails_when_requested_static_patch_is_ambiguous(
@@ -739,6 +817,30 @@ def test_hermes_candidate_occurrences_are_counted_once_per_property() -> None:
     assert "2 syntax-aware occurrences" in diamond.reason
 
 
+def test_hermes_replacement_follows_goal_and_recovered_literal_type() -> None:
+    source = 'const state = {"mana": 3, "collisions": true, "proAccess": false};'
+
+    mana = _discover_hermes_candidates(source, "grant unlimited mana", "index.android.bundle")
+    collisions = _discover_hermes_candidates(source, "disable collisions", "index.android.bundle")
+    access = _discover_hermes_candidates(source, "unlock pro access", "index.android.bundle")
+
+    assert next(target for target in mana if target.target == "mana").return_value == "999999999"
+    assert next(target for target in collisions if target.target == "collisions").return_value == "false"
+    assert next(target for target in access if target.target == "proAccess").return_value == "true"
+
+
+def test_hermes_ambiguous_or_null_mutation_stays_below_activation_threshold() -> None:
+    source = 'const state = {"telemetry": true, "avatar": null};'
+
+    telemetry = _discover_hermes_candidates(source, "inspect telemetry", "index.android.bundle")
+    avatar = _discover_hermes_candidates(source, "enable avatar", "index.android.bundle")
+
+    assert telemetry[0].return_value is None
+    assert telemetry[0].confidence < 85
+    assert avatar[0].return_value is None
+    assert avatar[0].confidence < 85
+
+
 def test_hermes_domain_expansions_and_ui_evidence_do_not_become_primary() -> None:
     source = (
         'const a = {"balance": 1}; '
@@ -756,6 +858,96 @@ def test_hermes_domain_expansions_and_ui_evidence_do_not_become_primary() -> Non
     assert confidence["balance"] == 78
     assert confidence["diamondBadge"] == 74
     assert confidence["application/vnd.example.balance"] == 40
+
+
+def test_compiled_hermes_property_names_never_claim_activation_confidence() -> None:
+    candidates = _discover_hermes_candidates(
+        'r3 = {"subscriptions": null, "activeSubscriptions": null};',
+        "unlock subscriptions",
+        "assets/index.android.bundle",
+        source_is_deployable=False,
+    )
+
+    assert candidates
+    assert max(candidate.confidence for candidate in candidates) < 85
+    assert all("analysis-only decompiler property" in candidate.reason.lower() for candidate in candidates)
+
+
+def test_compiled_hermes_export_table_is_demoted_as_library_shape() -> None:
+    source = (
+        "const exports = {"
+        '"__esModule": true, "subscriptions": null, "products": null, '
+        '"purchases": null, "restore": null, "receipt": null, "billing": null, '
+        '"entitlement": null, "listener": null, "status": null}; '
+        "Object.defineProperty(exports, '__esModule', {value: true});"
+    )
+
+    candidates = _discover_hermes_candidates(
+        source,
+        "unlock subscriptions",
+        "assets/index.android.bundle",
+        source_is_deployable=False,
+    )
+    subscriptions = next(candidate for candidate in candidates if candidate.target == "subscriptions")
+
+    assert subscriptions.confidence <= 48
+    assert "export registry" in subscriptions.reason
+
+
+def test_max_tier_goal_rejects_unrelated_framework_constants() -> None:
+    candidates = _discover_hermes_candidates(
+        'const limits = {"MAX": 1, "MAX_SAFE_INTEGER": 2}; '
+        'const account = {"maxPlan": true, "subscriptionTier": "free"};',
+        "unlock Pro and Max subscriptions",
+        "assets/index.android.bundle",
+        source_is_deployable=False,
+    )
+    names = {candidate.target for candidate in candidates}
+
+    assert "maxPlan" in names
+    assert "MAX" not in names
+    assert "MAX_SAFE_INTEGER" not in names
+
+
+def test_named_tier_hermes_noise_cannot_outrank_subscription_evidence() -> None:
+    candidates = _discover_hermes_candidates(
+        'const ui = {"maxHeight": 1, "isRedmiNote9Pro": false}; '
+        'const account = {"subscriptions": null, "subscriptionMax": false, '
+        '"subscriptionPro": false};',
+        "unlock Pro and Max subscriptions",
+        "assets/index.android.bundle",
+        source_is_deployable=False,
+    )
+    by_name = {candidate.target: candidate for candidate in candidates}
+
+    assert "maxHeight" not in by_name
+    assert "isRedmiNote9Pro" not in by_name
+    assert by_name["subscriptions"].confidence >= by_name["subscriptionMax"].confidence
+    assert by_name["subscriptions"].confidence >= by_name["subscriptionPro"].confidence
+
+
+def test_hermes_candidate_evidence_is_bounded_and_located(tmp_path: Path) -> None:
+    source = """\
+_fun42: for(var _fun42_ip = 0; ; ) switch(_fun42_ip) {
+case 0:
+    r3 = {"subscriptions": null};
+}
+"""
+    candidate = AnalyzedTarget(
+        class_name="HermesBundle",
+        target="subscriptions",
+        hook_type="js_property_patch",
+        confidence=74,
+        reason="Analysis-only test evidence",
+    )
+
+    evidence = _write_hermes_candidate_evidence(tmp_path, source, [candidate])
+    report = evidence.read_text(encoding="utf-8")
+
+    assert "line 3" in report
+    assert "_fun42" in report
+    assert '"subscriptions"' in report
+    assert len(report) < 2_000
 
 
 def test_textual_bundle_patch_is_unambiguous_and_preserves_newlines(tmp_path: Path) -> None:
@@ -791,6 +983,23 @@ def test_textual_bundle_patch_rejects_duplicate_property(tmp_path: Path) -> None
 
     assert modified is None
     assert any("found 2" in note for note in notes)
+
+
+def test_textual_bundle_patch_rejects_cross_type_replacement(tmp_path: Path) -> None:
+    bundle = tmp_path / "main.jsbundle"
+    bundle.write_text('const state = {"telemetry": true};', encoding="utf-8")
+    target = AnalyzedTarget(
+        class_name="HermesBundle",
+        target="telemetry",
+        hook_type="js_property_patch",
+        return_value="999",
+        confidence=95,
+    )
+
+    modified, notes = _patch_textual_bundle(bundle, [target], tmp_path, 1)
+
+    assert modified is None
+    assert any("does not match" in note for note in notes)
 
 
 def test_android_repackage_never_reuses_stale_signer_output(
@@ -844,7 +1053,7 @@ def test_android_repackage_never_reuses_stale_signer_output(
     assert stale.read_bytes() == b"stale"
 
 
-def test_android_repackage_verifies_fresh_signature_and_bundle(
+def test_android_asset_repackage_does_not_require_apktool(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -860,26 +1069,20 @@ def test_android_repackage_verifies_fresh_signature_and_bundle(
     modified = tmp_path / "modified_index.android.bundle"
     modified.write_bytes(b'const x = {"coins": 999};')
     verified: list[Path] = []
+    commands: list[list[str]] = []
 
     def fake_tool(command, *, cwd=None):
         del cwd
-        if "apktool" in command[0] and "d" in command:
-            decoded = Path(command[command.index("-o") + 1])
-            (decoded / "assets").mkdir(parents=True)
-        elif "apktool" in command[0] and "b" in command:
-            unsigned = Path(command[command.index("-o") + 1])
-            with zipfile.ZipFile(unsigned, "w") as archive:
-                archive.writestr("assets/index.android.bundle", modified.read_bytes())
-        elif command[0] == "java" and "--onlyVerify" not in command:
+        commands.append(command)
+        if command[0] == "java" and "--onlyVerify" not in command:
             unsigned = Path(command[command.index("--apks") + 1])
             signed = unsigned.with_name("modded_app-aligned-signed.apk")
-            with zipfile.ZipFile(signed, "w") as archive:
-                archive.writestr("assets/index.android.bundle", modified.read_bytes())
+            signed.write_bytes(unsigned.read_bytes())
         elif command[0] == "java" and "--onlyVerify" in command:
             verified.append(Path(command[command.index("--apks") + 1]))
         return True, "verified"
 
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: "apktool")
+    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: None)
     monkeypatch.setattr(
         "re_agent.cli.cmd_pipeline.shutil.which",
         lambda name: "java" if name == "java" else None,
@@ -898,6 +1101,73 @@ def test_android_repackage_verifies_fresh_signature_and_bundle(
     assert success is True
     assert Path(detail).is_file()
     assert verified and verified[0].name == "modded_app-aligned-signed.apk"
+    assert not any("apktool" in command[0] for command in commands)
+    with zipfile.ZipFile(detail) as archive:
+        assert archive.read("AndroidManifest.xml") == b"manifest"
+        assert archive.read("assets/index.android.bundle") == modified.read_bytes()
+
+
+def test_android_split_set_is_resigned_verified_and_packaged_together(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    apk = tmp_path / "base.apk"
+    split = tmp_path / "split_config.en.apk"
+    with zipfile.ZipFile(apk, "w") as archive:
+        archive.writestr("AndroidManifest.xml", b"manifest")
+        archive.writestr("assets/index.android.bundle", b'const x = {"coins": 1};')
+    with zipfile.ZipFile(split, "w") as archive:
+        archive.writestr("AndroidManifest.xml", b"manifest")
+        archive.writestr("resources.arsc", b"resources")
+    architecture = detect_architecture_from_path(apk)
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    signer = tmp_path / "signer.jar"
+    signer.write_bytes(b"jar")
+    modified = tmp_path / "modified_index.android.bundle"
+    modified.write_bytes(b'const x = {"coins": 999};')
+
+    def fake_tool(command, *, cwd=None):
+        del cwd
+        if command[0] == "java" and "--onlyVerify" not in command:
+            source_dir = Path(command[command.index("--apks") + 1])
+            signed_dir = Path(command[command.index("--out") + 1])
+            signed_dir.mkdir(parents=True)
+            for source in source_dir.glob("*.apk"):
+                destination = signed_dir / f"{source.stem}-aligned-debugSigned.apk"
+                destination.write_bytes(source.read_bytes())
+        return True, "verified"
+
+    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: None)
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_pipeline.shutil.which",
+        lambda name: "java" if name == "java" else None,
+    )
+    monkeypatch.setattr("re_agent.cli.cmd_pipeline._run_tool", fake_tool)
+    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", signer.as_posix())
+
+    success, detail = _repackage_android(
+        apk,
+        output_dir,
+        architecture,
+        [],
+        modified,
+        split_apks=(split,),
+        installer_package="com.example.installer",
+    )
+
+    assert success is True
+    packaged = Path(detail)
+    assert packaged.name == "modded_split_apks.zip"
+    with zipfile.ZipFile(packaged) as archive:
+        assert {name for name in archive.namelist() if name.endswith(".apk")} == {
+            "base.apk",
+            "split-001.apk",
+        }
+        with zipfile.ZipFile(io.BytesIO(archive.read("base.apk"))) as signed_base:
+            assert signed_base.read("assets/index.android.bundle") == modified.read_bytes()
+        notes = archive.read("INSTALL_SPLIT_APKS.txt").decode("utf-8")
+        assert "com.example.installer" in notes
 
 
 def test_android_repackage_embeds_and_verifies_explicit_gadget(

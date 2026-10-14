@@ -30,6 +30,26 @@ def test_cmd_trace_class(tmp_path: Path) -> None:
     assert "PlayerScript" in content
 
 
+def test_cmd_trace_class_module_is_enforced_in_script(tmp_path: Path) -> None:
+    out_file = tmp_path / "trace_Class.ts"
+    result = main(
+        [
+            "trace",
+            "--class",
+            "PlayerScript",
+            "--module",
+            "GameAssembly.dll",
+            "--output",
+            out_file.as_posix(),
+        ]
+    )
+
+    assert result == 0
+    content = out_file.read_text(encoding="utf-8")
+    assert 'Process.findModuleByName("GameAssembly.dll")' in content
+    assert "runtime module unresolved" in content
+
+
 def test_cmd_trace_absolute_address_has_no_placeholder_module(tmp_path: Path) -> None:
     out_file = tmp_path / "trace_address.ts"
     result = main(
@@ -51,6 +71,26 @@ def test_cmd_trace_absolute_address_has_no_placeholder_module(tmp_path: Path) ->
 
 def test_cmd_trace_requires_a_target() -> None:
     assert main(["trace"]) == 2
+
+
+def test_cmd_trace_rejects_conflicting_address_target(tmp_path: Path) -> None:
+    output = tmp_path / "trace.ts"
+
+    assert (
+        main(
+            [
+                "trace",
+                "--address",
+                "0x1234",
+                "--symbol",
+                "Update",
+                "--output",
+                output.as_posix(),
+            ]
+        )
+        == 2
+    )
+    assert not output.exists()
 
 
 def test_cmd_trace_runs_existing_live_interface(tmp_path: Path, monkeypatch) -> None:
@@ -102,16 +142,6 @@ def test_cmd_trace_returns_live_process_failure(tmp_path: Path, monkeypatch) -> 
 
 
 def test_cmd_trace_rejects_device_without_live_target(tmp_path: Path) -> None:
-    assert (
-        main(
-            [
-                "trace",
-                "--symbol",
-                "GetCoins",
-                "--usb",
-                "--output",
-                (tmp_path / "trace.ts").as_posix(),
-            ]
-        )
-        == 2
-    )
+    output = tmp_path / "trace.ts"
+    assert main(["trace", "--symbol", "GetCoins", "--usb", "--output", output.as_posix()]) == 2
+    assert not output.exists()

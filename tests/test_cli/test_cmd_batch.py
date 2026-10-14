@@ -48,7 +48,7 @@ def _currency_metadata() -> dict[str, object]:
     }
 
 
-def test_cmd_batch_auto_discover(tmp_path: Path) -> None:
+def test_cmd_batch_without_evidence_fails_closed(tmp_path: Path) -> None:
     config_file = tmp_path / "re-agent.yaml"
     config_file.write_text(f"""
 project_profile:
@@ -58,7 +58,7 @@ project_profile:
 """)
 
     out_dir = (tmp_path / "src").as_posix()
-    args = ["--config", config_file.as_posix(), "batch", "--auto-discover", "--output-dir", out_dir]
+    args = ["--config", config_file.as_posix(), "batch", "--output-dir", out_dir]
     out = main(args)
     assert out == 3
     assert not (tmp_path / "src" / "ReconstructedModule.h").exists()
@@ -548,3 +548,148 @@ def test_semantic_provider_failure_keeps_local_results(
     output = capsys.readouterr().out
     assert "Configured-provider analysis failed" in output
     assert "quota exhausted" in output
+
+
+def test_unknown_app_entities_flow_from_metadata_to_primary_candidates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from argparse import Namespace
+
+    from re_agent.cli.cmd_batch import cmd_batch
+    from re_agent.core.candidates import split_candidates
+
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text(
+        'project_profile:\n  name: "generic-cpp"\n'
+        'data_handling:\n  allow_external_llm: false\n',
+        encoding="utf-8",
+    )
+    metadata_dir = tmp_path / "UnknownDump"
+    metadata_dir.mkdir()
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        lambda _path: {
+            "methods": [],
+            "classes": [],
+            "structs": [
+                {
+                    "name": "OpaqueState",
+                    "fields": [
+                        {"name": "glimmers", "offset": 0x20, "type": "int32_t"},
+                        {"name": "warpCharges", "offset": 0x28, "type": "int64_t"},
+                    ],
+                },
+                {
+                    "name": "UnrelatedWallet",
+                    "fields": [{"name": "coins", "offset": 0x10, "type": "int32_t"}],
+                },
+            ],
+        },
+    )
+
+    result = cmd_batch(
+        Namespace(
+            config=config_file.as_posix(),
+            goal="grant unlimited glimmers and warpcharges",
+            symbol=None,
+            string=None,
+            class_name=None,
+            binary=None,
+            metadata=None,
+            metadata_dir=metadata_dir.as_posix(),
+            platform="linux",
+            output_dir=(tmp_path / "output").as_posix(),
+            limit=50,
+            _return_matches=True,
+            _suppress_candidate_display=True,
+        )
+    )
+
+    assert isinstance(result, tuple)
+    targets = result[2]
+    by_name = {target.target: target for target in targets}
+    assert set(by_name) >= {"glimmers", "warpCharges"}
+    assert "coins" not in by_name
+    assert by_name["glimmers"].return_value == "2147483647"
+    assert by_name["warpCharges"].return_value == "9223372036854775807"
+    assert by_name["warpCharges"].confidence >= 85
+    groups = split_candidates(targets, goal_prompt="grant unlimited glimmers and warpcharges")
+    assert {target.target for target in groups.primary} == {"glimmers", "warpCharges"}
+
+
+def test_dex_named_tiers_exclude_framework_decoys_and_prefer_app_namespace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import zipfile
+    from argparse import Namespace
+
+    from re_agent.cli.cmd_batch import cmd_batch
+    from re_agent.core.candidates import split_candidates
+
+    config_file = tmp_path / "re-agent.yaml"
+    config_file.write_text(
+        'project_profile:\n  name: "generic-cpp"\n'
+        'data_handling:\n  allow_external_llm: false\n',
+        encoding="utf-8",
+    )
+    apk = tmp_path / "base.apk"
+    manifest = b'<manifest package="com.example.app"><application /></manifest>'
+    with zipfile.ZipFile(apk, "w") as archive:
+        archive.writestr("AndroidManifest.xml", manifest)
+        archive.writestr("classes.dex", b"dex\n035\x00")
+
+    def method(class_name: str, name: str) -> dict[str, object]:
+        return {
+            "class_name": class_name,
+            "method_name": name,
+            "descriptor": "()Z",
+            "return_type": "bool",
+            "parameter_types": (),
+            "is_declared": True,
+            "is_executable": True,
+            "is_constructor": False,
+            "is_static": False,
+        }
+
+    methods = [
+        method("androidx.browser.customtabs.CustomTabsIntent", "getMaxToolbarItems"),
+        method("androidx.camera.quirk.ExcludedSupportedSizesQuirk", "isRedmiNote9Pro"),
+        method("com.example.app.SubscriptionState", "hasPro"),
+        method("com.example.app.SubscriptionState", "hasMax"),
+    ]
+    classes: dict[str, list[dict[str, object]]] = {}
+    for item in methods:
+        classes.setdefault(str(item["class_name"]), []).append(item)
+    monkeypatch.setattr(
+        "re_agent.core.dex_parser.parse_apk_or_dex",
+        lambda _path: {"classes": classes, "methods": methods},
+    )
+
+    result = cmd_batch(
+        Namespace(
+            config=config_file.as_posix(),
+            goal="unlock Pro and Max subscriptions",
+            symbol=None,
+            string=None,
+            class_name=None,
+            binary=apk.as_posix(),
+            metadata=None,
+            metadata_dir=None,
+            platform="android",
+            output_dir=(tmp_path / "output").as_posix(),
+            limit=50,
+            _return_matches=True,
+            _suppress_candidate_display=True,
+        )
+    )
+
+    assert isinstance(result, tuple)
+    targets = result[2]
+    names = {(target.class_name, target.target) for target in targets}
+    assert ("com.example.app.SubscriptionState", "hasPro") in names
+    assert ("com.example.app.SubscriptionState", "hasMax") in names
+    assert not any(class_name.startswith("androidx.") for class_name, _target in names)
+    groups = split_candidates(targets, goal_prompt="unlock Pro and Max subscriptions")
+    assert {target.target for target in groups.primary} == {"hasPro", "hasMax"}

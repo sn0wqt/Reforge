@@ -9,41 +9,29 @@ from dataclasses import dataclass, field
 class ProjectProfile:
     """Project-specific patterns and paths."""
 
-    hook_patterns: list[str] = field(
-        default_factory=lambda: [
-            r"RH_ScopedInstall\s*\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)",
-            r"RH_ScopedVirtualInstall\s*\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)",
-        ]
-    )
-    stub_patterns: list[str] = field(
-        default_factory=lambda: [
-            r"plugin::Call",
-        ]
-    )
-    stub_markers: list[str] = field(
-        default_factory=lambda: [
-            "NOTSA_UNREACHABLE",
-        ]
-    )
-    stub_call_prefix: str = "plugin::Call"
-    class_macro: str = "RH_ScopedClass"
-    source_root: str = "source/game_sa"
+    hook_patterns: list[str] = field(default_factory=list)
+    stub_patterns: list[str] = field(default_factory=lambda: [r"TODO|NOT_IMPLEMENTED"])
+    stub_markers: list[str] = field(default_factory=lambda: ["NOT_IMPLEMENTED"])
+    stub_call_prefix: str = "__re_agent_no_stub_prefix__"
+    class_macro: str = ""
+    source_root: str = "output"
     source_extensions: list[str] = field(
         default_factory=lambda: [
             ".cpp",
+            ".cc",
+            ".cxx",
+            ".c",
             ".h",
             ".hpp",
         ]
     )
-    hooks_csv: str | None = "docs/hooks.csv"
-    name: str = "auto-re-agent"
-    language_standard: str = "C++23"
+    hooks_csv: str | None = None
+    name: str = "generic-cpp"
+    language_standard: str = "C++20"
     prompt_rules: list[str] = field(
         default_factory=lambda: [
-            "Use real member names from the existing project and reference headers",
-            "Never call virtual methods on this inside hook implementations",
-            "Use matrix.TransformVector(vec) instead of deprecated Multiply3x3",
-            "Verify struct offsets against project VALIDATE_OFFSET checks",
+            "Preserve the detected ABI, calling convention, widths, and signedness",
+            "Use evidence-backed names and retain address-based placeholders when unresolved",
         ]
     )
 
@@ -52,22 +40,22 @@ class ProjectProfile:
 class LLMConfig:
     """LLM provider configuration."""
 
-    provider: str = "claude"
-    model: str | None = None
+    provider: str = "codex"
+    model: str | None = "gpt-5.6-sol"
     api_key: str | None = None
     base_url: str | None = None
     max_tokens: int = 4096
     temperature: float = 0.0
     timeout_s: int = 600
-    cli_path: str | None = None
+    cli_path: str | None = "codex"
     max_budget_usd: float | None = None
-    effort: str | None = None
+    effort: str | None = "high"
     input_cost_per_million: float = 0.0
     output_cost_per_million: float = 0.0
     service_account_file: str | None = None
     allow_provider_fallback: bool = False
     fallbacks: list[LLMConfig] = field(default_factory=list)
-    max_retries: int = 1
+    max_retries: int = 0
     retry_base_delay_s: float = 1.0
 
 
@@ -132,7 +120,7 @@ class ValidationConfig:
     require_build: bool = False
     require_tests: bool = False
     require_runtime: bool = False
-    require_verified: bool = False
+    require_verified: bool = True
     allow_host_commands: bool = False
     trust_configured_commands: bool = False
     environment_allowlist: list[str] = field(

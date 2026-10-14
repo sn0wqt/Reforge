@@ -11,7 +11,7 @@ from re_agent.config.defaults import DEFAULT_CONFIG_YAML, EXAMPLE_PROFILE_TEMPLA
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    config_path = Path(args.config)
+    config_path = Path(getattr(args, "config", None) or "re-agent.yaml")
 
     if config_path.exists():
         print(f"Config already exists: {config_path}")

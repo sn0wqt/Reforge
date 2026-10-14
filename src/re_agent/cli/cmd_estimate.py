@@ -11,7 +11,8 @@ from re_agent.config.loader import load_config
 
 
 def cmd_estimate(args: argparse.Namespace) -> int:
-    config = load_config(Path(args.config))
+    configured = getattr(args, "config", None)
+    config = load_config(Path(configured) if configured else None)
     reverser_config = config.agents.reverser or config.llm
     checker_config = config.agents.checker or config.llm
     backend = create_backend(config.backend)

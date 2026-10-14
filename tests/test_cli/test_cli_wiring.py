@@ -19,12 +19,15 @@ def test_recovered_pipeline_options_are_exact() -> None:
             "ios",
             "--max-patches",
             "1",
+            "--installer-package",
+            "com.example.installer",
         ]
     )
     assert args.metadata == "global-metadata.dat"
     assert args.metadata_dir == "Dump0"
     assert args.platform == "ios"
     assert args.max_patches == 1
+    assert args.installer_package == "com.example.installer"
 
 
 def test_recovered_batch_and_hook_options_are_exposed() -> None:
@@ -35,6 +38,29 @@ def test_recovered_batch_and_hook_options_are_exposed() -> None:
     hook = build_parser().parse_args(["hook", "--class", "Wallet", "--symbol", "GetCoins", "--dynamic"])
     assert hook.class_name == "Wallet"
     assert hook.dynamic is True
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["batch", "--auto-discover"],
+        ["batch", "--game-name", "Example"],
+        ["batch", "--output", "candidates.json"],
+        ["batch", "--il2cpp-dumper", "tool.exe"],
+        ["hook", "--binary", "app.exe"],
+        ["hook", "--pathway", "native-cpp-unreal-flutter"],
+        ["trace", "--binary", "app.exe"],
+    ],
+)
+def test_removed_no_op_options_are_rejected(argv: list[str]) -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(argv)
+
+
+def test_linux_platform_choices_are_exposed() -> None:
+    for command in ("batch", "hook", "pipeline"):
+        args = build_parser().parse_args([command, "--platform", "linux-x64"])
+        assert args.platform == "linux-x64"
 
 
 def test_reverse_metadata_input_is_wired() -> None:

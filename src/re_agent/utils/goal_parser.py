@@ -6,7 +6,15 @@ Separates intent verbs/modifiers from domain entity targets so verbs like
 
 import re
 
-from re_agent.config.domain_keywords import GOAL_STOPWORDS
+from re_agent.config.domain_keywords import (
+    DOMAIN_EXPANSION_GROUPS,
+    GOAL_STOPWORDS,
+    MAXIMUM_TIER_ENTITY_KEYWORDS,
+    MUTATION_MAGNITUDE_ASSIGNMENT_ACTIONS,
+    NAMED_TIER_CONTEXT_KEYWORDS,
+    NAMED_TIER_ENTITY_KEYWORDS,
+    singularize_entity_token,
+)
 
 
 def extract_entity_keywords(goal_prompt: str) -> list[str]:
@@ -18,40 +26,52 @@ def extract_entity_keywords(goal_prompt: str) -> list[str]:
     if not goal_prompt:
         return []
 
-    tokens = re.findall(r"\b\w+\b", goal_prompt.lower())
+    tokens = [token.casefold() for token in re.findall(r"\b\w+\b", goal_prompt)]
     entities: list[str] = []
 
-    _IRREGULAR_SINGULARS = {
-        "analyses": "analysis",
-        "bonuses": "bonus",
-        "axes": "axis",
-        "bases": "basis",
-        "statuses": "status",
-    }
-
-    for token in tokens:
-        if len(token) <= 2:
+    # Some ordinary modifiers are also legitimate product/tier names.  Keep
+    # "max" only when the sentence itself supplies subscription/plan context;
+    # "set max coins" must still treat it as an intent modifier.
+    contextual_entities: set[int] = set()
+    for index, token in enumerate(tokens):
+        if token not in MAXIMUM_TIER_ENTITY_KEYWORDS:
             continue
-        if token in GOAL_STOPWORDS:
+        nearby = tokens[max(0, index - 2) : index] + tokens[index + 1 : index + 3]
+        has_context = any(
+            singularize_entity_token(item) in NAMED_TIER_CONTEXT_KEYWORDS for item in nearby
+        )
+        coordinated_tier = (
+            index >= 2
+            and tokens[index - 1] == "and"
+            and tokens[index - 2] in NAMED_TIER_ENTITY_KEYWORDS
+        )
+        magnitude_assignment = any(
+            item in MUTATION_MAGNITUDE_ASSIGNMENT_ACTIONS for item in tokens[:index]
+        )
+        if has_context and (not magnitude_assignment or coordinated_tier):
+            contextual_entities.add(index)
+
+    for index, token in enumerate(tokens):
+        if len(token) <= 1:
+            continue
+        if token.isdecimal():
+            continue
+        if token in GOAL_STOPWORDS and index not in contextual_entities:
             continue
         entities.append(token)
-        # Add a conservative English singular variant for search expansion.
-        if token in _IRREGULAR_SINGULARS:
-            singular = _IRREGULAR_SINGULARS[token]
-            if singular not in GOAL_STOPWORDS and singular not in entities:
-                entities.append(singular)
-        elif (
-            token.endswith("s")
-            and len(token) > 3
-            and not token.endswith(("ss", "us", "is", "ous", "alias", "canvas", "bias"))
-        ):
-            if token.endswith("ies") and len(token) > 4:
-                singular = token[:-3] + "y"
-            elif token.endswith(("ches", "shes", "xes", "zes", "ses")):
-                singular = token[:-2]
-            else:
-                singular = token[:-1]
-            if singular not in GOAL_STOPWORDS and singular not in entities:
-                entities.append(singular)
+        singular = singularize_entity_token(token)
+        if singular != token and singular not in GOAL_STOPWORDS and singular not in entities:
+            entities.append(singular)
 
     return list(dict.fromkeys(entities))
+
+
+def expand_goal_terms(goal_prompt: str) -> list[str]:
+    """Return direct entities plus centralized, deterministic domain aliases."""
+    terms = extract_entity_keywords(goal_prompt)
+    tokens = set(re.findall(r"\b\w+\b", goal_prompt.casefold()))
+    for triggers, expansions, ambiguous_triggers in DOMAIN_EXPANSION_GROUPS:
+        matched_triggers = tokens & triggers
+        if matched_triggers and not matched_triggers <= ambiguous_triggers:
+            terms.extend(sorted(expansions))
+    return list(dict.fromkeys(terms))

@@ -12,7 +12,8 @@ from re_agent.reports.tracker import ProgressTracker
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    config = load_config(Path(args.config))
+    configured = getattr(args, "config", None)
+    config = load_config(Path(configured) if configured else None)
     session = Session(config.output.session_file)
     tracker = ProgressTracker(session)
 

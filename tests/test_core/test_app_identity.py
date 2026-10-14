@@ -9,6 +9,7 @@ from pathlib import Path
 
 from re_agent.core.app_identity import (
     default_pipeline_output_dir,
+    detect_application_identifier,
     detect_application_name,
 )
 
@@ -102,6 +103,7 @@ def test_detect_android_application_name_from_text_manifest(tmp_path: Path) -> N
         archive.writestr("AndroidManifest.xml", manifest)
 
     assert detect_application_name(apk) == "Diamond_Quest"
+    assert detect_application_identifier(apk) == "com.example.diamondquest"
 
 
 def test_detect_android_application_name_from_binary_manifest(tmp_path: Path) -> None:
@@ -136,6 +138,7 @@ def test_detect_ios_application_name_from_info_plist(tmp_path: Path) -> None:
         archive.writestr("Payload/Runner.app/Info.plist", info)
 
     assert detect_application_name(ipa) == "Space_Runner"
+    assert detect_application_identifier(ipa) == "com.example.runner"
 
 
 def test_default_output_directory_uses_desktop_and_detected_name(

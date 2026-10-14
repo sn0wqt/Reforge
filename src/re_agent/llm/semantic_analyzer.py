@@ -1,6 +1,6 @@
-"""Configured-provider semantic analyzer for IL2CPP metadata.
+"""Configured-provider semantic analyzer for binary metadata.
 
-Sends a curated summary of class/method/field metadata to the configured LLM
+Sends a curated summary of DEX or IL2CPP class/method/field metadata to the configured LLM
 (Codex, Claude, AntiGravity CLI, or Gemini) and asks it to identify the correct
 hook targets for a given natural language goal. Returns structured ``AnalyzedTarget``
 objects with hook types, confidence scores, and explanations.
@@ -11,24 +11,19 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 from re_agent.config.domain_keywords import (
-    CURRENCY_KEYWORDS,
-    DOMAIN_EXPANSION_GROUPS,
     INTENT_MODIFIERS,
     INTENT_VERBS,
-    MODEL_HINTS,
-    UI_PENALTY_HINTS,
     filter_entity_terms,
-    is_contextual_currency_match,
     matches_identifier_keyword,
 )
 from re_agent.core.candidates import rank_candidates, target_activation_facts
 from re_agent.llm.analyzed_target import AnalyzedTarget
 from re_agent.llm.protocol import LLMProvider, Message
-from re_agent.utils.goal_parser import extract_entity_keywords
+from re_agent.utils.goal_parser import expand_goal_terms, extract_entity_keywords
+from re_agent.utils.mutation_intent import DEX_SCALAR_TYPE_MAP, MUTABLE_SCALAR_CPP_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +34,6 @@ _MAX_CANDIDATES_FOR_LLM = 50
 # Maximum number of fields/methods per class to include in the summary.
 _MAX_MEMBERS_PER_CLASS = 12
 _MAX_METADATA_CHARS = 60_000
-_SAFE_RETURN_TYPES = {"int32_t", "int64_t", "float", "double", "bool", "void", "void*"}
-_DEX_RETURN_TYPES = {
-    "boolean": "bool",
-    "byte": "int32_t",
-    "char": "int32_t",
-    "double": "double",
-    "float": "float",
-    "int": "int32_t",
-    "long": "int64_t",
-    "short": "int32_t",
-}
 
 
 def _metadata_member_relevance(
@@ -65,28 +49,89 @@ def _metadata_member_relevance(
     for term in entity_terms:
         if not matches_identifier_keyword(term, name):
             continue
-        if term in CURRENCY_KEYWORDS and not is_contextual_currency_match(term, class_name, name):
-            continue
         score += 100
-    if method and name.casefold().startswith(("get_", "get", "has_", "has", "is_", "is", "can")):
+    if score and method and name.casefold().startswith(("get_", "get", "has_", "has", "is_", "is", "can")):
         score += 20
     return score
+
+
+def _candidate_relevance(
+    candidate: tuple[str, list[dict[str, Any]], list[dict[str, Any]]],
+    entity_terms: list[str],
+) -> int:
+    """Score a class using only explicit goal terms and exact metadata evidence."""
+    class_name, methods, fields = candidate
+    class_score = sum(
+        40 for term in entity_terms if matches_identifier_keyword(term, class_name)
+    )
+    member_scores = [
+        _metadata_member_relevance(
+            member,
+            method=True,
+            entity_terms=entity_terms,
+            class_name=class_name,
+        )
+        for member in methods
+    ]
+    member_scores.extend(
+        _metadata_member_relevance(
+            member,
+            method=False,
+            entity_terms=entity_terms,
+            class_name=class_name,
+        )
+        for member in fields
+    )
+    # Multiple independently matching members are useful evidence, but do not
+    # let a very large class win merely because it has more metadata entries.
+    relevant_members = sorted((score for score in member_scores if score), reverse=True)
+    return class_score + sum(relevant_members[:3])
+
+
+def _select_candidate_window(
+    candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]],
+    entity_terms: list[str],
+) -> list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]]:
+    """Return the stable, goal-ranked candidate window submitted to the LLM."""
+    if not entity_terms:
+        return candidates[:_MAX_CANDIDATES_FOR_LLM]
+    ranked = sorted(
+        enumerate(candidates),
+        key=lambda item: (-_candidate_relevance(item[1], entity_terms), item[0]),
+    )
+    return [candidate for _index, candidate in ranked[:_MAX_CANDIDATES_FOR_LLM]]
 
 
 def _build_metadata_summary(
     candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]],
     entity_terms: list[str] | None = None,
+    *,
+    candidates_preselected: bool = False,
+    included_candidates: list[
+        tuple[str, list[dict[str, Any]], list[dict[str, Any]]]
+    ]
+    | None = None,
 ) -> str:
     """Build a compact text summary of candidate classes for the LLM.
 
     Each class includes its name, fields (with offsets and types), and
     method names. The output is designed to be token-efficient while
-    giving the LLM enough context to reason about game architecture.
+    giving the LLM enough context to reason about application behavior.
     """
-    records: list[dict[str, object]] = []
-    for cls_name, methods, fields in candidates[:_MAX_CANDIDATES_FOR_LLM]:
-        terms = entity_terms or []
-
+    terms = entity_terms or []
+    selected_candidates = (
+        candidates[:_MAX_CANDIDATES_FOR_LLM]
+        if candidates_preselected
+        else _select_candidate_window(candidates, terms)
+    )
+    records: list[
+        tuple[
+            tuple[str, list[dict[str, Any]], list[dict[str, Any]]],
+            dict[str, object],
+        ]
+    ] = []
+    for candidate in selected_candidates:
+        cls_name, methods, fields = candidate
         selected_fields = (
             sorted(
                 enumerate(fields),
@@ -152,21 +197,28 @@ def _build_metadata_summary(
                 }
             )
         records.append(
-            {
-                "class": str(cls_name)[:256],
-                "fields": safe_fields,
-                "methods": safe_methods,
-            }
+            (
+                candidate,
+                {
+                    "class": str(cls_name)[:256],
+                    "fields": safe_fields,
+                    "methods": safe_methods,
+                },
+            )
         )
 
     encoded_size = 2
     included: list[str] = []
-    for record in records:
+    if included_candidates is not None:
+        included_candidates.clear()
+    for candidate, record in records:
         encoded_record = json.dumps(record, separators=(",", ":"))
         separator_size = 1 if included else 0
         if encoded_size + separator_size + len(encoded_record) > _MAX_METADATA_CHARS:
             break
         included.append(encoded_record)
+        if included_candidates is not None:
+            included_candidates.append(candidate)
         encoded_size += separator_size + len(encoded_record)
     return f"[{','.join(included)}]"
 
@@ -178,59 +230,28 @@ raw JSON array matching the specified format. You MUST NOT include conversationa
 text, greetings, politeness, markdown wrappers, or introductory sentences.
 
 You are an expert reverse engineer and binary analysis assistant.
-Analyze candidate classes extracted from binary metadata and identify the best \
-function hook targets and field memory patch offsets for the user's goal.
-
-You understand game architecture patterns:
-- Currency/economy classes often use names like Model, Manager, \
-Wallet, Balance, Currency, Economy, Shop, Store, IAP
-- Player state classes use Health, Stats, Player, Character, Motor
-- Collision/death classes use Collision, Impact, Die, Kill, Damage
-- Position/transform classes use Transform, Position, Vector3, Camera
-- Speed/time classes use Speed, Velocity, DeltaTime, TimeScale
-- Ownership/unlock classes use Own, Unlock, Available, Purchase, Buy
-- Anti-cheat classes use Cheat, Validate, Verify, Check, Security
-
-You know that:
-- A getter method (Get*, get_*) returning int/float that relates to \
-currency should use hook_type "return_override"
-- A field storing a numeric value (coins, health, ammo) should use \
-hook_type "memory_patch"
-- A collision/damage/death callback (OnControllerColliderHit, OnCollisionEnter, \
-OnHit, OnImpact, Die, Kill) should use hook_type "skip_call"
-- A collider status getter (get_ColliderEnable, get_CanCollide, get_IsColliding) \
-returning bool should use hook_type "return_override" with return_value "false"
-- A position/transform method should use hook_type "esp_overlay"
-- A speed/time/velocity getter should use hook_type "speed_modify"
-- An anti-cheat/ad/validation method should use hook_type "nop"
+Analyze only the submitted DEX or IL2CPP metadata and identify targets that are \
+directly relevant to the user's stated entities and requested behavior. Treat \
+unknown applications and domain vocabulary as first-class inputs. Do not assume \
+the application is a game and do not infer product-specific names that are absent \
+from the metadata.
 
 CRITICAL SAFETY & STABILITY RULES:
-- NEVER use hook_type "return_override" with 0/null on object pointer getters \
-(e.g., get_collider, get_transform, get_gameObject). Overriding collider/object \
-pointers to null causes NullReferenceExceptions and crashes game binaries!
-- NEVER select C# event subscription methods (add_On*, remove_On*, subscribe, unsubscribe). \
-Event subscribers take delegate pointers and assigning return overrides to them corrupts event listeners!
-- NEVER assign numeric return_override to string descriptors (get_ProviderKey), struct pointers, or composers.
-- For boolean getter methods (IsCurrencyOwned, HasCoins, get_IsVIP), set return_type "bool" and return_value "true".
-- For collision/obstacle goals: ALWAYS use "skip_call" on collision callback \
-methods (OnControllerColliderHit, OnCollisionEnter, SetFrontalImpact) OR \
-"return_override" with return_value "false" on boolean collider status getters \
-(get_ColliderEnable, get_CanCollide, get_IsColliding).
-- DATA MODEL classes (store actual game state) vs UI DISPLAY classes \
-(just show values on screen). Always prefer data models.
-- CORE ENGINE SYSTEMS (the primary physics, movement, state, or collision \
-controllers) vs SECONDARY EVENT LISTENERS, EFFECT WRAPPERS, or SEASONAL TRIGGERS. \
-ALWAYS prioritize core engine systems that directly process physics and \
-state over secondary event wrappers or temporary visual triggers.
-- GETTER METHODS (return values) vs SETTER METHODS (write values). \
-For "infinite X" goals, hook the getter to return max value.
-- RELEVANT fields vs UNRELATED fields. "Coins" in a class name like \
-"CoinSpawner" means it SPAWNS coin visuals, not that it stores the \
-player's coin balance.
-- EXCLUDE OS APP STORES & AD SDKs: NEVER match OS app store links or ad SDK parameters \
-(InMobiSDK, App Store, Play Store, StoreKit, store_id, store_url, GooglePlay). \
-These refer to app distribution URLs or ad SDK parameters, NOT in-game currency balances! \
-Currency and key goals apply strictly to player data models and game state.
+- Ground every suggestion in an exact submitted class and member name. Never invent a target.
+- Use "return_override" only for a verified primitive scalar return type: bool, \
+int32_t, int64_t, float, or double. Never replace object, string, array, delegate, \
+unknown, pointer, or structure returns. If the metadata cannot prove a safe ABI, \
+do not propose an active return override.
+- Event subscription and callback-registration methods are not value getters; do \
+not replace their returns or arguments.
+- A field patch requires an exact submitted numeric offset. Never derive or guess offsets.
+- For DEX methods, respect the descriptor, declaration/executability facts, and Java \
+primitive return type. For IL2CPP methods, respect the method RVA, parameter types, \
+and native return type. Do not treat one metadata format as the other.
+- Prefer state-bearing or behavior-controlling members over presentation-only names, \
+but do not exclude a presentation member when it is explicitly requested by the goal.
+- Use skip_call or nop only when the requested behavior and method semantics clearly \
+support suppressing the entire call and the method returns void.
 """
 
 _USER_PROMPT_TEMPLATE = """\
@@ -240,9 +261,9 @@ Do not say hello, do not introduce yourself, and do not wrap in conversational t
 GOAL: {goal}
 ENTITY TARGETS AFTER INTENT FILTERING: {entities}
 
-Below is a summary of {count} candidate IL2CPP classes extracted from \
-the game binary metadata. Each class lists its fields (with byte \
-offsets from `this`) and methods (with RVA addresses).
+Below is a summary of {count} candidate classes extracted from DEX or IL2CPP \
+binary metadata. Each class lists available field offsets and method evidence, \
+which may include a DEX descriptor or an IL2CPP method RVA.
 
 Analyze this metadata and identify the TOP 5-10 most relevant hook \
 targets to achieve the goal. For each target, determine the correct \
@@ -251,9 +272,9 @@ hook type and explain your reasoning.
 IMPORTANT RULES:
 1. Every target MUST match a class, field, or method name PRECISELY as shown in the metadata below. Do not invent names.
 2. For method targets: specify `hook_type` as "return_override", "skip_call", "nop", "esp_overlay", or "speed_modify".
-   - Set `return_value` appropriately (e.g., "999999" for currency, "true" for unlocks/godmode,
-     "false" for collision/death checks, "0" for cost/damage).
-   - Set `return_type` ("int32_t", "float", "bool", "void").
+   - Derive the return value from the user's requested behavior; do not assume a domain.
+   - Set `return_type` to the exact compatible primitive type shown by the metadata.
+   - Do not emit a return override when the return ABI is absent, unknown, object-like, or non-scalar.
 3. For field targets: specify `hook_type` as "memory_patch".
    Set `offset` to the exact integer offset given in the metadata.
 4. Set `confidence` from 0-100 reflecting how confident you are that this target achieves the user's goal.
@@ -351,11 +372,9 @@ def analyze_metadata(
             from re_agent.config.loader import load_config
             from re_agent.llm.registry import create_provider
 
-            config_path = Path("re-agent.yaml")
-            if config_path.exists():
-                cfg = load_config(config_path)
-                if cfg.llm:
-                    provider = create_provider(cfg.llm)
+            cfg = load_config(None)
+            if cfg.llm:
+                provider = create_provider(cfg.llm)
         except Exception:
             pass
 
@@ -377,12 +396,21 @@ def analyze_metadata(
         return []
 
     entity_targets = extract_entity_keywords(goal)
-    terms = _goal_terms(goal)
-    summary = _build_metadata_summary(candidates, entity_terms=terms)
+    terms = expand_goal_terms(goal)
+    candidate_window = _select_candidate_window(candidates, terms)
+    submitted_candidates: list[
+        tuple[str, list[dict[str, Any]], list[dict[str, Any]]]
+    ] = []
+    summary = _build_metadata_summary(
+        candidate_window,
+        entity_terms=terms,
+        candidates_preselected=True,
+        included_candidates=submitted_candidates,
+    )
     user_prompt = _USER_PROMPT_TEMPLATE.format(
         goal=goal,
         entities=", ".join(entity_targets),
-        count=min(len(candidates), _MAX_CANDIDATES_FOR_LLM),
+        count=len(submitted_candidates),
         metadata_summary=summary,
     )
 
@@ -394,7 +422,7 @@ def analyze_metadata(
     try:
         response_text = provider.send(messages)
         targets = _parse_llm_response(response_text)
-        grounded = _ground_targets(targets, candidates)
+        grounded = _ground_targets(targets, submitted_candidates)
         deduped = _deduplicate_targets(grounded)
         return deduped
     except Exception as exc:
@@ -420,15 +448,6 @@ def analyze_metadata_with_llm(
     )
 
 
-def _goal_terms(goal: str) -> list[str]:
-    terms = extract_entity_keywords(goal)
-    tokens = set(re.findall(r"\b\w+\b", goal.lower()))
-    for triggers, expansions in DOMAIN_EXPANSION_GROUPS:
-        if tokens & triggers:
-            terms.extend(sorted(expansions))
-    return list(dict.fromkeys(terms))
-
-
 def _ground_targets(
     targets: list[AnalyzedTarget],
     candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]],
@@ -436,7 +455,7 @@ def _ground_targets(
     """Require every model suggestion to match exact submitted metadata evidence."""
     methods: dict[tuple[str, str], dict[str, Any]] = {}
     fields: dict[tuple[str, str], dict[str, Any]] = {}
-    for class_name, class_methods, class_fields in candidates[:_MAX_CANDIDATES_FOR_LLM]:
+    for class_name, class_methods, class_fields in candidates:
         for method in class_methods:
             name = method.get("method_name", method.get("name"))
             if isinstance(name, str):
@@ -460,9 +479,9 @@ def _ground_targets(
             ):
                 continue
             evidence_type = str(evidence.get("type", "")).strip()
-            if evidence_type in _SAFE_RETURN_TYPES:
+            if evidence_type in MUTABLE_SCALAR_CPP_TYPES:
                 target.return_type = evidence_type
-            target.confidence = 90 if evidence_type in _SAFE_RETURN_TYPES else 80
+            target.confidence = 90 if evidence_type in MUTABLE_SCALAR_CPP_TYPES else 80
             target.reason = f"Exact field and offset matched submitted metadata: {target.reason}"
         else:
             evidence = methods.get(key)
@@ -485,11 +504,11 @@ def _ground_targets(
             ):
                 target.method_rva = method_rva
             evidence_type = str(evidence.get("return_type", "")).strip()
-            normalized_evidence_type = _DEX_RETURN_TYPES.get(
+            normalized_evidence_type = DEX_SCALAR_TYPE_MAP.get(
                 evidence_type.casefold(),
                 evidence_type,
             )
-            if normalized_evidence_type in _SAFE_RETURN_TYPES:
+            if normalized_evidence_type in MUTABLE_SCALAR_CPP_TYPES:
                 target.return_type = normalized_evidence_type
                 target.confidence = 88
             else:
@@ -513,37 +532,47 @@ def _ground_targets(
 
 
 def _target_score(t: AnalyzedTarget) -> float:
+    """Rank using confidence and concrete implementation evidence only."""
     score = float(t.confidence)
-    if any(matches_identifier_keyword(pattern, t.class_name) for pattern in MODEL_HINTS):
-        score += 50.0
     if t.hook_type == "memory_patch" and t.offset is not None:
         score += 20.0
-    if any(
-        matches_identifier_keyword(
-            word,
-            f"{t.class_name} {t.target}",
-            min_keyword_length=1,
-        )
-        for word in UI_PENALTY_HINTS
-    ):
-        score -= 30.0
+    if t.implementation_ready:
+        score += 10.0
+    if t.signature_verified:
+        score += 5.0
+    if t.address_verified:
+        score += 5.0
     return score
 
 
 def _deduplicate_targets(targets: list[AnalyzedTarget]) -> list[AnalyzedTarget]:
-    """Deduplicate targets so only the single highest-confidence target per concept is kept."""
+    """Remove repeated suggestions without collapsing distinct metadata members."""
     sorted_targets = sorted(targets, key=_target_score, reverse=True)
-    seen_categories: set[str] = set()
+    seen_targets: set[
+        tuple[
+            str,
+            str,
+            str,
+            int | None,
+            int | None,
+            str | None,
+            tuple[str, ...],
+        ]
+    ] = set()
     deduped: list[AnalyzedTarget] = []
 
     for t in sorted_targets:
-        stem = re.sub(r"^(get_|set_|m_|is_)", "", t.target.lower())
-        stem = re.sub(r"(_count|_amount|_value|manager|service|data|system|config|state)$", "", stem)
-        target_stem = stem.strip("_")
-        category = f"{t.class_name}::{target_stem}" if target_stem else f"{t.class_name}::{t.target}"
-
-        if category not in seen_categories:
-            seen_categories.add(category)
+        identity = (
+            t.class_name,
+            t.target,
+            t.hook_type,
+            t.offset,
+            t.method_rva,
+            t.method_descriptor,
+            t.parameter_types,
+        )
+        if identity not in seen_targets:
+            seen_targets.add(identity)
             deduped.append(t)
 
     return deduped
@@ -554,17 +583,15 @@ def create_gemini_provider(
     model: str = "gemini-3.6-flash",
 ) -> LLMProvider:
     """Create the configured Gemini provider."""
-    config_path = Path("re-agent.yaml")
-    if config_path.exists():
-        try:
-            from re_agent.config.loader import load_config
-            from re_agent.llm.registry import create_provider
+    try:
+        from re_agent.config.loader import load_config
+        from re_agent.llm.registry import create_provider
 
-            cfg = load_config(config_path)
-            if cfg.llm and cfg.llm.provider in ("gemini", "google-gemini"):
-                return create_provider(cfg.llm)
-        except Exception as e:
-            logger.warning("[LLM] Config loader failed for gemini provider: %s", e)
+        cfg = load_config(None)
+        if cfg.llm and cfg.llm.provider in ("gemini", "google-gemini"):
+            return create_provider(cfg.llm)
+    except Exception as e:
+        logger.warning("[LLM] Config loader failed for gemini provider: %s", e)
 
     from re_agent.llm.gemini_api import GeminiProvider
 
@@ -597,12 +624,11 @@ def expand_goal_keywords_with_llm(
         "OUTPUT ONLY RAW JSON ARRAY:\n\n"
         f"Goal: {json.dumps(goal_text[:2_000], ensure_ascii=True)}. "
         f"Entity targets: {json.dumps(entity_targets[:50], ensure_ascii=True)}. "
-        "List 10-20 entity naming patterns (class names, method names, field names, in-game item names). "
+        "List 10-20 entity naming patterns (class names, method names, and field names) "
+        "that are semantically implied by the goal itself. "
         f"Do not return action or modifier words from this exclusion list: {excluded_intent}. "
-        "Return terms that represent this concept in game engines (Unity, Unreal, IL2CPP). "
-        "If a specific game title is mentioned or implied, include its actual entity "
-        "and target class names. "
-        'Example output: ["Wallet", "Currency", "Economy", "Coin", "Balance"]'
+        "The input may target any application and may later be matched against DEX, IL2CPP, or native metadata. "
+        "Do not guess a product, framework, domain, or target name that is not implied by the goal."
     )
 
     try:

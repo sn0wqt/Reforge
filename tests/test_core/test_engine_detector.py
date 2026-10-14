@@ -86,6 +86,29 @@ def test_detect_android_java_dex_from_apk(tmp_path: Path) -> None:
     assert engine == "android-java-dex"
 
 
+def test_detect_packaged_webview_before_android_shell_dex(tmp_path: Path) -> None:
+    apk_path = tmp_path / "capacitor.apk"
+    with zipfile.ZipFile(apk_path, "w") as archive:
+        archive.writestr(
+            "assets/public/index.html",
+            '<html><script type="module" src="./assets/app-123.js"></script></html>',
+        )
+        archive.writestr("assets/public/assets/app-123.js", "console.log('app')")
+        archive.writestr("assets/capacitor.config.json", "{}")
+        archive.writestr("classes.dex", b"dex_bytes")
+
+    detection = detect_architecture_from_path(apk_path)
+
+    assert detection.pathway_id == 6
+    assert detection.pathway == "android-webview-javascript"
+    assert detection.engine_type == "android-webview-js"
+    assert detection.bundle_member == "assets/public/assets/app-123.js"
+    assert set(detection.detected_components) >= {
+        "android-dex",
+        "webview-javascript",
+    }
+
+
 def test_detect_ios_swift_objc_from_ipa(tmp_path: Path) -> None:
     ipa_path = tmp_path / "app_ios.ipa"
     with zipfile.ZipFile(ipa_path, "w") as z:
@@ -302,3 +325,23 @@ def test_hybrid_package_retains_all_detected_components(tmp_path: Path) -> None:
         "android-dex",
         "native-library",
     }
+
+
+def test_linux_platform_hint_routes_ambiguous_il2cpp_dump(tmp_path: Path) -> None:
+    (tmp_path / "dump.cs").write_text("// metadata without platform markers", encoding="utf-8")
+
+    resolved = detect_architecture_from_path(tmp_path, platform_hint="linux-x64")
+
+    assert resolved.platform == "linux"
+    assert resolved.pathway_id == 7
+    assert resolved.pathway == "unity-il2cpp-linux"
+
+
+def test_linux_platform_hint_routes_generic_elf(tmp_path: Path) -> None:
+    elf = tmp_path / "service.so"
+    elf.write_bytes(b"\x7fELF" + b"\x00" * 32)
+
+    resolved = detect_architecture_from_path(elf, platform_hint="linux")
+
+    assert resolved.platform == "linux"
+    assert resolved.engine_type == "native-elf"

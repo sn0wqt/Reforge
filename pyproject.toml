@@ -93,3 +93,11 @@ markers = [
     "llm: tests that require LLM API keys",
     "ghidra: tests that require ghidra-ai-bridge",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["re_agent"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true

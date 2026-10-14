@@ -23,12 +23,18 @@ def generate_frida_trace_script(
     if class_name:
         class_literal = json.dumps(class_name)
         assembly_literal = json.dumps(assembly)
+        module_guard = ""
+        if module:
+            module_literal = json.dumps(module)
+            module_guard = f"""const runtimeModule = Process.findModuleByName({module_literal});
+if (runtimeModule === null) throw new Error("runtime module unresolved: " + {module_literal});
+"""
         if symbol:
             symbol_literal = json.dumps(symbol)
             return f"""// Auto-generated Frida IL2CPP Method Tracing Script
 // Requires frida-il2cpp-bridge (https://github.com/vfsfitvnm/frida-il2cpp-bridge)
 
-Il2Cpp.perform(() => {{
+{module_guard}Il2Cpp.perform(() => {{
     const targetClass = Il2Cpp.domain.assembly({assembly_literal}).image.class({class_literal});
     const targetMethod = targetClass.method({symbol_literal});
     if (targetMethod.virtualAddress.isNull()) throw new Error("method address unresolved");
@@ -47,7 +53,7 @@ Il2Cpp.perform(() => {{
         return f"""// Auto-generated Frida IL2CPP Class Tracing Script
 // Requires frida-il2cpp-bridge (https://github.com/vfsfitvnm/frida-il2cpp-bridge)
 
-Il2Cpp.perform(() => {{
+{module_guard}Il2Cpp.perform(() => {{
     const targetClass = Il2Cpp.domain.assembly({assembly_literal}).image.class({class_literal});
     console.log("[+] Attached to IL2CPP Class: " + targetClass.name);
 
@@ -132,6 +138,17 @@ def cmd_trace(args: argparse.Namespace) -> int:
     if not symbol and not class_name and not address:
         print("Error: trace requires --class, --symbol, or --address", file=sys.stderr)
         return 2
+    if address and (symbol or class_name):
+        print("Error: --address cannot be combined with --class or --symbol", file=sys.stderr)
+        return 2
+
+    attach_target = getattr(args, "attach", None)
+    spawn_target = getattr(args, "spawn", None)
+    use_usb = getattr(args, "usb", False)
+    remote_host = getattr(args, "host", None)
+    if (use_usb or remote_host) and not (attach_target or spawn_target):
+        print("Error: --usb/--host requires --attach or --spawn", file=sys.stderr)
+        return 2
 
     target_name = symbol or class_name or address or "trace"
     print(f"[*] Generating Frida runtime trace script for {target_name}...")
@@ -146,15 +163,6 @@ def cmd_trace(args: argparse.Namespace) -> int:
     out_path = Path(args.output or safe_filename(f"trace_{target_name}", suffix=".ts"))
     out_path.write_text(script, encoding="utf-8")
     print(f"[+] Successfully generated Frida trace script: {out_path}")
-
-    attach_target = getattr(args, "attach", None)
-    spawn_target = getattr(args, "spawn", None)
-    use_usb = getattr(args, "usb", False)
-    remote_host = getattr(args, "host", None)
-
-    if (use_usb or remote_host) and not (attach_target or spawn_target):
-        print("Error: --usb/--host requires --attach or --spawn", file=sys.stderr)
-        return 2
 
     if attach_target or spawn_target:
         print("[*] Initiating live Frida tracing session...")

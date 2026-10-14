@@ -7,10 +7,10 @@ import struct
 from re_agent.core.dex_parser import parse_dex_file
 
 
-def _minimal_dex_with_overload() -> bytes:
+def _minimal_dex_with_overload(class_descriptor: bytes = b"Lcom/game/Wallet;") -> bytes:
     """Build the smallest table-only fixture needed by the local parser."""
     strings = [
-        b"Lcom/game/Wallet;",
+        class_descriptor,
         b"I",
         b"J",
         b"getCoins",
@@ -96,3 +96,11 @@ def test_parse_dex_recovers_exact_method_prototype() -> None:
             "code_off": 1,
         }
     ]
+
+
+def test_parse_dex_retains_declared_first_party_class_in_common_namespace() -> None:
+    methods = parse_dex_file(_minimal_dex_with_overload(b"Lcom/google/UnknownAppState;"))
+
+    assert len(methods) == 1
+    assert methods[0]["class_name"] == "com.google.UnknownAppState"
+    assert methods[0]["is_declared"] is True

@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import os
+import posixpath
+import re
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from re_agent.utils.archives import ArchiveSafetyError, inspect_archive
+from re_agent.utils.archives import (
+    ArchiveSafetyError,
+    inspect_archive,
+    read_member_bounded,
+)
 from re_agent.utils.binary_magic import get_magic_bytes, is_mach_o
 
 ANDROID_HERMES_BUNDLES: Final[tuple[str, ...]] = ("index.android.bundle",)
@@ -26,10 +32,20 @@ PLATFORM_HINTS: Final[dict[str, str]] = {
     "android-arm64": "android",
     "ios": "ios",
     "ios-arm64": "ios",
+    "linux": "linux",
+    "linux-x64": "linux",
     "windows": "windows",
     "windows-x64": "windows",
 }
 MAX_PLATFORM_EVIDENCE_BYTES: Final[int] = 2 * 1024 * 1024
+ANDROID_WEB_INDEX_MEMBERS: Final[tuple[str, ...]] = (
+    "assets/public/index.html",
+    "assets/www/index.html",
+)
+_HTML_SCRIPT_SRC = re.compile(
+    r"<script\b[^>]*\bsrc\s*=\s*['\"]([^'\"]+\.js(?:\?[^'\"]*)?)['\"]",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -200,6 +216,11 @@ def _il2cpp_detection(
             "unity-il2cpp-windows",
             "Unity IL2CPP (Windows)",
         ),
+        "linux": (
+            7,
+            "unity-il2cpp-linux",
+            "Unity IL2CPP (Linux)",
+        ),
     }.get(platform)
     if route is None:
         return _detection(
@@ -231,6 +252,42 @@ def _find_member(names: list[str], basenames: tuple[str, ...]) -> str | None:
         if any(normalized == base or normalized.endswith(f"/{base}") for base in basenames):
             return name
     return None
+
+
+def _resolve_web_entry_bundle(
+    archive: zipfile.ZipFile,
+    infos: Sequence[zipfile.ZipInfo],
+) -> tuple[str | None, str | None]:
+    """Return ``(index_html, entry_javascript)`` for packaged web apps."""
+    by_normalized = {
+        info.filename.replace("\\", "/").casefold(): info
+        for info in infos
+    }
+    index_info = next(
+        (by_normalized[name] for name in ANDROID_WEB_INDEX_MEMBERS if name in by_normalized),
+        None,
+    )
+    if index_info is None:
+        return None, None
+    try:
+        html = read_member_bounded(
+            archive,
+            index_info,
+            max_bytes=MAX_PLATFORM_EVIDENCE_BYTES,
+        ).decode("utf-8", errors="ignore")
+    except (ArchiveSafetyError, OSError, UnicodeError, ValueError):
+        return index_info.filename, None
+    index_normalized = index_info.filename.replace("\\", "/")
+    index_dir = posixpath.dirname(index_normalized)
+    for match in _HTML_SCRIPT_SRC.finditer(html):
+        source = match.group(1).split("?", 1)[0]
+        if source.startswith(("http://", "https://", "//")):
+            continue
+        resolved = posixpath.normpath(posixpath.join(index_dir, source.lstrip("/")))
+        info = by_normalized.get(resolved.casefold())
+        if info is not None:
+            return index_info.filename, info.filename
+    return index_info.filename, None
 
 
 def iter_directory_files_bounded(
@@ -273,7 +330,12 @@ def resolve_hermes_bundle_member(target_path: str | Path) -> str | None:
 def _detect_archive(path: Path) -> ArchitectureDetection:
     try:
         with zipfile.ZipFile(path, "r") as archive:
-            names = [info.filename for info in inspect_archive(archive)]
+            infos = inspect_archive(archive)
+            names = [info.filename for info in infos]
+            web_index_member, web_bundle_member = _resolve_web_entry_bundle(
+                archive,
+                infos,
+            )
     except (ArchiveSafetyError, OSError, zipfile.BadZipFile):
         return _detection(7, "native-cpp-unreal-flutter", "unknown", "native-cpp", "Native C/C++")
 
@@ -305,6 +367,8 @@ def _detect_archive(path: Path) -> ArchitectureDetection:
         components.append("unity-il2cpp")
     if any(name.endswith(".dex") for name in normalized):
         components.append("android-dex")
+    if web_index_member is not None and web_bundle_member is not None:
+        components.append("webview-javascript")
     if any("libapp.so" in name for name in normalized):
         components.append("flutter")
     if any("libunreal.so" in name or "libue4.so" in name for name in normalized):
@@ -341,6 +405,26 @@ def _detect_archive(path: Path) -> ArchitectureDetection:
             f"Unity IL2CPP ({'iOS' if is_ios else 'Android'})",
             package_type=package_type,
             detected_components=component_tuple,
+        )
+
+    if is_android and web_index_member is not None and web_bundle_member is not None:
+        return _detection(
+            6,
+            "android-webview-javascript",
+            "android",
+            "android-webview-js",
+            "Android WebView / Capacitor JavaScript",
+            bundle_member=web_bundle_member,
+            package_type="apk",
+            detected_components=component_tuple,
+            detection_notes=(
+                f"packaged web index: {web_index_member}",
+                *(
+                    (f"deployed JavaScript entry: {web_bundle_member}",)
+                    if web_bundle_member
+                    else ()
+                ),
+            ),
         )
 
     if is_ios:
@@ -512,7 +596,19 @@ def detect_architecture_from_path(
     if path.is_file() and zipfile.is_zipfile(path):
         return _detect_archive(path)
     if path.is_file():
-        return _detect_file(path)
+        detected = _detect_file(path)
+        if normalized_hint is not None and detected.platform == "unknown":
+            return _detection(
+                detected.pathway_id,
+                detected.pathway,
+                normalized_hint,
+                detected.engine_type,
+                f"{detected.display_name} ({normalized_hint.title()})",
+                package_type=detected.package_type,
+                detected_components=detected.detected_components,
+                detection_notes=(*detected.detection_notes, f"explicit --platform {platform_hint}"),
+            )
+        return detected
 
     dump_markers = _il2cpp_dump_markers(path)
     if dump_markers:
@@ -602,14 +698,17 @@ def detect_architecture_from_path(
             package_type="directory",
         )
     if any(name.endswith(".so") for name in normalized):
+        elf_platform = normalized_hint or "android"
         return _detection(
             7,
             "native-cpp-unreal-flutter",
-            "android",
+            elf_platform,
             "native-elf",
-            "Native C/C++ Android",
+            f"Native C/C++ {elf_platform.title()}",
             package_type="directory",
+            detection_notes=(f"explicit --platform {platform_hint}",) if normalized_hint else (),
         )
+
     if any(name.endswith((".exe", ".dll")) for name in normalized):
         return _detection(
             7,
@@ -619,13 +718,19 @@ def detect_architecture_from_path(
             "Native C/C++ Windows",
             package_type="directory",
         )
+    unresolved_platform = normalized_hint or "unknown"
     return _detection(
         7,
         "native-cpp-unreal-flutter",
-        "unknown",
+        unresolved_platform,
         "native-cpp",
-        "Native C/C++ / Unreal / Flutter",
+        (
+            f"Native C/C++ ({unresolved_platform.title()})"
+            if normalized_hint
+            else "Native C/C++ / Unreal / Flutter"
+        ),
         package_type="directory",
+        detection_notes=(f"explicit --platform {platform_hint}",) if normalized_hint else (),
     )
 
 

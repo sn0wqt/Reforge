@@ -289,29 +289,11 @@ def parse_dex_file(dex_bytes: bytes) -> list[dict[str, Any]]:
             if raw_cls_clean.startswith("L"):
                 raw_cls_clean = raw_cls_clean[1:]
             clean_cls = raw_cls_clean.replace("/", ".")
-            framework_prefixes = (
-                "android.",
-                "java.",
-                "javax.",
-                "kotlin.",
-                "kotlinx.",
-                "androidx.",
-                "com.google.",
-                "com.facebook.",
-                "io.sentry.",
-                "org.apache.",
-                "org.json.",
-                "com.squareup.",
-                "com.appsflyer.",
-                "com.adjust.",
-                "com.unity3d.",
-                "com.android.",
-                "com.amazon.",
-                "com.amplitude.",
-                "com.braze.",
-                "com.onesignal.",
-            )
-            if not clean_cls or clean_cls.startswith(framework_prefixes):
+            # Keep every class actually declared by this DEX, regardless of
+            # publisher namespace. Namespace guesses can discard legitimate
+            # first-party applications (for example com.google.*). External
+            # method references are excluded using declaration evidence.
+            if not clean_cls or definition is None:
                 continue
 
             methods.append(
