@@ -35,7 +35,7 @@ def _make_source(**kwargs: object) -> SourceMatch:
 
 
 def _make_ghidra(**kwargs: object) -> GhidraData:
-    defaults = dict(
+    defaults: dict[str, object] = dict(
         decompile_ok=True,
         asm_ok=True,
         asm_instruction_count=50,

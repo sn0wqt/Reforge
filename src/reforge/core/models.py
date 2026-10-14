@@ -323,6 +323,7 @@ class GhidraData:
     refs_global_rw_count: int = 0
     used_containing_fallback: bool = False
     resolved_address: str | None = None
+    value_flow: Any | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +370,7 @@ class SemanticRule:
     source_all_of: list[str] = field(default_factory=list)
     source_any_of: list[str] = field(default_factory=list)
     source_none_of: list[str] = field(default_factory=list)
+    value_flow_checks: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

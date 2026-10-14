@@ -100,7 +100,8 @@ def score_single(
             findings.append(result)
 
     if source is not None and semantic_rules:
-        findings.extend(apply_semantic_rules(entry, source.body_no_comments, semantic_rules))
+        value_flow = getattr(ghidra, "value_flow", None) if ghidra else None
+        findings.extend(apply_semantic_rules(entry, source.body_no_comments, semantic_rules, value_flow=value_flow))
 
     if entry.reversed and source is None and not any(f.level == "red" for f in findings):
         findings.append(Finding(level="red", reason="Reversed hook has no source body"))
@@ -140,6 +141,17 @@ def fetch_ghidra_data(address: str, backend: REBackend) -> GhidraData:
         except Exception as exc:
             data.asm_ok = False
             data.asm_error = str(exc)
+
+    # P-code / SSA Value Flow
+    if caps.has_pcode and hasattr(backend, "get_pcode"):
+        try:
+            artifact = backend.get_pcode(address)
+            if artifact is not None and artifact.content:
+                from reforge.parity.value_flow import parse_value_flow
+
+                data.value_flow = parse_value_flow(artifact.content)
+        except Exception as exc:
+            logger.debug("Failed to fetch P-code value flow for %s: %s", address, exc)
 
     return data
 

@@ -189,3 +189,33 @@ def resolve_jadx() -> Path | None:
                 return candidate.resolve()
     resolved = shutil.which("jadx") or shutil.which("jadx.bat")
     return Path(resolved).resolve() if resolved else None
+
+
+def resolve_wakaru(explicit: str | Path | None = None) -> Path | None:
+    """Resolve Wakaru JS decompiler and unbundler CLI."""
+    values = [
+        explicit,
+        os.environ.get("REFORGE_WAKARU_COMMAND"),
+        os.environ.get("REA_WAKARU_COMMAND"),
+        os.environ.get("WAKARU_COMMAND"),
+    ]
+    for value in values:
+        if not value:
+            continue
+        candidate = Path(value).expanduser()
+        if candidate.is_file():
+            return candidate.resolve()
+
+    parent = managed_tools_root() / "wakaru"
+    names = ("wakaru.exe", "wakaru.cmd", "wakaru.bat", "wakaru") if os.name == "nt" else ("wakaru", "wakaru.cmd")
+    for version_dir in _version_directories(parent):
+        for name in names:
+            candidate = version_dir / name
+            if candidate.is_file():
+                return candidate.resolve()
+    for name in names:
+        resolved = shutil.which(name)
+        if resolved:
+            return Path(resolved).resolve()
+    return None
+

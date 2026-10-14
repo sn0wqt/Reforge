@@ -60,6 +60,7 @@ def read_semantic_rules(path: Path) -> list[SemanticRule]:
         source_all_of = [s for s in rr.get("source_all_of", []) if isinstance(s, str)]
         source_any_of = [s for s in rr.get("source_any_of", []) if isinstance(s, str)]
         source_none_of = [s for s in rr.get("source_none_of", []) if isinstance(s, str)]
+        value_flow_checks = [c for c in rr.get("value_flow_checks", []) if isinstance(c, dict)]
         rules.append(
             SemanticRule(
                 id=rid,
@@ -70,6 +71,7 @@ def read_semantic_rules(path: Path) -> list[SemanticRule]:
                 source_all_of=source_all_of,
                 source_any_of=source_any_of,
                 source_none_of=source_none_of,
+                value_flow_checks=value_flow_checks,
             )
         )
     return rules
@@ -83,8 +85,10 @@ def _match_pattern(text: str, pattern: str) -> bool:
 
 def rule_matches_entry(rule: SemanticRule, entry: HookEntry) -> bool:
     key = normalize_address(entry.address)
-    if rule.addresses and key not in rule.addresses:
-        return False
+    if rule.addresses:
+        norm_addrs = {normalize_address(a) for a in rule.addresses}
+        if key not in norm_addrs:
+            return False
     if not rule.symbols:
         return True
     return any(_match_pattern(entry.symbol, sym_pat) for sym_pat in rule.symbols)
@@ -94,6 +98,7 @@ def apply_semantic_rules(
     entry: HookEntry,
     source_text: str,
     rules: list[SemanticRule],
+    value_flow: object | None = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     for rule in rules:
@@ -108,4 +113,10 @@ def apply_semantic_rules(
         if any(_match_pattern(source_text, pat) for pat in rule.source_none_of):
             findings.append(Finding(level=rule.severity, reason=f"[semantic:{rule.id}] {rule.reason}"))
             continue
+        if rule.value_flow_checks and value_flow is not None:
+            from reforge.parity.value_flow import evaluate_value_flow_checks
+
+            vf_errors = evaluate_value_flow_checks(value_flow, rule.value_flow_checks)
+            for err in vf_errors:
+                findings.append(Finding(level=rule.severity, reason=f"[semantic:{rule.id}] {err}"))
     return findings

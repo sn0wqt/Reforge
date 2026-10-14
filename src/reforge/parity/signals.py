@@ -145,6 +145,12 @@ def check_inline_wrapper(source: SourceMatch | None, **_kw: object) -> Finding |
     return None
 
 
+from reforge.parity.value_flow import (  # noqa: E402
+    check_value_flow_branch_conditions,
+    check_value_flow_memory_writes,
+    check_value_flow_parameter_usage,
+)
+
 ALL_SIGNALS: list[SignalFn] = [
     check_missing_source,
     check_stub_markers,
@@ -157,4 +163,7 @@ ALL_SIGNALS: list[SignalFn] = [
     check_call_count_mismatch,
     check_nan_logic,
     check_inline_wrapper,
+    check_value_flow_memory_writes,
+    check_value_flow_branch_conditions,
+    check_value_flow_parameter_usage,
 ]
