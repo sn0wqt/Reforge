@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from reforge.core.scanners.dotnet_scanner import DotNetScanner
+from reforge.core.scanners.electron_scanner import ElectronScanner
+from reforge.core.scanners.flutter_scanner import FlutterScanner
+from reforge.core.scanners.go_scanner import GoScanner
+from reforge.core.scanners.rust_scanner import RustScanner
 from reforge.utils.archives import (
     ArchiveSafetyError,
     inspect_archive,
@@ -439,6 +444,8 @@ def _detect_archive(path: Path) -> ArchitectureDetection:
         )
 
     if any("libapp.so" in name for name in normalized):
+        flutter_info = FlutterScanner.probe_apk(path)
+        flutter_notes = flutter_info.notes if flutter_info is not None else ()
         return _detection(
             7,
             "native-cpp-unreal-flutter",
@@ -447,6 +454,7 @@ def _detect_archive(path: Path) -> ArchitectureDetection:
             "Flutter / Native Android",
             package_type="apk",
             detected_components=component_tuple,
+            detection_notes=flutter_notes,
         )
     if any("libunreal.so" in name or "libue4.so" in name for name in normalized):
         return _detection(
@@ -544,6 +552,55 @@ def _detect_file(path: Path) -> ArchitectureDetection:
             "Unity IL2CPP (iOS)",
         )
     if magic.startswith(b"MZ") or path.suffix.lower() in {".exe", ".dll"}:
+        dotnet_info = DotNetScanner.probe_file(path)
+        if dotnet_info is not None:
+            if dotnet_info.is_unity:
+                return _detection(
+                    5,
+                    "unity-il2cpp-windows",
+                    "windows",
+                    "unity-dotnet",
+                    "Unity .NET / Mono (Windows)",
+                    detection_notes=dotnet_info.notes,
+                )
+            return _detection(
+                7,
+                "dotnet-managed",
+                "windows",
+                "dotnet",
+                f".NET Assembly ({dotnet_info.clr_version})",
+                detection_notes=dotnet_info.notes,
+            )
+        go_info = GoScanner.probe_file(path)
+        if go_info is not None:
+            return _detection(
+                7,
+                "native-go",
+                "windows",
+                "go",
+                f"Go Binary ({go_info.version})",
+                detection_notes=go_info.notes,
+            )
+        rust_info = RustScanner.probe_file(path)
+        if rust_info is not None:
+            return _detection(
+                7,
+                "native-rust",
+                "windows",
+                "rust",
+                f"Rust Binary ({len(rust_info.crates)} crates)",
+                detection_notes=rust_info.notes,
+            )
+        electron_info = ElectronScanner.probe_file(path)
+        if electron_info is not None and electron_info.is_electron:
+            return _detection(
+                7,
+                "native-cpp-unreal-flutter",
+                "windows",
+                "electron",
+                "Electron Desktop (Windows)",
+                detection_notes=electron_info.notes,
+            )
         return _detection(
             7,
             "native-cpp-unreal-flutter",
@@ -552,6 +609,37 @@ def _detect_file(path: Path) -> ArchitectureDetection:
             "Native C/C++ Windows",
         )
     if magic.startswith(b"\x7fELF") or path.suffix.lower() == ".so":
+        if path.name.lower() in ("libapp.so", "libflutter.so"):
+            flutter_info = FlutterScanner.probe_file(path)
+            if flutter_info is not None:
+                return _detection(
+                    7,
+                    "native-cpp-unreal-flutter",
+                    "android",
+                    "flutter",
+                    "Flutter AOT Library",
+                    detection_notes=flutter_info.notes,
+                )
+        go_info = GoScanner.probe_file(path)
+        if go_info is not None:
+            return _detection(
+                7,
+                "native-go",
+                "unknown",
+                "go",
+                f"Go ELF Binary ({go_info.version})",
+                detection_notes=go_info.notes,
+            )
+        rust_info = RustScanner.probe_file(path)
+        if rust_info is not None:
+            return _detection(
+                7,
+                "native-rust",
+                "unknown",
+                "rust",
+                f"Rust ELF Binary ({len(rust_info.crates)} crates)",
+                detection_notes=rust_info.notes,
+            )
         return _detection(
             7,
             "native-cpp-unreal-flutter",

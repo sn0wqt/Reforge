@@ -99,6 +99,9 @@ class BackendConfig:
     timeout_s: int = 45
     export_dir: str | None = None
     address_map: str | None = None
+    rea_path: str = "npx -y rea-agents mcp"
+    rea_provider: str = "auto"
+    binary_path: str | None = None
 
 
 @dataclass

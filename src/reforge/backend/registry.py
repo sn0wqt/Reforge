@@ -50,11 +50,21 @@ def create_backend(
 
         return IL2CPPBackend("output")
 
+    if backend_type in ("rea", "rea-mcp", "mcp"):
+        from reforge.backend.rea_mcp import ReaMcpBackend
+
+        return ReaMcpBackend(
+            binary_path=config.binary_path,
+            provider_id=config.rea_provider,
+            cli_cmd=config.rea_path,
+            timeout_s=config.timeout_s,
+        )
+
     if backend_type == "stub":
         from reforge.backend.stub import StubBackend
 
         return StubBackend()
 
     raise ValueError(
-        f"Unknown backend type: {config.type!r}. Supported: ghidra-bridge, ghidra-json, il2cpp, stub"
+        f"Unknown backend type: {config.type!r}. Supported: ghidra-bridge, ghidra-json, rea, il2cpp, stub"
     )
