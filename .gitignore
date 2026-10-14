@@ -11,7 +11,10 @@ build/
 .cache/
 *.egg
 .env
+reforge.yaml
 re-agent.yaml
+.coverage
+.coverage.*
 output/
 reports/
 scratch/

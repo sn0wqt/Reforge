@@ -43,15 +43,36 @@ def test_default_config_discovery_works_outside_checkout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.chdir(tmp_path)
+    checkout_dir = tmp_path / "checkout"
+    checkout_dir.mkdir()
+    fake_loader = checkout_dir / "src" / "re_agent" / "config" / "loader.py"
+    fake_loader.parent.mkdir(parents=True)
+    fake_loader.write_text("# dummy loader\n", encoding="utf-8")
+
+    outside_dir = tmp_path / "workdir"
+    outside_dir.mkdir()
+
+    monkeypatch.chdir(outside_dir)
     monkeypatch.delenv("REFORGE_CONFIG", raising=False)
     monkeypatch.delenv("RE_AGENT_CONFIG", raising=False)
+    monkeypatch.setattr("re_agent.config.loader.__file__", str(fake_loader))
 
-    discovered = discover_config_path()
+    # Case 1: No config in checkout or workdir -> None
+    assert discover_config_path() is None
 
-    assert discovered is not None
-    assert discovered.name in ("reforge.yaml", "re-agent.yaml")
-    assert discovered.parent.name == "auto-re-agent"
+    # Case 2: reforge.yaml in checkout root -> discovered
+    reforge_yaml = checkout_dir / "reforge.yaml"
+    reforge_yaml.write_text("llm:\n  provider: codex\n", encoding="utf-8")
+    assert discover_config_path() == reforge_yaml.resolve()
+
+    # Case 3: reforge.yaml takes precedence over re-agent.yaml in checkout root
+    re_agent_yaml = checkout_dir / "re-agent.yaml"
+    re_agent_yaml.write_text("llm:\n  provider: claude\n", encoding="utf-8")
+    assert discover_config_path() == reforge_yaml.resolve()
+
+    # Case 4: Legacy re-agent.yaml fallback when reforge.yaml is removed
+    reforge_yaml.unlink()
+    assert discover_config_path() == re_agent_yaml.resolve()
 
 
 def test_reforge_config_env_takes_precedence_over_re_agent_config(
