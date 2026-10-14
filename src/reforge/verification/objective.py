@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from reforge.backend.protocol import REBackend
 from reforge.core.models import FunctionTarget, ObjectiveVerdict, Verdict
@@ -41,6 +42,17 @@ def verify_candidate(
         )
 
     decompile_body = strip_comments(_extract_body(decompile.raw_output))
+    constant_return = re.compile(r"\{\s*return\s+(-?(?:0x[0-9a-fA-F]+|[0-9]+))\s*;\s*\}")
+    expected_constant = constant_return.fullmatch(decompile_body.strip())
+    actual_constant = constant_return.fullmatch(source_body.strip())
+    if expected_constant and actual_constant:
+        checks_run += 1
+
+        def integer(text: str) -> int:
+            return int(text, 16) if "0x" in text.lower() else int(text, 10)
+
+        if integer(expected_constant.group(1)) != integer(actual_constant.group(1)):
+            findings.append("Constant return value differs from decompiled evidence")
     decompile_flow_count = count_control_flow(decompile_body)
     if decompile.callees is not None:
         checks_run += 1
@@ -79,10 +91,20 @@ def verify_candidate(
             cfg = [item for item in cfg if isinstance(item, dict) and "index" in item]
         if isinstance(cfg, list) and cfg:
             checks_run += 1
-            candidate_blocks = source_flow_count + 1
-            if len(cfg) - candidate_blocks >= control_flow_tolerance:
+            # Source keywords do not predict machine basic-block counts: early
+            # returns, short-circuit conditions and switches all change topology.
+            # Only use CFG topology to flag wholesale removal of branching.
+            branching_blocks = sum(
+                isinstance(block.get("out"), list) and len(set(block["out"])) > 1
+                for block in cfg
+                if isinstance(block.get("out"), list)
+                and all(isinstance(edge, int) for edge in block["out"])
+            )
+            source_has_branching = source_flow_count > 0 or bool(re.search(r"\?|&&|\|\|", source_body))
+            if branching_blocks >= control_flow_tolerance and branching_blocks > 0 and not source_has_branching:
                 findings.append(
-                    f"CFG mismatch: Ghidra has {len(cfg)} basic blocks, candidate implies about {candidate_blocks}"
+                    f"CFG mismatch: binary has {branching_blocks} branching blocks, "
+                    "candidate has no explicit control flow or conditional expressions"
                 )
 
     if getattr(backend.capabilities, "has_pcode", False):

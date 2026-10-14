@@ -64,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # reverse
     rev_p = _command_parser(sub, "reverse", help="Reverse engineer functions")
+    rev_p.add_argument("--manifest", help="Target manifest produced by plan")
     rev_p.add_argument("--address", help="Single function address to reverse")
     rev_p.add_argument("--class", dest="class_name", help="Class name for class-level reversal")
     rev_p.add_argument("--metadata-dir", help="IL2CPP dump metadata directory path")
@@ -85,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # status
     stat_p = _command_parser(sub, "status", help="Show reversal progress")
+    stat_p.add_argument("--manifest", help="Report coverage of a planned function group")
     stat_p.add_argument("--class", dest="class_name", help="Filter by class")
     stat_p.add_argument("--format", choices=["text", "json", "markdown"], default="text")
 
@@ -93,6 +95,24 @@ def build_parser() -> argparse.ArgumentParser:
     estimate_p.add_argument("--address", help="Single function address")
     estimate_p.add_argument("--class", dest="class_name", help="Class name to estimate")
     estimate_p.add_argument("--limit", type=_positive_int, default=50, help="Maximum functions to inspect")
+
+    # plan
+    plan_p = _command_parser(sub, "plan", help="Export a bounded target manifest without LLM calls")
+    plan_p.add_argument("--address", action="append", help="Seed function address (repeatable)")
+    plan_p.add_argument("--match", action="append", help="Backend symbol search (repeatable)")
+    plan_p.add_argument("--max-depth", type=int, default=1)
+    plan_p.add_argument("--max-functions", type=int, default=100)
+    plan_p.add_argument("--output", required=True)
+
+    # evidence
+    evidence_p = _command_parser(sub, "evidence", help="Export stored manifest evidence into searchable packets")
+    evidence_p.add_argument("--manifest", required=True)
+    evidence_p.add_argument("--output", required=True)
+
+    # benchmark
+    benchmark_p = _command_parser(sub, "benchmark", help="Run a differential harness manifest")
+    benchmark_p.add_argument("--manifest", required=True)
+    benchmark_p.add_argument("--output")
 
     # batch
     batch_p = _command_parser(
@@ -295,6 +315,21 @@ def _main(argv: list[str] | None = None) -> int:
         from reforge.cli.cmd_doctor import cmd_doctor
 
         return cmd_doctor(args)
+
+    if args.command == "plan":
+        from reforge.cli.cmd_plan import cmd_plan
+
+        return cmd_plan(args)
+
+    if args.command == "evidence":
+        from reforge.cli.cmd_evidence import cmd_evidence
+
+        return cmd_evidence(args)
+
+    if args.command == "benchmark":
+        from reforge.cli.cmd_benchmark import cmd_benchmark
+
+        return cmd_benchmark(args)
 
     parser.print_help()
     return 1

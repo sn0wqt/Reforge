@@ -169,10 +169,14 @@ class GhidraBridgeBackend:
                 name = stripped.split("(")[0].split()[-1] if "(" in stripped else target
                 break
 
+        known = re.search(r"^// Known as:\s*(.+)$", raw, re.M)
+        if known:
+            name = known.group(1).strip()
+        signature_match = re.search(r"^// Signature:\s*(.+)$", raw, re.M)
         return DecompileResult(
             address=target,
             name=name,
-            signature="",
+            signature=signature_match.group(1).strip() if signature_match else "",
             decompiled=raw,
             raw_output=raw,
             callers=callers,
@@ -206,6 +210,8 @@ class GhidraBridgeBackend:
             parts = line.split(None, 1)
             if parts:
                 addr = parts[0]
+                if not re.fullmatch(r"(?:0x)?[0-9a-fA-F]+", addr):
+                    continue
                 name = parts[1] if len(parts) > 1 else ""
                 results.append(XRef(address=addr, name=name, ref_type=ref_type))
         return results
@@ -228,6 +234,12 @@ class GhidraBridgeBackend:
         #   "+0x0040  int32_t  m_nPhysicalFlags"
         fields: list[StructField] = []
         for line in raw.splitlines():
+            legacy = re.match(r"\s*//\s*(0x[0-9a-fA-F]+)\s+(\w+)\s*$", line)
+            if legacy:
+                fields.append(
+                    StructField(name=legacy.group(2), offset=int(legacy.group(1), 16), type_str="unknown", size=0)
+                )
+                continue
             fm = re.match(
                 r"\s*\+?\s*0x([0-9a-fA-F]+)\s+(\S+)\s+(\S+)",
                 line,

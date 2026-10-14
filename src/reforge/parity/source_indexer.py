@@ -52,6 +52,17 @@ class SourceIndexer:
         self.lookup_cache: dict[tuple[str, str], SourceMatch | None] = {}
         self.free_lookup_cache: dict[str, SourceMatch | None] = {}
         self._build_index()
+        self.ast_definitions: dict[tuple[str, str], list[SourceMatch]] | None = None
+        if profile and profile.compilation_database:
+            from reforge.parity.clang_index import definitions
+
+            self.ast_definitions = defaultdict(list)
+            for scope, name, path, declaration, start, end in definitions(
+                Path(profile.compilation_database), source_root
+            ):
+                self.ast_definitions[(scope, name)].append(
+                    self._make_source_match(path, self._read_text(path), declaration, start, end - 1)
+                )
 
     def _read_text(self, path: Path) -> str:
         txt = self.file_text_cache.get(path)
@@ -388,7 +399,7 @@ class SourceIndexer:
         """Look up a source function body by its hook address.
 
         Uses the ``hook_address_index`` built from hook-install macros to
-        resolve *address* → *(class_name, fn_name)* and then delegates to
+        resolve *address* -> *(class_name, fn_name)* and then delegates to
         :meth:`find`.  Returns ``None`` if the address is not in the index.
         """
         addr_key = address.strip().lower()
@@ -423,6 +434,9 @@ class SourceIndexer:
         return None
 
     def find(self, class_name: str, fn_name: str) -> SourceMatch | None:
+        if self.ast_definitions is not None:
+            matches = self.ast_definitions.get((class_name, fn_name), [])
+            return matches[0] if len(matches) == 1 else None
         if not fn_name and not class_name:
             return None
         key = (class_name, fn_name)
@@ -445,7 +459,7 @@ class SourceIndexer:
                 sm = self._make_source_match(path, txt, idx, open_brace, close_brace)
                 self.lookup_cache[key] = sm
                 return sm
-        free = self._find_free_function(fn_name)
+        free = self._find_free_function(fn_name) if not class_name else None
         if free is not None:
             self.lookup_cache[key] = free
             return free
@@ -454,8 +468,23 @@ class SourceIndexer:
 
     def find_all(self, class_name: str, fn_name: str) -> list[SourceMatch]:
         """Return every matching definition so overloads can be handled conservatively."""
-        if not class_name or not fn_name:
+        if self.ast_definitions is not None:
+            return list(self.ast_definitions.get((class_name, fn_name), []))
+        if not fn_name:
             return []
+        if not class_name:
+            free_matches = []
+            pattern = re.compile(rf"(?<!::)\b{re.escape(fn_name)}\s*\(")
+            for path in self.source_files:
+                txt = self._read_text(path)
+                for match in pattern.finditer(txt):
+                    opening = self._is_free_function_definition(txt, match.start(), fn_name)
+                    if opening is None:
+                        continue
+                    closing = self._find_matching_brace(txt, opening)
+                    if closing is not None:
+                        free_matches.append(self._make_source_match(path, txt, match.start(), opening, closing))
+            return free_matches
         matches: list[SourceMatch] = []
         seen: set[tuple[Path, int]] = set()
         for candidate_key in self._candidate_keys(class_name, fn_name):

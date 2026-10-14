@@ -26,6 +26,7 @@ class ProjectProfile:
         ]
     )
     hooks_csv: str | None = None
+    compilation_database: str | None = None
     name: str = "reforge"
     language_standard: str = "C++20"
     prompt_rules: list[str] = field(
@@ -96,6 +97,8 @@ class BackendConfig:
     type: str = "ghidra-bridge"
     cli_path: str = "ghidra-bridge"
     timeout_s: int = 45
+    export_dir: str | None = None
+    address_map: str | None = None
 
 
 @dataclass
@@ -115,6 +118,8 @@ class OrchestratorConfig:
     """Orchestrator loop settings."""
 
     max_review_rounds: int = 4
+    max_llm_calls_per_function: int = 80
+    cumulative_validation: bool = True
     max_functions_per_class: int = 10
     objective_verifier_enabled: bool = True
     objective_call_count_tolerance: int = 3
@@ -132,9 +137,12 @@ class ValidationConfig:
     enabled: bool = True
     copy_project: bool = False
     project_root: str = "."
-    build_commands: list[str] = field(default_factory=list)
-    test_commands: list[str] = field(default_factory=list)
-    runtime_commands: list[str] = field(default_factory=list)
+    build_commands: list[str | list[str]] = field(default_factory=list)
+    test_commands: list[str | list[str]] = field(default_factory=list)
+    runtime_commands: list[str | list[str]] = field(default_factory=list)
+    differential_reference: list[str] = field(default_factory=list)
+    differential_candidate: list[str] = field(default_factory=list)
+    differential_cases_file: str | None = None
     require_build: bool = False
     require_tests: bool = False
     require_runtime: bool = False

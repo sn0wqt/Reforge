@@ -1,4 +1,4 @@
-"""Reverser agent :  gathers context and asks LLM to produce reversed C++ code."""
+"""Reverser agent: gathers context and asks LLM to produce reversed C++ code."""
 
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ class ReverserAgent:
     ) -> None:
         self.llm = llm
         self.backend = backend
+        self._session = session
         self._project_profile = project_profile
         self._source_context_builder: SourceContextBuilder | None = None
         if source_root is not None and project_profile is not None and source_root.exists():
@@ -115,6 +116,10 @@ class ReverserAgent:
         if len(task_prompt) > self._max_prompt_chars:
             raise ValueError("Reverser prompt exceeds data_handling.max_prompt_chars after evidence bounding")
 
+        if self._session is not None:
+            feedback = self._session.previous_feedback(target.address)
+            if feedback:
+                task_prompt += "\n\nPrevious attempt checkpoint (correct its failures):\n" + feedback
         if self._conversation_id is None and self.llm.supports_conversations:
             self._conversation_id = self.llm.new_conversation(system_prompt)
 
@@ -229,6 +234,9 @@ class ReverserAgent:
                 response = self.llm.send(history)
                 history.append(Message(role="assistant", content=response))
                 self._history = history
+        payload = self._extract_json(response)
+        if payload is not None and "actions" in payload:
+            raise RuntimeError("Investigation budget exhausted before a code candidate was produced")
         return response
 
     def _execute_action(self, tool: str, argument: str) -> str:
@@ -330,6 +338,8 @@ class ReverserAgent:
     @staticmethod
     def _extract_code(response: str) -> str:
         payload = ReverserAgent._extract_json(response)
+        if payload is not None and ("actions" in payload or "blocked" in payload):
+            raise ValueError("Expected a code candidate, received an unresolved evidence request")
         if payload is not None and isinstance(payload.get("code"), str):
             return str(payload["code"]).strip()
         m = CODE_BLOCK_RE.search(response)

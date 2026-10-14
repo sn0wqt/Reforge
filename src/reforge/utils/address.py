@@ -42,3 +42,10 @@ def format_address(addr: str) -> str:
     if not normalized:
         raise ValueError("Address may not be empty")
     return "0x" + normalized.lstrip("0") if normalized.strip("0") else "0x0"
+
+
+def checked_address(value: object) -> str:
+    """Validate external hexadecimal address fields without truncating their width."""
+    if not isinstance(value, str) or re.fullmatch(r"(?:0[xX])?[0-9a-fA-F]+", value.strip()) is None:
+        raise ValueError(f"Invalid hexadecimal address: {value!r}")
+    return normalize_address(value)

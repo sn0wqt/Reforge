@@ -1,9 +1,12 @@
-"""Fix loop :  reverser -> checker -> fix, bounded by max rounds."""
+"""Fix loop: reverser -> checker -> fix, bounded by max rounds."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
+import uuid
+from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
@@ -19,6 +22,7 @@ from reforge.core.models import (
     Verdict,
 )
 from reforge.core.session import Session
+from reforge.llm.observed import CallBudget, ObservedProvider
 from reforge.llm.protocol import LLMProvider
 from reforge.parity.source_indexer import SourceIndexer
 from reforge.verification.objective import verify_candidate
@@ -41,6 +45,8 @@ def run_fix_loop(
     objective_control_flow_tolerance: int = 2,
     investigation_enabled: bool = True,
     max_investigations: int = 8,
+    candidate_gate: Callable[[ReversalResult], ReversalResult] | None = None,
+    max_llm_calls: int = 80,
     max_prompt_chars: int = 120_000,
     persist_evidence: bool = False,
 ) -> ReversalResult:
@@ -53,6 +59,20 @@ def run_fix_loop(
         checker_llm: LLM provider for the checker agent (defaults to reverser_llm)
         max_rounds: Maximum fix iterations
         log_dir: Directory to write prompt/response logs
+        source_root: Path to source root
+        project_profile: Project profile configuration
+        indexer: Source indexer
+        session: Session for progress tracking
+        report_dir: Report directory
+        objective_verifier_enabled: Whether to run objective verifier
+        objective_call_count_tolerance: Call count tolerance for objective verifier
+        objective_control_flow_tolerance: Control flow tolerance for objective verifier
+        investigation_enabled: Whether read-only tool investigations are allowed
+        max_investigations: Maximum investigations allowed
+        candidate_gate: Per-round candidate validation gate callback
+        max_llm_calls: Maximum total LLM calls allowed across the loop
+        max_prompt_chars: Maximum prompt characters
+        persist_evidence: Whether to persist knowledge graph evidence
 
     Returns:
         ReversalResult with the final code and verdict
@@ -60,8 +80,20 @@ def run_fix_loop(
     if checker_llm is None:
         checker_llm = reverser_llm
 
+    if max_rounds < 1:
+        raise ValueError("max_rounds must be positive")
+
+    run_id = uuid.uuid4().hex
+    if log_dir:
+        log_dir = log_dir / run_id
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+    budget = CallBudget(max_llm_calls)
+    observed_reverser_llm = ObservedProvider(reverser_llm, budget, "reverser", log_dir)
+    observed_checker_llm = ObservedProvider(checker_llm, budget, "checker", log_dir)
+
     reverser = ReverserAgent(
-        reverser_llm,
+        observed_reverser_llm,
         backend,
         source_root=source_root,
         project_profile=project_profile,
@@ -73,14 +105,15 @@ def run_fix_loop(
         max_prompt_chars=max_prompt_chars,
         persist_evidence=persist_evidence,
     )
-    checker = CheckerAgent(checker_llm, backend, max_prompt_chars=max_prompt_chars)
-
-    if log_dir:
-        log_dir.mkdir(parents=True, exist_ok=True)
+    checker = CheckerAgent(observed_checker_llm, backend, max_prompt_chars=max_prompt_chars)
 
     code = ""
     last_verdict: CheckerVerdict | None = None
     last_objective_verdict: ObjectiveVerdict | None = None
+
+    result = ReversalResult(target=target, code="", run_id=run_id)
+    gate_issues: list[str] = []
+    seen_failures: set[str] = set()
 
     for round_num in range(1, max_rounds + 1):
         timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -92,7 +125,7 @@ def run_fix_loop(
             assert last_verdict is not None
             code, tag = reverser.fix(
                 checker_report=last_verdict.summary,
-                issues=last_verdict.issues,
+                issues=[*last_verdict.issues, *gate_issues],
                 fix_instructions=last_verdict.fix_instructions,
                 target=target,
                 objective_findings=last_objective_verdict.findings if last_objective_verdict else None,
@@ -108,7 +141,7 @@ def run_fix_loop(
                 "prompt": reverser.last_prompt,
                 "response": reverser.last_response,
                 "code_length": len(code),
-                "llm_metadata": _provider_metadata(reverser_llm),
+                "llm_metadata": _provider_metadata(observed_reverser_llm),
             }
             log_path = log_dir / f"round{round_num}-{timestamp}-reverser.json"
             log_path.write_text(json.dumps(log_entry, indent=2), encoding="utf-8")
@@ -142,34 +175,52 @@ def run_fix_loop(
                 "objective_verdict": objective_verdict.verdict.value if objective_verdict else None,
                 "objective_summary": objective_verdict.summary if objective_verdict else "",
                 "objective_findings": objective_verdict.findings if objective_verdict else [],
-                "llm_metadata": _provider_metadata(checker_llm),
+                "llm_metadata": _provider_metadata(observed_checker_llm),
             }
             check_path = log_dir / f"round{round_num}-{timestamp}-checker.json"
             check_path.write_text(json.dumps(check_log, indent=2), encoding="utf-8")
 
-        if verdict.verdict == Verdict.PASS and (objective_verdict is None or objective_verdict.verdict != Verdict.FAIL):
-            return ReversalResult(
-                target=target,
-                code=code,
-                checker_verdict=verdict,
-                objective_verdict=objective_verdict,
-                parity_status=None,
-                parity_findings=[],
-                rounds_used=round_num,
-                success=True,
-            )
+        result = ReversalResult(
+            target=target,
+            code=code,
+            checker_verdict=verdict,
+            objective_verdict=objective_verdict,
+            rounds_used=round_num,
+            success=verdict.verdict == Verdict.PASS
+            and (objective_verdict is None or objective_verdict.verdict != Verdict.FAIL),
+            run_id=run_id,
+        )
+        if candidate_gate is not None:
+            result = candidate_gate(result)
+        gate_issues = [f"parity: {f.reason}" for f in result.parity_findings]
+        if result.validation_verdict and result.validation_verdict.verdict != Verdict.PASS:
+            gate_issues.extend([result.validation_verdict.summary, *result.validation_verdict.findings])
+        if log_dir:
+            from reforge.reports.formatter import results_to_json
 
-    # Exhausted all rounds
-    return ReversalResult(
-        target=target,
-        code=code,
-        checker_verdict=last_verdict,
-        objective_verdict=last_objective_verdict,
-        parity_status=None,
-        parity_findings=[],
-        rounds_used=max_rounds,
-        success=False,
-    )
+            (log_dir / f"round{round_num}-result.json").write_text(results_to_json([result]), encoding="utf-8")
+        if session is not None:
+            session.record_checkpoint(result)
+        if result.success:
+            return result
+        failure_key = hashlib.sha256(
+            json.dumps(
+                [
+                    code,
+                    verdict.summary,
+                    verdict.issues,
+                    objective_verdict.findings if objective_verdict else [],
+                    gate_issues,
+                ],
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        if failure_key in seen_failures:
+            result.error = "Stopped: identical candidate and diagnostics without progress"
+            return result
+        seen_failures.add(failure_key)
+
+    return result
 
 
 def _provider_metadata(provider: LLMProvider) -> dict[str, object]:

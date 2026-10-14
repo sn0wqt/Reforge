@@ -14,8 +14,8 @@ build/
 reforge.yaml
 .coverage
 .coverage.*
-output/
-reports/
+/output/
+/reports/
 scratch/
 plugins/
 decompiled_bundle.js

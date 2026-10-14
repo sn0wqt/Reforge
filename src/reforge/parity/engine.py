@@ -1,4 +1,4 @@
-"""Top-level parity engine :  runs all signals and aggregates results."""
+"""Top-level parity engine: runs all signals and aggregates results."""
 
 from __future__ import annotations
 

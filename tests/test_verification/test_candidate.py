@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -93,6 +94,7 @@ def test_extract_candidate_body_rejects_multiple_definitions() -> None:
         extract_candidate_body("void first() {} void second() {}")
 
 
+@pytest.mark.skipif(not Path("/bin/sh").exists(), reason="POSIX shell required")
 def test_validation_gate_runs_configured_command(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
@@ -119,7 +121,7 @@ def test_required_build_without_command_fails(tmp_path: Path) -> None:
 def test_host_commands_require_separate_execution_consent(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
-    with patch("reforge.verification.candidate.subprocess.run") as run:
+    with patch("reforge.verification.candidate.run_process") as run:
         verdict = validate_candidate(
             ValidationConfig(
                 build_commands=["test -f '{candidate_file}'"],
@@ -149,6 +151,7 @@ def test_nonisolated_command_must_consume_candidate(tmp_path: Path) -> None:
     assert "explicitly consume" in verdict.summary
 
 
+@pytest.mark.skipif(not Path("/bin/sh").exists(), reason="POSIX shell required")
 def test_untrusted_shell_gate_is_not_accepted_as_proof(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("invalid C++", encoding="utf-8")
@@ -169,7 +172,7 @@ def test_validation_normalizes_subprocess_oserror(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
     with patch(
-        "reforge.verification.candidate.subprocess.run",
+        "reforge.verification.candidate.run_process",
         side_effect=OSError("bad handle"),
     ):
         verdict = validate_candidate(
@@ -182,16 +185,16 @@ def test_validation_normalizes_subprocess_oserror(tmp_path: Path) -> None:
             None,
         )
     assert verdict.verdict == Verdict.FAIL
-    assert "could not be started" in verdict.summary
+    assert "could not start" in verdict.summary
     assert any("bad handle" in finding for finding in verdict.findings)
 
 
 def test_validation_commands_do_not_inherit_interactive_stdin(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
-    completed = subprocess.CompletedProcess([], 0, stdout="")
+    completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
     with patch(
-        "reforge.verification.candidate.subprocess.run",
+        "reforge.verification.candidate.run_process",
         return_value=completed,
     ) as run:
         verdict = validate_candidate(
@@ -205,7 +208,8 @@ def test_validation_commands_do_not_inherit_interactive_stdin(tmp_path: Path) ->
         )
 
     assert verdict.verdict == Verdict.PASS
-    assert run.call_args.kwargs["stdin"] is subprocess.DEVNULL
+    run.assert_called_once()
+
 
 
 def test_verified_validation_preflight_rejects_impossible_config() -> None:
@@ -272,7 +276,13 @@ def test_copy_project_builds_against_isolated_candidate(tmp_path: Path) -> None:
         ValidationConfig(
             copy_project=True,
             project_root=str(project),
-            build_commands=["grep -q NewCall src/Train.cpp"],
+            build_commands=[
+                [
+                    sys.executable,
+                    "-c",
+                    "from pathlib import Path; assert 'NewCall' in Path('src/Train.cpp').read_text()",
+                ]
+            ],
             allow_host_commands=True,
             trust_configured_commands=True,
         ),

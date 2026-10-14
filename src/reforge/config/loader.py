@@ -165,8 +165,18 @@ def _coerce_field(value: Any, field_name: str, field_type_str: str) -> Any:
     if normalized_type.startswith("list["):
         if not isinstance(value, list):
             raise ValueError(f"{field_name} must be a list")
-        if normalized_type == "list[str]" and not all(isinstance(item, str) for item in value):
-            raise ValueError(f"{field_name} must contain only strings")
+        if normalized_type == "list[str]":
+            if not all(isinstance(item, str) for item in value):
+                raise ValueError(f"{field_name} must contain only strings")
+        elif "list[str]" in normalized_type and (
+            "list[list[str]]" in normalized_type or "|list[str]" in normalized_type
+        ):
+            for item in value:
+                if isinstance(item, str):
+                    continue
+                if isinstance(item, list) and all(isinstance(arg, str) for arg in item):
+                    continue
+                raise ValueError(f"{field_name} must contain nonempty shell strings or argument arrays")
         return value
     if "bool" in normalized_type:
         if isinstance(value, bool):
@@ -402,6 +412,28 @@ def _validate_config(config: ReforgeConfig) -> None:
         raise ValueError("ParityConfig.call_count_warn_diff may not be negative")
     if config.validation.command_timeout_s <= 0:
         raise ValueError("ValidationConfig.command_timeout_s must be positive")
+    for name in (
+        "build_commands",
+        "test_commands",
+        "runtime_commands",
+    ):
+        value = getattr(config.validation, name)
+        if not isinstance(value, list) or not all(
+            (isinstance(item, str) and bool(item.strip()))
+            or (isinstance(item, list) and bool(item) and all(isinstance(arg, str) for arg in item)
+                and bool(item[0].strip()))
+            for item in value
+        ):
+            raise ValueError(f"validation.{name} must contain nonempty shell strings or argument arrays")
+    for name in ("differential_reference", "differential_candidate"):
+        value = getattr(config.validation, name)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError(f"validation.{name} must be a list of strings")
+    if config.project_profile.compilation_database is not None and (
+        not isinstance(config.project_profile.compilation_database, str)
+        or not config.project_profile.compilation_database.strip()
+    ):
+        raise ValueError("project_profile.compilation_database must be a non-empty string")
     if config.data_handling.max_prompt_chars < 1_000:
         raise ValueError("DataHandlingConfig.max_prompt_chars must be at least 1000")
     config.data_handling.allowed_providers = [

@@ -15,6 +15,20 @@ def cmd_status(args: argparse.Namespace) -> int:
     configured = getattr(args, "config", None)
     config = load_config(Path(configured) if configured else None)
     session = Session(config.output.session_file)
+    if getattr(args, "manifest", None):
+        if getattr(args, "class_name", None):
+            raise ValueError("--manifest cannot be combined with --class")
+        from reforge.core.identity import project_fingerprint
+        from reforge.core.target_plan import TargetPlan
+        from reforge.reports.coverage import format_coverage, manifest_coverage
+
+        report = manifest_coverage(TargetPlan.load(Path(args.manifest)), session, project_fingerprint(config))
+        print(
+            json.dumps(report, indent=2)
+            if args.format == "json"
+            else format_coverage(report, markdown=args.format == "markdown")
+        )
+        return 0
     tracker = ProgressTracker(session)
 
     if args.format == "json":

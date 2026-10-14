@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import logging
@@ -11,6 +12,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -56,11 +58,18 @@ class Session:
                 str(address): dict(entry) for address, entry in functions.items() if isinstance(entry, dict)
             }
             valid_runs = [dict(entry) for entry in runs if isinstance(entry, dict)]
-            return {
+            out: dict[str, Any] = {
                 "schema_version": _SCHEMA_VERSION,
                 "functions": valid_functions,
                 "runs": valid_runs,
             }
+            if "identity" in raw:
+                out["identity"] = raw["identity"]
+            if "checkpoints" in raw and isinstance(raw["checkpoints"], dict):
+                out["checkpoints"] = raw["checkpoints"]
+            if "history" in raw and isinstance(raw["history"], list):
+                out["history"] = raw["history"]
+            return out
         except (json.JSONDecodeError, OSError, ValueError) as exc:
             logger.warning("Invalid session state in %s: %s", self.path, exc)
             if quarantine and self.path.exists():
@@ -136,10 +145,45 @@ class Session:
                     lock_api = importlib.import_module("fcntl")
                     lock_api.flock(handle.fileno(), lock_api.LOCK_UN)
 
+    def bind(self, identity: str) -> None:
+        """Archive old results when the project/evidence/acceptance policy changes."""
+        with self._thread_lock, self._file_lock():
+            if self.path.exists():
+                self._data = self._read_data(quarantine=False)
+            previous = self._data.get("identity")
+            if previous != identity and (self._data["functions"] or self._data.get("checkpoints")):
+                history = self._data.get("history", [])
+                history.append({k: v for k, v in self._data.items() if k != "history"})
+                self._data = {"schema_version": _SCHEMA_VERSION, "functions": {}, "runs": [], "history": history}
+            self._data["identity"] = identity
+            self._save_unlocked()
+
+    def record_checkpoint(self, result: ReversalResult) -> None:
+        from reforge.reports.formatter import _result_to_dict
+
+        with self._thread_lock, self._file_lock():
+            if self.path.exists():
+                self._data = self._read_data(quarantine=False)
+            self._data.setdefault("checkpoints", {})[normalize_address(result.target.address)] = _result_to_dict(result)
+            self._save_unlocked()
+
+    def previous_feedback(self, address: str) -> str:
+        entry = self._data.get("checkpoints", {}).get(normalize_address(address))
+        return json.dumps(entry, indent=2) if entry else ""
+
     def record_result(self, result: ReversalResult) -> None:
         addr = normalize_address(result.target.address)
         entry = {
             "address": result.target.address,
+            "run_id": result.run_id,
+            "error": result.error,
+            "code_sha256": hashlib.sha256(result.code.encode()).hexdigest(),
+            "code": result.code,
+            "objective_verdict": result.objective_verdict.verdict.value if result.objective_verdict else None,
+            "validation_checks": result.validation_verdict.checks if result.validation_verdict else [],
+            "objective_findings": result.objective_verdict.findings if result.objective_verdict else [],
+            "validation_findings": result.validation_verdict.findings if result.validation_verdict else [],
+            "parity_findings": [asdict(f) for f in result.parity_findings],
             "class_name": result.target.class_name,
             "function_name": result.target.function_name,
             "success": result.success,
@@ -206,3 +250,13 @@ class Session:
 
     def get_all_functions(self) -> list[dict[str, Any]]:
         return list(self._data["functions"].values())
+
+    @property
+    def identity(self) -> str | None:
+        """Fingerprint of current records; reading never rebinds or archives them."""
+        value = self._data.get("identity")
+        return value if isinstance(value, str) else None
+
+    def get_checkpoint(self, address: str) -> dict[str, Any] | None:
+        value = self._data.get("checkpoints", {}).get(normalize_address(address))
+        return dict(value) if isinstance(value, dict) else None

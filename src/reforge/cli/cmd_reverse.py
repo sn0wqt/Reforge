@@ -1,4 +1,4 @@
-"""reforge reverse command :  single function or class reversal."""
+"""reforge reverse command : single function or class reversal."""
 
 from __future__ import annotations
 
@@ -12,6 +12,15 @@ from reforge.reports.formatter import format_result
 
 
 def cmd_reverse(args: argparse.Namespace) -> int:
+    manifest_path = getattr(args, "manifest", None)
+    if manifest_path and (args.address or args.class_name):
+        raise ValueError("--manifest cannot be combined with --address or --class")
+    if args.max_functions is not None and args.max_functions < 1:
+        raise ValueError("--max-functions must be positive")
+    if not args.address and not args.class_name and not manifest_path:
+        print("Error: specify --address, --class, or --manifest", file=sys.stderr)
+        return 1
+
     configured = getattr(args, "config", None)
     config = load_config(Path(configured) if configured else None)
 
@@ -20,11 +29,29 @@ def cmd_reverse(args: argparse.Namespace) -> int:
     if args.skip_parity:
         config.parity.enabled = False
 
+    from reforge.core.identity import project_fingerprint
+    from reforge.core.target_plan import TargetPlan
+
+    plan = TargetPlan.load(Path(manifest_path)) if manifest_path else None
+    if plan is not None and plan.identity != project_fingerprint(config):
+        raise ValueError("Target manifest inputs changed; regenerate with plan before reversal")
+
     if args.dry_run:
+        if plan is not None:
+            import json
+            from dataclasses import asdict
+
+            print(
+                json.dumps(
+                    {
+                        "functions": [asdict(target) for target in plan.functions],
+                        "gaps": [asdict(gap) for gap in plan.gaps],
+                    },
+                    indent=2,
+                )
+            )
+            return 0
         return _dry_run(args, config)
-    if not args.address and not args.class_name:
-        print("Error: specify --address or --class", file=sys.stderr)
-        return 1
 
     # Lazy imports to avoid loading LLM/backend unless needed
     from reforge.backend.registry import create_backend
@@ -61,6 +88,8 @@ def cmd_reverse(args: argparse.Namespace) -> int:
     metadata_dir = getattr(args, "metadata_dir", None) or getattr(args, "dump", None) or getattr(args, "binary", None)
     backend = create_backend(config.backend, metadata_dir=metadata_dir)
     session = Session(config.output.session_file)
+    if hasattr(session, "bind"):
+        session.bind(project_fingerprint(config))
 
     if args.address:
         from reforge.orchestrator.single import reverse_single
@@ -102,39 +131,69 @@ def cmd_reverse(args: argparse.Namespace) -> int:
             checker_llm=checker_llm,
             session=session,
         )
-        print(format_result(result))
+        from reforge.reports.formatter import results_to_json, results_to_markdown
+
+        if config.output.format == "json":
+            print(results_to_json([result]))
+        elif config.output.format == "markdown":
+            print(results_to_markdown([result]))
+        else:
+            print(format_result(result))
         return 0 if result.success else 1
 
-    if args.class_name:
-        from reforge.orchestrator.class_runner import reverse_class
-
+    if args.class_name or plan is not None:
         reverser_llm = create_provider(reverser_config)
         checker_llm = create_provider(checker_config)
-        results = reverse_class(
-            class_name=args.class_name,
-            config=config,
-            backend=backend,
-            llm=reverser_llm,
-            checker_llm=checker_llm,
-            session=session,
-            max_functions=args.max_functions,
-        )
-        for r in results:
-            print(format_result(r))
-            print()
+
+        if plan is not None:
+            from reforge.orchestrator.batch_runner import reverse_manifest
+
+            results = reverse_manifest(
+                plan,
+                config,
+                backend,
+                reverser_llm,
+                session,
+                args.max_functions,
+                checker_llm,
+            )
+        else:
+            from reforge.orchestrator.class_runner import reverse_class
+
+            results = reverse_class(
+                class_name=args.class_name,
+                config=config,
+                backend=backend,
+                llm=reverser_llm,
+                checker_llm=checker_llm,
+                session=session,
+                max_functions=args.max_functions,
+            )
+
+        from reforge.reports.formatter import results_to_json, results_to_markdown
+
+        if config.output.format == "json":
+            print(results_to_json(results))
+        elif config.output.format == "markdown":
+            print(results_to_markdown(results))
+        else:
+            for r in results:
+                print(format_result(r))
+                print()
 
         passed = sum(1 for r in results if r.success)
         total = len(results)
-        if total == 0:
+        if total == 0 and not plan:
             print(
                 f"[!] Error: 0 exported functions found for class '{args.class_name}'. "
                 "Run 'ghidra-bridge export all' in Ghidra first or pass '--metadata-dir'.",
                 file=sys.stderr,
             )
             return 1
-        print(f"\nResults: {passed}/{total} passed")
+        print(f"\nResults: {passed}/{total} passed", file=sys.stderr)
         return 0 if total > 0 and passed == total else 1
 
+    print("Error: specify --address, --class, or --manifest", file=sys.stderr)
     return 1
 
 
@@ -157,5 +216,5 @@ def _dry_run(args: argparse.Namespace, config: object) -> int:
         print(f"  Max rounds per function: {args.max_rounds or config.orchestrator.max_review_rounds}")
         return 0
 
-    print("Error: specify --address or --class", file=sys.stderr)
+    print("Error: specify --address, --class, or --manifest", file=sys.stderr)
     return 1

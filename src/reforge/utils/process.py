@@ -95,3 +95,67 @@ def run_cmd_split(args: Sequence[str], timeout_s: int = 45) -> tuple[int, str, s
         return -1, "", f"Command not found: {args[0]}"
     except OSError as exc:
         return -1, "", f"Command could not be started: {args[0]}: {exc}"
+
+
+def run_process(
+    args: Sequence[str],
+    *,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
+    input_text: str | None = None,
+    timeout_s: float = 45,
+    max_output_bytes: int = 1_048_576,
+) -> subprocess.CompletedProcess[str]:
+    """Bound captured output and terminate the entire process group on timeout."""
+    import contextlib
+    import signal
+    import tempfile
+    import typing
+
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        proc = subprocess.Popen(
+            list(args),
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=stdout,
+            stderr=stderr,
+            text=True,
+            start_new_session=os.name != "nt",
+        )
+        try:
+            proc.communicate(input_text, timeout=timeout_s)
+        except BaseException:
+            if os.name == "nt":
+                if proc.poll() is None:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                        capture_output=True,
+                        check=False,
+                    )
+            else:
+                killpg = getattr(os, "killpg", None)
+                sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
+                if callable(killpg):
+                    with contextlib.suppress(ProcessLookupError):
+                        killpg(proc.pid, sigkill)
+
+            proc.wait()
+            raise
+
+        def read_tail(handle: object) -> str:
+            # Temporary files bound memory even when a build emits a large log.
+            stream = typing.cast(typing.BinaryIO, handle)
+            size = stream.seek(0, 2)
+            stream.seek(max(0, size - max_output_bytes))
+            text = stream.read().decode("utf-8", errors="replace")
+            return ("[output truncated]\n" if size > max_output_bytes else "") + text
+
+        returncode = proc.returncode if proc.returncode is not None else proc.wait()
+        return subprocess.CompletedProcess(
+            list(args),
+            returncode,
+            read_tail(stdout),
+            read_tail(stderr),
+        )
+

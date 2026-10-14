@@ -1,4 +1,4 @@
-"""Checker agent :  verifies reversed code against Ghidra decompilation."""
+"""Checker agent: verifies reversed code against Ghidra decompilation."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class CheckerAgent:
         decompiled = decompile_result.raw_output
 
         system_prompt = render_template(PROMPTS_DIR / "checker_system.md")
-        evidence_limit = max(1_000, (self._max_prompt_chars - 2_000) // 2)
+        evidence_limit = max(1_000, (self._max_prompt_chars - 2_000) // 4)
         task_prompt = render_template(
             PROMPTS_DIR / "checker_task.md",
             class_name=quote_untrusted(target.class_name, max_chars=512),
@@ -47,6 +47,21 @@ class CheckerAgent:
             reversed_code=quote_untrusted(code, max_chars=evidence_limit),
             decompiled=quote_untrusted(decompiled, max_chars=evidence_limit),
         )
+
+        from reforge.agents.reverser import ReverserAgent
+
+        evidence = ReverserAgent(self.llm, self.backend, max_investigations=4)._build_investigation_context(target)
+        if evidence:
+            task_prompt += "\n\nIndependent binary evidence (resolve conflicts explicitly):\n" + quote_untrusted(
+                evidence, max_chars=evidence_limit
+            )
+        try:
+            struct = self.backend.get_struct(target.class_name) if target.class_name else None
+        except (RuntimeError, OSError, ValueError):
+            struct = None
+        if struct:
+            task_prompt += "\n\nType layout: " + quote_untrusted(repr(struct), max_chars=evidence_limit)
+
         if len(task_prompt) > self._max_prompt_chars:
             raise ValueError("Checker prompt exceeds data_handling.max_prompt_chars after evidence bounding")
 

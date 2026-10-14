@@ -1,4 +1,4 @@
-"""Backend factory :  creates a backend from configuration."""
+"""Backend factory: creates a backend from configuration."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ def create_backend(
 
     Supported types:
         - ``"ghidra-bridge"`` (default): Shells out to a Ghidra CLI tool.
+        - ``"ghidra-json"``: Directly reads Ghidra JSON export files.
         - ``"il2cpp"`` / ``"metadata"``: Directly parses dump.cs / script.json metadata directory.
         - ``"stub"``: In-memory stub returning canned data (for testing).
 
@@ -37,6 +38,13 @@ def create_backend(
             timeout_s=config.timeout_s,
         )
 
+    if backend_type == "ghidra-json":
+        from reforge.backend.exports import GhidraExportsBackend
+
+        if not config.export_dir:
+            raise ValueError("backend.export_dir is required for ghidra-json")
+        return GhidraExportsBackend(config.export_dir, config.address_map)
+
     if backend_type in ("il2cpp", "metadata"):
         from reforge.backend.il2cpp import IL2CPPBackend
 
@@ -47,4 +55,6 @@ def create_backend(
 
         return StubBackend()
 
-    raise ValueError(f"Unknown backend type: {config.type!r}. Supported: ghidra-bridge, il2cpp, stub")
+    raise ValueError(
+        f"Unknown backend type: {config.type!r}. Supported: ghidra-bridge, ghidra-json, il2cpp, stub"
+    )

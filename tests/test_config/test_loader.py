@@ -283,3 +283,43 @@ def test_llm_retry_count_is_bounded(tmp_path: Path) -> None:
     path.write_text("llm:\n  provider: gemini\n  max_retries: 3\n", encoding="utf-8")
     with pytest.raises(ValueError, match="between 0 and 2"):
         load_config(path)
+
+
+def test_validation_command_argument_arrays_and_differential(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """\
+project_profile:
+  compilation_database: compile_commands.json
+validation:
+  build_commands:
+    - ["gcc", "-c", "foo.cpp"]
+    - "make test"
+  test_commands:
+    - ["pytest", "-q"]
+  runtime_commands:
+    - ["./run.sh", "--quick"]
+  differential_reference:
+    - "ref_bin"
+  differential_candidate:
+    - "cand_bin"
+  differential_cases_file: cases.json
+""",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+    assert config.project_profile.compilation_database == "compile_commands.json"
+    assert config.validation.build_commands == [["gcc", "-c", "foo.cpp"], "make test"]
+    assert config.validation.test_commands == [["pytest", "-q"]]
+    assert config.validation.runtime_commands == [["./run.sh", "--quick"]]
+    assert config.validation.differential_reference == ["ref_bin"]
+    assert config.validation.differential_candidate == ["cand_bin"]
+    assert config.validation.differential_cases_file == "cases.json"
+
+
+def test_validation_empty_command_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text("validation:\n  build_commands:\n    - ''\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="must contain nonempty"):
+        load_config(path)
+
