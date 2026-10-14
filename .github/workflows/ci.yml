@@ -5,7 +5,8 @@ on:
     branches: [main, master]
   pull_request:
 
-permissions: write-all
+permissions:
+  contents: write
 
 jobs:
   lint:
@@ -33,32 +34,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
       - name: Run pytest
-        run: |
-          pytest tests/ -m "not llm and not ghidra" --strict-markers --tb=short -ra > pytest.log 2>&1 || {
-            cat pytest.log
-            python -c "
-import os, urllib.request, json
-token = os.environ.get('GITHUB_TOKEN')
-repo = os.environ.get('GITHUB_REPOSITORY')
-sha = os.environ.get('GITHUB_SHA')
-if token and repo and sha and os.path.exists('pytest.log'):
-    lines = open('pytest.log', errors='ignore').read().splitlines()
-    failed_lines = [l for l in lines if 'FAILED' in l or 'ERROR' in l or 'Error' in l][:30]
-    tail = '\n'.join(lines[-40:])
-    body = f'### CI Failure: {os.environ.get(\"JOB_NAME\", \"test\")}\n\nKey errors:\n```\n' + '\n'.join(failed_lines) + '\n```\n\nTail:\n```\n' + tail + '\n```'
-    req = urllib.request.Request(
-        f'https://api.github.com/repos/{repo}/commits/{sha}/comments',
-        data=json.dumps({'body': body}).encode(),
-        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json', 'User-Agent': 'CI'}
-    )
-    try:
-        urllib.request.urlopen(req)
-    except Exception as e:
-        print('Comment post error:', e)
-"
-            exit 1
-          }
-        shell: bash
+        run: pytest tests/ -m "not llm and not ghidra" --strict-markers --tb=short --junitxml=junit.xml
+      - name: Report failure
+        if: failure()
+        run: python scripts/ci_report.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
