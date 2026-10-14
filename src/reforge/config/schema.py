@@ -79,7 +79,7 @@ class AgentModelsConfig:
     )
     checker: LLMConfig | None = field(
         default_factory=lambda: LLMConfig(
-            provider="codex",
+            provider="cliproxy",
             model="gpt-6.1-sol",
             cli_path="codex",
             effort="high",

@@ -211,7 +211,7 @@ Uses local `codex exec` with an authenticated session.
 
 ### Multi-Model Reverser and Checker
 
-Reconstruct functions with Gemini 3.8 Flash High and run independent verification checks with GPT 6.1 Sol:
+Both models route through local CLIProxyAPI (`http://127.0.0.1:8317/v1`) using Antigravity and Codex authentication. Reconstruct functions with Gemini 3.8 Flash High and run independent verification checks with GPT 6.1 Sol:
 
 ```yaml
 agents:
@@ -219,9 +219,8 @@ agents:
     provider: cliproxy
     model: gemini-3.8-flash-high
   checker:
-    provider: codex
+    provider: cliproxy
     model: gpt-6.1-sol
-    effort: high
 ```
 
 ### Data Handling Policy

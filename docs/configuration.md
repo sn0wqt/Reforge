@@ -70,10 +70,8 @@ agents:
     model: gemini-3.8-flash-high
     timeout_s: 600
   checker:
-    provider: codex
+    provider: cliproxy
     model: gpt-6.1-sol
-    cli_path: codex
-    effort: high
     timeout_s: 600
 ```
 
