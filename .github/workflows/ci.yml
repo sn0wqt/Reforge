@@ -5,6 +5,8 @@ on:
     branches: [main, master]
   pull_request:
 
+permissions: write-all
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -20,6 +22,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
@@ -29,7 +32,38 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest tests/ -m "not llm and not ghidra" --strict-markers --tb=short
+      - name: Run pytest
+        run: |
+          pytest tests/ -m "not llm and not ghidra" --strict-markers --tb=short -ra > pytest.log 2>&1 || {
+            cat pytest.log
+            python -c "
+import os, urllib.request, json
+token = os.environ.get('GITHUB_TOKEN')
+repo = os.environ.get('GITHUB_REPOSITORY')
+sha = os.environ.get('GITHUB_SHA')
+if token and repo and sha and os.path.exists('pytest.log'):
+    lines = open('pytest.log', errors='ignore').read().splitlines()
+    failed_lines = [l for l in lines if 'FAILED' in l or 'ERROR' in l or 'Error' in l][:30]
+    tail = '\n'.join(lines[-40:])
+    body = f'### CI Failure: {os.environ.get(\"JOB_NAME\", \"test\")}\n\nKey errors:\n```\n' + '\n'.join(failed_lines) + '\n```\n\nTail:\n```\n' + tail + '\n```'
+    req = urllib.request.Request(
+        f'https://api.github.com/repos/{repo}/commits/{sha}/comments',
+        data=json.dumps({'body': body}).encode(),
+        headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json', 'User-Agent': 'CI'}
+    )
+    try:
+        urllib.request.urlopen(req)
+    except Exception as e:
+        print('Comment post error:', e)
+"
+            exit 1
+          }
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ matrix.os }}-${{ matrix.python-version }}
 
   coverage:
     runs-on: ubuntu-latest
