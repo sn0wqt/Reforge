@@ -30,3 +30,4 @@ credentials/
 *.json.bak
 .test-tmp*/
 actual_*/
+CLAUDE.md

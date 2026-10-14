@@ -28,33 +28,28 @@ Generated code is placed in isolated candidate overlays rather than modifying th
 
 - Python 3.10+
 - Git
-- Ghidra with [ghidra-ai-bridge](https://github.com/sn0wqt/ghidra-ai-bridge)
+- Ghidra with [ghidra-ai-bridge](https://github.com/sn0wqt/ghidra-ai-bridge) (or an existing [ghidra_bridge](https://github.com/justfoxing/ghidra_bridge) setup)
 - An authenticated LLM provider:
+  - Local CLIProxyAPI (recommended for Antigravity Gemini and Codex models)
+  - Codex CLI (`codex`)
   - Claude API (`ANTHROPIC_API_KEY`) or Claude CLI (`claude`)
   - OpenAI-compatible API (`OPENAI_API_KEY`)
-  - Codex CLI (`codex`)
   - Gemini API (`GEMINI_API_KEY` or Vertex AI credentials)
 
 ## Installation
 
-Install from PyPI:
+Clone the repository and install Reforge locally in editable mode:
 
 ```bash
-python3 -m pip install --upgrade "reforge[providers,ghidra-bridge]>=0.3.0"
+git clone https://github.com/sn0wqt/Reforge.git
+cd Reforge
+python3 -m pip install -e ".[dev,providers]"
 ```
 
-For headless Ghidra analysis:
+If using Ghidra as your decompiler backend, install `ghidra-ai-bridge`:
 
 ```bash
-python3 -m pip install --upgrade "reforge[providers,headless]>=0.3.0"
-```
-
-To install directly from GitHub:
-
-```bash
-python3 -m pip install --upgrade \
-  "ghidra-ai-bridge @ git+https://github.com/sn0wqt/ghidra-ai-bridge.git@main" \
-  "reforge[providers] @ git+https://github.com/sn0wqt/Reforge.git@main"
+python3 -m pip install "ghidra-ai-bridge @ git+https://github.com/sn0wqt/ghidra-ai-bridge.git@main"
 ```
 
 ## Android Toolchain Setup

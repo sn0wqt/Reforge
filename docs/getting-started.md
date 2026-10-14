@@ -1,9 +1,11 @@
 # Getting Started
 
-Install Reforge and the Ghidra bridge:
+Clone and install Reforge locally:
 
 ```bash
-python3 -m pip install --upgrade "reforge[providers,headless]>=0.3.0"
+git clone https://github.com/sn0wqt/Reforge.git
+cd Reforge
+python3 -m pip install -e ".[dev,providers]"
 ```
 
 ## 1. Prepare Ghidra
