@@ -6,8 +6,8 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 
-from re_agent.core.models import FunctionTarget, ReversalResult
-from re_agent.core.session import Session
+from reforge.core.models import FunctionTarget, ReversalResult
+from reforge.core.session import Session
 
 
 def _result(address: str, *, success: bool) -> ReversalResult:

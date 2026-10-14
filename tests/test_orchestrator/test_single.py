@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from re_agent.backend.stub import StubBackend
-from re_agent.config.schema import ReAgentConfig
-from re_agent.core.models import FunctionTarget, ParityStatus, Verdict
-from re_agent.llm.protocol import Message
-from re_agent.orchestrator.single import reverse_single
+from reforge.backend.stub import StubBackend
+from reforge.config.schema import ReforgeConfig
+from reforge.core.models import FunctionTarget, ParityStatus, Verdict
+from reforge.llm.protocol import Message
+from reforge.orchestrator.single import reverse_single
 
 
 class _LLM:
@@ -31,7 +31,7 @@ class _LLM:
 
 def test_dry_run_smoke() -> None:
     """Smoke test that config + target creation works."""
-    config = ReAgentConfig.create_default()
+    config = ReforgeConfig.create_default()
     target = FunctionTarget(
         address="0x6F86A0",
         class_name="CTrain",
@@ -48,7 +48,7 @@ def test_candidate_parity_is_blocking_and_uses_generated_body(tmp_path: Path) ->
         "void CTest::Foo() { ExistingImplementation(); }\n",
         encoding="utf-8",
     )
-    config = ReAgentConfig.create_default()
+    config = ReforgeConfig.create_default()
     config.project_profile.source_root = str(source_root)
     config.project_profile.stub_markers = ["NOTSA_UNREACHABLE"]
     config.output.report_dir = str(tmp_path / "reports")
@@ -82,7 +82,7 @@ def test_unknown_validation_blocks_acceptance_by_default(tmp_path: Path) -> None
         "void CTest::Foo() { ExistingImplementation(); }\n",
         encoding="utf-8",
     )
-    config = ReAgentConfig.create_default()
+    config = ReforgeConfig.create_default()
     config.project_profile.source_root = str(source_root)
     config.output.report_dir = str(tmp_path / "reports")
     config.output.log_dir = str(tmp_path / "logs")
@@ -109,7 +109,7 @@ def test_explicitly_disabled_validation_does_not_block(tmp_path: Path) -> None:
     source_root = tmp_path / "source"
     source_root.mkdir()
     (source_root / "CTest.cpp").write_text("void CTest::Foo() {}\n", encoding="utf-8")
-    config = ReAgentConfig.create_default()
+    config = ReforgeConfig.create_default()
     config.project_profile.source_root = str(source_root)
     config.output.report_dir = str(tmp_path / "reports")
     config.output.log_dir = str(tmp_path / "logs")

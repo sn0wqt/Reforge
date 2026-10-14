@@ -1,6 +1,6 @@
 """Tests for goal_parser.py utility."""
 
-from re_agent.utils.goal_parser import expand_goal_terms, extract_entity_keywords
+from reforge.utils.goal_parser import expand_goal_terms, extract_entity_keywords
 
 
 def test_extract_entity_keywords_basic():

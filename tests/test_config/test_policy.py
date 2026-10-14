@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from re_agent.config.policy import provider_is_allowed, require_provider_allowed
-from re_agent.config.schema import DataHandlingConfig, LLMConfig
+from reforge.config.policy import provider_is_allowed, require_provider_allowed
+from reforge.config.schema import DataHandlingConfig, LLMConfig
 
 
 def test_provider_requires_both_global_consent_and_allowlist() -> None:

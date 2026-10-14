@@ -25,14 +25,14 @@ parity:
   enabled: true
   call_count_warn_diff: 3
   inline_wrapper_autoskip: false
-  cache_dir: ".cache/re-agent-parity"
+  cache_dir: ".cache/reforge-parity"
 
 orchestrator:
   max_review_rounds: 4
   max_functions_per_class: 10
 
 output:
-  report_dir: "reports/re-agent"
-  log_dir: "reports/re-agent/logs"
-  session_file: "re-agent-progress.json"
+  report_dir: "reports/reforge"
+  log_dir: "reports/reforge/logs"
+  session_file: "reforge-progress.json"
   format: "json"

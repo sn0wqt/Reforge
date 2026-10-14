@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from re_agent.backend.protocol import BackendCapabilities
-from re_agent.core.models import AnalysisArtifact, DecompileResult, FunctionTarget, Verdict
-from re_agent.verification.objective import verify_candidate
+from reforge.backend.protocol import BackendCapabilities
+from reforge.core.models import AnalysisArtifact, DecompileResult, FunctionTarget, Verdict
+from reforge.verification.objective import verify_candidate
 
 
 class _ErrorIRBackend:

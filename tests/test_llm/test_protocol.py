@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from re_agent.config.schema import LLMConfig
-from re_agent.llm.protocol import LLMProvider, Message
-from re_agent.llm.registry import create_provider
+from reforge.config.schema import LLMConfig
+from reforge.llm.protocol import LLMProvider, Message
+from reforge.llm.registry import create_provider
 
 
 def test_message_creation() -> None:
@@ -66,7 +66,7 @@ def test_registry_creates_codex_provider() -> None:
 
 
 def test_registry_creates_explicit_failover_chain() -> None:
-    from re_agent.llm.failover import FailoverLLMProvider
+    from reforge.llm.failover import FailoverLLMProvider
 
     provider = create_provider(
         LLMConfig(

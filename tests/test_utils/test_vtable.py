@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from re_agent.utils.vtable import generate_vtable_header
+from reforge.utils.vtable import generate_vtable_header
 
 
 def test_generate_vtable_header() -> None:

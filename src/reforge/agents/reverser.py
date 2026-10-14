@@ -1,0 +1,357 @@
+"""Reverser agent — gathers context and asks LLM to produce reversed C++ code."""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+from reforge.agents.source_context import SourceContextBuilder
+from reforge.backend.protocol import REBackend
+from reforge.config.schema import ProjectProfile
+from reforge.core.knowledge_graph import KnowledgeGraph
+from reforge.core.models import FunctionTarget
+from reforge.core.session import Session
+from reforge.llm.protocol import LLMProvider, Message
+from reforge.parity.source_indexer import SourceIndexer
+from reforge.utils.templates import render_template
+from reforge.utils.untrusted import quote_untrusted
+
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+CODE_BLOCK_RE = re.compile(r"```(?:cpp|c\+\+)?\s*\n(.*?)```", re.S)
+REVERSED_TAG_RE = re.compile(r"REVERSED_FUNCTION:\s*(.+)")
+
+
+class ReverserAgent:
+    """Gathers decompile context and asks the LLM to reverse a function."""
+
+    def __init__(
+        self,
+        llm: LLMProvider,
+        backend: REBackend,
+        source_root: Path | None = None,
+        project_profile: ProjectProfile | None = None,
+        indexer: SourceIndexer | None = None,
+        session: Session | None = None,
+        report_dir: Path | None = None,
+        investigation_enabled: bool = True,
+        max_investigations: int = 8,
+        max_prompt_chars: int = 120_000,
+        persist_evidence: bool = False,
+    ) -> None:
+        self.llm = llm
+        self.backend = backend
+        self._project_profile = project_profile
+        self._source_context_builder: SourceContextBuilder | None = None
+        if source_root is not None and project_profile is not None and source_root.exists():
+            self._source_context_builder = SourceContextBuilder(
+                source_root=source_root,
+                profile=project_profile,
+                indexer=indexer,
+                session=session,
+                report_dir=report_dir,
+            )
+        self._conversation_id: str | None = None
+        self._history: list[Message] = []
+        self._investigation_enabled = investigation_enabled
+        self._max_investigations = max(0, max_investigations)
+        self._max_prompt_chars = max(1_000, max_prompt_chars)
+        self._knowledge_graph = (
+            KnowledgeGraph(report_dir / "knowledge-graph.json") if persist_evidence and report_dir is not None else None
+        )
+        self.last_prompt: str = ""
+        self.last_response: str = ""
+
+    def reverse(self, target: FunctionTarget) -> tuple[str, str]:
+        """Reverse a function. Returns (code, reversed_function_tag)."""
+        # Gather context
+        decompile_result = self.backend.decompile(target.address)
+        decompiled = decompile_result.raw_output
+
+        caps = self.backend.capabilities
+
+        xrefs_text = ""
+        if caps.has_xrefs:
+            try:
+                xrefs = self.backend.xrefs_from(target.address)
+                xrefs_text = "\n".join(f"- {x.name} ({x.address}) [{x.ref_type}]" for x in xrefs) or "None found"
+            except Exception:
+                xrefs_text = "Unavailable"
+
+        structs_text = ""
+        if caps.has_structs and target.class_name:
+            try:
+                struct = self.backend.get_struct(target.class_name)
+                if struct:
+                    structs_text = f"{struct.name} (size: {struct.size})\n"
+                    structs_text += "\n".join(
+                        f"  +0x{f.offset:X} {f.type_str} {f.name} (size: {f.size})" for f in struct.fields
+                    )
+            except Exception:
+                structs_text = "Unavailable"
+
+        system_prompt = render_template(PROMPTS_DIR / "reverser_system.md")
+        source_context = ""
+        if self._source_context_builder is not None:
+            source_context = self._source_context_builder.build(target)
+        investigation_context = self._build_investigation_context(target)
+        evidence_limit = max(1_000, self._max_prompt_chars // 5)
+        task_prompt = render_template(
+            PROMPTS_DIR / "reverser_task.md",
+            class_name=quote_untrusted(target.class_name, max_chars=512),
+            function_name=quote_untrusted(target.function_name, max_chars=512),
+            address=quote_untrusted(target.address, max_chars=128),
+            decompiled=quote_untrusted(decompiled, max_chars=evidence_limit),
+            xrefs=quote_untrusted(xrefs_text or "None", max_chars=evidence_limit),
+            structs=quote_untrusted(structs_text or "None", max_chars=evidence_limit),
+            source_context=quote_untrusted(source_context or "None", max_chars=evidence_limit),
+            investigation_context=quote_untrusted(
+                investigation_context or "None",
+                max_chars=evidence_limit,
+            ),
+            language_standard=(self._project_profile.language_standard if self._project_profile else "C++"),
+            project_rules=quote_untrusted(self._project_rules(), max_chars=evidence_limit),
+        )
+        if len(task_prompt) > self._max_prompt_chars:
+            raise ValueError("Reverser prompt exceeds data_handling.max_prompt_chars after evidence bounding")
+
+        if self._conversation_id is None and self.llm.supports_conversations:
+            self._conversation_id = self.llm.new_conversation(system_prompt)
+
+        self.last_prompt = task_prompt
+
+        if self._conversation_id:
+            response = self.llm.resume(self._conversation_id, task_prompt)
+        else:
+            messages = [
+                Message(role="system", content=system_prompt),
+                Message(role="user", content=task_prompt),
+            ]
+            response = self.llm.send(messages)
+            self._history = [*messages, Message(role="assistant", content=response)]
+
+        self.last_response = response
+        response = self._run_action_loop(response, target, system_prompt, task_prompt)
+        self.last_response = response
+        code = self._extract_code(response)
+        tag = self._extract_tag(response)
+        return code, tag
+
+    def _project_rules(self) -> str:
+        if self._project_profile is None:
+            return "- No additional project-specific rules"
+        rules = self._project_profile.prompt_rules
+        return "\n".join(f"- {rule}" for rule in rules) or "- No additional project-specific rules"
+
+    def _build_investigation_context(self, target: FunctionTarget) -> str:
+        """Collect bounded structured evidence exposed by the RE backend."""
+        if not self._investigation_enabled or self._max_investigations == 0:
+            return ""
+        artifacts: list[str] = []
+
+        def add(label: str, getter: object, argument: str) -> None:
+            if len(artifacts) >= self._max_investigations or not callable(getter):
+                return
+            try:
+                artifact = getter(argument)
+            except Exception:
+                return
+            if artifact is None:
+                return
+            content = getattr(artifact, "content", "")
+            if content:
+                if label == "Function evidence bundle" and self._knowledge_graph is not None:
+                    self._knowledge_graph.ingest_context(str(content))
+                artifacts.append(f"## {label}\n{str(content)[:8000]}")
+
+        caps = self.backend.capabilities
+        if getattr(caps, "has_context", False):
+            add("Function evidence bundle", getattr(self.backend, "get_context", None), target.address)
+        if getattr(caps, "has_vtables", False) and target.class_name:
+            add("Vtable", getattr(self.backend, "get_vtable", None), target.class_name)
+        if getattr(caps, "has_cfg", False):
+            add("Control-flow graph", getattr(self.backend, "get_cfg", None), target.address)
+        if getattr(caps, "has_pcode", False):
+            add("Normalized high P-code", getattr(self.backend, "get_pcode", None), target.address)
+        if self._knowledge_graph is not None:
+            neighborhood = self._knowledge_graph.neighborhood(target.address)
+            if neighborhood and neighborhood != '{\n  "nodes": {},\n  "edges": []\n}':
+                artifacts.append(f"## Persistent knowledge graph neighborhood\n{neighborhood}")
+        return "\n\n".join(artifacts)
+
+    def _run_action_loop(
+        self,
+        response: str,
+        target: FunctionTarget,
+        system_prompt: str,
+        task_prompt: str,
+    ) -> str:
+        """Execute bounded, read-only backend actions requested by the model."""
+        if not self._investigation_enabled:
+            return response
+        history = self._history or [
+            Message(role="system", content=system_prompt),
+            Message(role="user", content=task_prompt),
+            Message(role="assistant", content=response),
+        ]
+        used = 0
+        while used < self._max_investigations:
+            payload = self._extract_json(response)
+            actions = payload.get("actions") if payload is not None else None
+            if not isinstance(actions, list) or not actions:
+                break
+            results: list[str] = []
+            for action in actions:
+                if used >= self._max_investigations:
+                    break
+                if not isinstance(action, dict):
+                    continue
+                tool = str(action.get("tool", ""))
+                argument = str(action.get("target") or target.address)
+                validation_error = self._validate_action(tool, argument)
+                if validation_error:
+                    results.append(f"TOOL {tool}: rejected ({validation_error})")
+                else:
+                    results.append(self._execute_action(tool, argument))
+                used += 1
+            if not results:
+                break
+            tool_message = (
+                "Read-only reverse-engineering tool results:\n\n"
+                + "\n\n".join(results)
+                + "\n\nNow return the final reversed function, or request more evidence within the remaining budget."
+            )
+            self.last_prompt = tool_message
+            if self._conversation_id:
+                response = self.llm.resume(self._conversation_id, tool_message)
+            else:
+                history.append(Message(role="user", content=tool_message))
+                response = self.llm.send(history)
+                history.append(Message(role="assistant", content=response))
+                self._history = history
+        return response
+
+    def _execute_action(self, tool: str, argument: str) -> str:
+        methods = {
+            "decompile": "decompile",
+            "xrefs_from": "xrefs_from",
+            "xrefs_to": "xrefs_to",
+            "struct": "get_struct",
+            "enum": "get_enum",
+            "vtable": "get_vtable",
+            "global": "get_global",
+            "strings": "search_strings",
+            "context": "get_context",
+            "pcode": "get_pcode",
+            "cfg": "get_cfg",
+        }
+        method_name = methods.get(tool)
+        method = getattr(self.backend, method_name, None) if method_name else None
+        if not callable(method):
+            return f"TOOL {tool}({argument}): unavailable"
+        try:
+            value = method(argument)
+        except Exception as exc:
+            return f"TOOL {tool}({argument}) ERROR: {exc}"
+        if value is None:
+            rendered = "not found"
+        elif hasattr(value, "content"):
+            rendered = str(value.content)
+        elif hasattr(value, "raw_output"):
+            rendered = str(value.raw_output)
+        else:
+            rendered = repr(value)
+        return f"TOOL {tool}({argument}):\n{rendered[:12000]}"
+
+    @staticmethod
+    def _validate_action(tool: str, argument: str) -> str | None:
+        """Reject model-supplied backend arguments outside narrow read-only forms."""
+        if len(argument) > 512 or any(character in argument for character in "\r\n\x00"):
+            return "target is too long or contains control characters"
+        if tool in {"decompile", "xrefs_from", "xrefs_to", "context", "pcode", "cfg"}:
+            if re.fullmatch(r"(?:0[xX])?[0-9A-Fa-f]{1,16}", argument) is None:
+                return "address target must be a bounded hexadecimal value"
+        elif tool in {"struct", "enum", "vtable", "global"}:
+            if re.fullmatch(r"[A-Za-z_?$][A-Za-z0-9_:.$?@-]{0,255}", argument) is None:
+                return "symbol target contains unsupported characters"
+        elif tool == "strings" and len(argument) > 128:
+            return "string query exceeds 128 characters"
+        return None
+
+    def fix(
+        self,
+        checker_report: str,
+        issues: list[str],
+        fix_instructions: list[str],
+        target: FunctionTarget,
+        objective_findings: list[str] | None = None,
+    ) -> tuple[str, str]:
+        """Ask the reverser to fix code based on checker feedback."""
+        all_issues = list(issues)
+        all_fix_instructions = list(fix_instructions)
+        if objective_findings:
+            all_issues.extend(f"objective verifier: {finding}" for finding in objective_findings)
+            all_fix_instructions.extend("Resolve objective mismatch: " + finding for finding in objective_findings)
+        fix_prompt = render_template(
+            PROMPTS_DIR / "fix_instructions.md",
+            checker_report=quote_untrusted(
+                checker_report,
+                max_chars=self._max_prompt_chars // 3,
+            ),
+            issues=quote_untrusted(all_issues, max_chars=self._max_prompt_chars // 4),
+            fix_instructions=quote_untrusted(
+                all_fix_instructions,
+                max_chars=self._max_prompt_chars // 4,
+            ),
+            class_name=quote_untrusted(target.class_name, max_chars=512),
+            function_name=quote_untrusted(target.function_name, max_chars=512),
+            address=quote_untrusted(target.address, max_chars=128),
+        )
+        if len(fix_prompt) > self._max_prompt_chars:
+            raise ValueError("Fix prompt exceeds data_handling.max_prompt_chars after evidence bounding")
+
+        self.last_prompt = fix_prompt
+
+        if self._conversation_id:
+            response = self.llm.resume(self._conversation_id, fix_prompt)
+        else:
+            self._history.append(Message(role="user", content=fix_prompt))
+            response = self.llm.send(self._history)
+            self._history.append(Message(role="assistant", content=response))
+
+        self.last_response = response
+        system_prompt = render_template(PROMPTS_DIR / "reverser_system.md")
+        response = self._run_action_loop(response, target, system_prompt, fix_prompt)
+        self.last_response = response
+        code = self._extract_code(response)
+        tag = self._extract_tag(response)
+        return code, tag
+
+    @staticmethod
+    def _extract_code(response: str) -> str:
+        payload = ReverserAgent._extract_json(response)
+        if payload is not None and isinstance(payload.get("code"), str):
+            return str(payload["code"]).strip()
+        m = CODE_BLOCK_RE.search(response)
+        return m.group(1).strip() if m else response.strip()
+
+    @staticmethod
+    def _extract_tag(response: str) -> str:
+        payload = ReverserAgent._extract_json(response)
+        if payload is not None and isinstance(payload.get("reversed_function"), str):
+            return str(payload["reversed_function"]).strip()
+        m = REVERSED_TAG_RE.search(response)
+        return m.group(1).strip() if m else ""
+
+    @staticmethod
+    def _extract_json(response: str) -> dict[str, object] | None:
+        text = response.strip()
+        if text.startswith("```json") and text.endswith("```"):
+            text = text[7:-3].strip()
+        if not text.startswith("{"):
+            return None
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else None

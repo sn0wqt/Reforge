@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from re_agent.config.schema import ParityConfig, ProjectProfile, ReAgentConfig
-from re_agent.core.models import HookEntry, ParityStatus
-from re_agent.parity.engine import run_parity
+from reforge.config.schema import ParityConfig, ProjectProfile, ReforgeConfig
+from reforge.core.models import HookEntry, ParityStatus
+from reforge.parity.engine import run_parity
 
 
-def _make_config(source_root: str) -> ReAgentConfig:
+def _make_config(source_root: str) -> ReforgeConfig:
     profile = ProjectProfile(
         hook_patterns=[
             r"RH_ScopedInstall\s*\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)",
@@ -19,7 +19,7 @@ def _make_config(source_root: str) -> ReAgentConfig:
         source_extensions=[".cpp"],
         hooks_csv=None,
     )
-    config = ReAgentConfig.create_default()
+    config = ReforgeConfig.create_default()
     config.project_profile = profile
     config.parity = ParityConfig(enabled=True)
     return config

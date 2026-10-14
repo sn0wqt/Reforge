@@ -1,4 +1,4 @@
-from re_agent.utils.mutation_intent import (
+from reforge.utils.mutation_intent import (
     infer_primitive_replacement,
     primitive_literal_kind,
     replacement_matches_literal,

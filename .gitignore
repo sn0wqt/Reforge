@@ -12,7 +12,6 @@ build/
 *.egg
 .env
 reforge.yaml
-re-agent.yaml
 .coverage
 .coverage.*
 output/

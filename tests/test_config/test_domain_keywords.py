@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from re_agent.config import domain_keywords
+from reforge.config import domain_keywords
 
 
 def test_domain_keyword_collections_are_immutable() -> None:
@@ -114,11 +114,11 @@ def test_platform_library_namespace_detection_is_exact_and_generic() -> None:
 def test_consumers_do_not_redefine_domain_keyword_constants() -> None:
     root = Path(__file__).parents[2]
     consumers = (
-        root / "src/re_agent/cli/cmd_batch.py",
-        root / "src/re_agent/cli/cmd_hook.py",
-        root / "src/re_agent/llm/semantic_analyzer.py",
-        root / "src/re_agent/utils/goal_parser.py",
-        root / "src/re_agent/utils/mutation_intent.py",
+        root / "src/reforge/cli/cmd_batch.py",
+        root / "src/reforge/cli/cmd_hook.py",
+        root / "src/reforge/llm/semantic_analyzer.py",
+        root / "src/reforge/utils/goal_parser.py",
+        root / "src/reforge/utils/mutation_intent.py",
     )
     forbidden = {
         "COLLISION_KEYWORDS",

@@ -8,10 +8,10 @@ from unittest.mock import patch
 
 import pytest
 
-from re_agent.config.schema import ProjectProfile, ValidationConfig
-from re_agent.core.models import FunctionTarget, Verdict
-from re_agent.parity.source_indexer import SourceIndexer
-from re_agent.verification.candidate import (
+from reforge.config.schema import ProjectProfile, ValidationConfig
+from reforge.core.models import FunctionTarget, Verdict
+from reforge.parity.source_indexer import SourceIndexer
+from reforge.verification.candidate import (
     cleanup_candidate_overlay,
     create_candidate_overlay,
     extract_candidate_body,
@@ -119,7 +119,7 @@ def test_required_build_without_command_fails(tmp_path: Path) -> None:
 def test_host_commands_require_separate_execution_consent(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
-    with patch("re_agent.verification.candidate.subprocess.run") as run:
+    with patch("reforge.verification.candidate.subprocess.run") as run:
         verdict = validate_candidate(
             ValidationConfig(
                 build_commands=["test -f '{candidate_file}'"],
@@ -154,7 +154,7 @@ def test_untrusted_shell_gate_is_not_accepted_as_proof(tmp_path: Path) -> None:
     candidate.write_text("invalid C++", encoding="utf-8")
     verdict = validate_candidate(
         ValidationConfig(
-            build_commands=["true # $RE_AGENT_CANDIDATE_FILE"],
+            build_commands=["true # $REFORGE_CANDIDATE_FILE"],
             working_directory=str(tmp_path),
             allow_host_commands=True,
         ),
@@ -169,7 +169,7 @@ def test_validation_normalizes_subprocess_oserror(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
     with patch(
-        "re_agent.verification.candidate.subprocess.run",
+        "reforge.verification.candidate.subprocess.run",
         side_effect=OSError("bad handle"),
     ):
         verdict = validate_candidate(
@@ -191,7 +191,7 @@ def test_validation_commands_do_not_inherit_interactive_stdin(tmp_path: Path) ->
     candidate.write_text("void f() {}", encoding="utf-8")
     completed = subprocess.CompletedProcess([], 0, stdout="")
     with patch(
-        "re_agent.verification.candidate.subprocess.run",
+        "reforge.verification.candidate.subprocess.run",
         return_value=completed,
     ) as run:
         verdict = validate_candidate(
@@ -233,7 +233,7 @@ def test_failed_project_copy_creation_cleans_temporary_directory(
     source = indexer.find("CTest", "Foo")
     assert source is not None
     overlay = tmp_path / "forced-overlay"
-    monkeypatch.setattr("re_agent.verification.candidate.tempfile.mkdtemp", lambda **_: str(overlay))
+    monkeypatch.setattr("reforge.verification.candidate.tempfile.mkdtemp", lambda **_: str(overlay))
 
     with pytest.raises(ValueError, match="outside validation.project_root"):
         create_candidate_overlay(
@@ -310,9 +310,9 @@ def test_copy_project_rejects_symlinks(tmp_path: Path) -> None:
 
 
 def test_isolated_working_directory_cannot_escape_overlay(tmp_path: Path) -> None:
-    overlay = tmp_path / "re-agent-overlay"
+    overlay = tmp_path / "reforge-overlay"
     overlay.mkdir()
-    (overlay / ".re-agent-overlay").write_text("schema_version=1\n", encoding="utf-8")
+    (overlay / ".reforge-overlay").write_text("schema_version=1\n", encoding="utf-8")
     candidate = overlay / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
 

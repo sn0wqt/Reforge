@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from re_agent.utils.type_inference import generate_protocol_struct, infer_vector_types
+from reforge.utils.type_inference import generate_protocol_struct, infer_vector_types
 
 
 def test_infer_vector3() -> None:
@@ -42,7 +42,7 @@ def test_generate_protocol_struct() -> None:
     header = generate_protocol_struct("PositionPacket", fields)
     assert "#pragma pack(push, 1)" in header
     assert "struct PositionPacket {" in header
-    assert "ReAgentVector3 pos_x; // verified offset: 0x2" in header
+    assert "ReforgeVector3 pos_x; // verified offset: 0x2" in header
     assert "static_assert(offsetof(PositionPacket, pos_x) == 0x2);" in header
 
 

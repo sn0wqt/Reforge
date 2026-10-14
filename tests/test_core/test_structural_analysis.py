@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from re_agent.core.structural_analysis import analyze_structures
+from reforge.core.structural_analysis import analyze_structures
 
 
 def test_analyze_structures_currency_getter() -> None:

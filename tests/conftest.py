@@ -1,4 +1,4 @@
-"""Shared fixtures for re-agent tests."""
+"""Shared fixtures for reforge tests."""
 
 from __future__ import annotations
 

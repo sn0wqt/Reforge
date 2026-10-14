@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from subprocess import CompletedProcess, TimeoutExpired
 
-from re_agent.core.il2cpp_parser import (
+from reforge.core.il2cpp_parser import (
     find_il2cpp_metadata_in_dir,
     parse_dump_cs,
     parse_il2cpp_header,
@@ -129,7 +129,7 @@ def test_il2cpp_dumper_requires_a_supported_output_artifact(tmp_path, monkeypatc
     for path in (dumper, binary, metadata):
         path.write_bytes(b"fixture")
     monkeypatch.setattr(
-        "re_agent.core.il2cpp_parser.subprocess.run",
+        "reforge.core.il2cpp_parser.subprocess.run",
         lambda command, **kwargs: CompletedProcess(command, 0, stdout="", stderr=""),
     )
 
@@ -154,7 +154,7 @@ def test_il2cpp_dumper_rejects_unchanged_stale_artifact(tmp_path, monkeypatch) -
     for path in (dumper, binary, metadata):
         path.write_bytes(b"fixture")
     monkeypatch.setattr(
-        "re_agent.core.il2cpp_parser.subprocess.run",
+        "reforge.core.il2cpp_parser.subprocess.run",
         lambda command, **kwargs: CompletedProcess(command, 0, stdout="", stderr=""),
     )
 
@@ -183,7 +183,7 @@ def test_il2cpp_dumper_accepts_new_nonempty_artifact(tmp_path, monkeypatch) -> N
         (output_dir / "script.json").write_text('{"ScriptMethod": []}', encoding="utf-8")
         return CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("re_agent.core.il2cpp_parser.subprocess.run", fake_run)
+    monkeypatch.setattr("reforge.core.il2cpp_parser.subprocess.run", fake_run)
 
     result = run_il2cpp_dumper_cli(
         binary,
@@ -211,7 +211,7 @@ def test_il2cpp_dumper_reports_timeout_without_fallback(tmp_path, monkeypatch) -
         assert kwargs["timeout"] == 7
         raise TimeoutExpired(command, 7)
 
-    monkeypatch.setattr("re_agent.core.il2cpp_parser.subprocess.run", time_out)
+    monkeypatch.setattr("reforge.core.il2cpp_parser.subprocess.run", time_out)
 
     result = run_il2cpp_dumper_cli(
         binary,
@@ -230,7 +230,7 @@ def test_il2cpp_dumper_validates_inputs_before_starting_process(tmp_path, monkey
     def fail_if_called(*args, **kwargs):
         raise AssertionError("subprocess must not run for missing inputs")
 
-    monkeypatch.setattr("re_agent.core.il2cpp_parser.subprocess.run", fail_if_called)
+    monkeypatch.setattr("reforge.core.il2cpp_parser.subprocess.run", fail_if_called)
 
     result = run_il2cpp_dumper_cli(
         tmp_path / "missing-libil2cpp.so",

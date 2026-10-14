@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from re_agent.llm.gemini_api import GeminiProvider
+from reforge.llm.gemini_api import GeminiProvider
 
 
 def test_gemini_provider_api_key_mode() -> None:
@@ -93,7 +93,7 @@ def test_gemini_provider_auth_precedence(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 def test_gemini_preserves_conversation_roles() -> None:
-    from re_agent.llm.protocol import Message
+    from reforge.llm.protocol import Message
 
     provider = GeminiProvider(api_key="test_key")
     contents = provider._conversation_contents(
@@ -132,7 +132,7 @@ def test_gemini_http_options_are_valid_sdk_options() -> None:
 
 
 def test_gemini_fallback_does_not_replace_primary_client(monkeypatch) -> None:
-    from re_agent.llm.protocol import Message
+    from reforge.llm.protocol import Message
 
     provider = GeminiProvider(api_key="test_key")
     primary = object()
@@ -158,7 +158,7 @@ def test_gemini_fallback_does_not_replace_primary_client(monkeypatch) -> None:
 
 
 def test_gemini_safety_block_never_uses_alternate_account(monkeypatch) -> None:
-    from re_agent.llm.protocol import Message
+    from reforge.llm.protocol import Message
 
     provider = GeminiProvider(api_key="test_key")
     fallback = object()

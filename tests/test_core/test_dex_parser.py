@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 
-from re_agent.core.dex_parser import parse_dex_file
+from reforge.core.dex_parser import parse_dex_file
 
 
 def _minimal_dex_with_overload(class_descriptor: bytes = b"Lcom/game/Wallet;") -> bytes:

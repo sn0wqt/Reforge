@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from re_agent.parity.sigscan import generate_signature, match_signature, parse_signature
+from reforge.parity.sigscan import generate_signature, match_signature, parse_signature
 
 
 def test_parse_signature() -> None:

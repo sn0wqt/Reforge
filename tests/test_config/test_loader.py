@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from re_agent.config.defaults import DEFAULT_CONFIG_YAML
-from re_agent.config.loader import discover_config_path, load_config
-from re_agent.config.schema import ReAgentConfig
+from reforge.config.defaults import DEFAULT_CONFIG_YAML
+from reforge.config.loader import discover_config_path, load_config
+from reforge.config.schema import ReforgeConfig
 
 
 def test_load_default_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("re_agent.config.loader.discover_config_path", lambda: None)
+    monkeypatch.setattr("reforge.config.loader.discover_config_path", lambda: None)
     config = load_config(None)
-    assert isinstance(config, ReAgentConfig)
+    assert isinstance(config, ReforgeConfig)
     assert config.llm.provider == "codex"
     assert config.project_profile.name == "reforge"
     assert config.project_profile.source_root == "output"
@@ -26,11 +26,11 @@ def test_load_default_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_init_template_matches_schema_except_validation_opt_in(tmp_path: Path) -> None:
-    config_path = tmp_path / "re-agent.yaml"
+    config_path = tmp_path / "reforge.yaml"
     config_path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
 
     config = load_config(config_path)
-    schema = ReAgentConfig.create_default()
+    schema = ReforgeConfig.create_default()
 
     # Direct ValidationConfig callers retain the historical enabled default.
     # A freshly initialized project opts out until it has meaningful commands.
@@ -45,7 +45,7 @@ def test_default_config_discovery_works_outside_checkout(
 ) -> None:
     checkout_dir = tmp_path / "checkout"
     checkout_dir.mkdir()
-    fake_loader = checkout_dir / "src" / "re_agent" / "config" / "loader.py"
+    fake_loader = checkout_dir / "src" / "reforge" / "config" / "loader.py"
     fake_loader.parent.mkdir(parents=True)
     fake_loader.write_text("# dummy loader\n", encoding="utf-8")
 
@@ -54,8 +54,7 @@ def test_default_config_discovery_works_outside_checkout(
 
     monkeypatch.chdir(outside_dir)
     monkeypatch.delenv("REFORGE_CONFIG", raising=False)
-    monkeypatch.delenv("RE_AGENT_CONFIG", raising=False)
-    monkeypatch.setattr("re_agent.config.loader.__file__", str(fake_loader))
+    monkeypatch.setattr("reforge.config.loader.__file__", str(fake_loader))
 
     # Case 1: No config in checkout or workdir -> None
     assert discover_config_path() is None
@@ -65,45 +64,9 @@ def test_default_config_discovery_works_outside_checkout(
     reforge_yaml.write_text("llm:\n  provider: codex\n", encoding="utf-8")
     assert discover_config_path() == reforge_yaml.resolve()
 
-    # Case 3: reforge.yaml takes precedence over re-agent.yaml in checkout root
-    re_agent_yaml = checkout_dir / "re-agent.yaml"
-    re_agent_yaml.write_text("llm:\n  provider: claude\n", encoding="utf-8")
-    assert discover_config_path() == reforge_yaml.resolve()
-
-    # Case 4: Legacy re-agent.yaml fallback when reforge.yaml is removed
+    # Case 3: When reforge.yaml is removed -> None
     reforge_yaml.unlink()
-    assert discover_config_path() == re_agent_yaml.resolve()
-
-
-def test_reforge_config_env_takes_precedence_over_re_agent_config(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    reforge_cfg = tmp_path / "reforge-custom.yaml"
-    reforge_cfg.write_text("llm:\n  provider: codex\n", encoding="utf-8")
-    legacy_cfg = tmp_path / "legacy-custom.yaml"
-    legacy_cfg.write_text("llm:\n  provider: claude\n", encoding="utf-8")
-
-    monkeypatch.setenv("REFORGE_CONFIG", str(reforge_cfg))
-    monkeypatch.setenv("RE_AGENT_CONFIG", str(legacy_cfg))
-
-    assert discover_config_path() == reforge_cfg.resolve()
-
-
-def test_reforge_yaml_takes_precedence_over_re_agent_yaml(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("REFORGE_CONFIG", raising=False)
-    monkeypatch.delenv("RE_AGENT_CONFIG", raising=False)
-
-    legacy_yaml = tmp_path / "re-agent.yaml"
-    legacy_yaml.write_text("llm:\n  provider: claude\n", encoding="utf-8")
-    reforge_yaml = tmp_path / "reforge.yaml"
-    reforge_yaml.write_text("llm:\n  provider: codex\n", encoding="utf-8")
-
-    assert discover_config_path() == reforge_yaml.resolve()
+    assert discover_config_path() is None
 
 
 def test_explicit_environment_config_wins_default_discovery(
@@ -112,13 +75,13 @@ def test_explicit_environment_config_wins_default_discovery(
 ) -> None:
     config_path = tmp_path / "custom.yaml"
     config_path.write_text("llm:\n  provider: codex\n", encoding="utf-8")
-    monkeypatch.setenv("RE_AGENT_CONFIG", str(config_path))
+    monkeypatch.setenv("REFORGE_CONFIG", str(config_path))
 
     assert discover_config_path() == config_path.resolve()
 
 
 def test_yaml_provider_credentials_are_relative_to_config_file(tmp_path: Path) -> None:
-    config_path = tmp_path / "config" / "re-agent.yaml"
+    config_path = tmp_path / "config" / "reforge.yaml"
     config_path.parent.mkdir()
     config_path.write_text(
         """\
@@ -185,17 +148,17 @@ def test_cli_overrides() -> None:
 
 
 def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RE_AGENT_LLM_PROVIDER", "openai")
-    monkeypatch.setenv("RE_AGENT_LLM_MODEL", "gpt-4o")
+    monkeypatch.setenv("REFORGE_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("REFORGE_LLM_MODEL", "gpt-4o")
     config = load_config(None)
     assert config.llm.provider == "openai"
     assert config.llm.model == "gpt-4o"
 
 
 def test_reforge_env_override_takes_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RE_AGENT_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("REFORGE_LLM_PROVIDER", "openai")
     monkeypatch.setenv("REFORGE_LLM_PROVIDER", "anthropic")
-    monkeypatch.setenv("RE_AGENT_LLM_MODEL", "gpt-4o")
+    monkeypatch.setenv("REFORGE_LLM_MODEL", "gpt-4o")
     monkeypatch.setenv("REFORGE_LLM_MODEL", "claude-3-7-sonnet")
     config = load_config(None)
     assert config.llm.provider == "anthropic"

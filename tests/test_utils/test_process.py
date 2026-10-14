@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from re_agent.utils.process import (
+from reforge.utils.process import (
     run_cmd,
     run_cmd_split,
     sanitized_cli_environment,
@@ -12,14 +12,14 @@ from re_agent.utils.process import (
 
 
 def test_run_cmd_handles_general_oserror() -> None:
-    with patch("re_agent.utils.process.subprocess.run", side_effect=OSError("bad handle")):
+    with patch("reforge.utils.process.subprocess.run", side_effect=OSError("bad handle")):
         ok, output = run_cmd(["tool"])
     assert ok is False
     assert "bad handle" in output
 
 
 def test_run_cmd_split_handles_general_oserror() -> None:
-    with patch("re_agent.utils.process.subprocess.run", side_effect=OSError("bad handle")):
+    with patch("reforge.utils.process.subprocess.run", side_effect=OSError("bad handle")):
         returncode, stdout, stderr = run_cmd_split(["tool"])
     assert returncode == -1
     assert stdout == ""

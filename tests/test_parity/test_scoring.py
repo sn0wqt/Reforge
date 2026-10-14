@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from re_agent.core.models import Finding, ParityStatus
-from re_agent.parity.scoring import score
+from reforge.core.models import Finding, ParityStatus
+from reforge.parity.scoring import score
 
 
 def test_all_green() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from re_agent.parity.deobfuscate import deobfuscate_xor_buffer, detect_stack_strings, detect_xor_loops
+from reforge.parity.deobfuscate import deobfuscate_xor_buffer, detect_stack_strings, detect_xor_loops
 
 
 def test_detect_xor_loops() -> None:
@@ -33,7 +33,7 @@ def test_detect_stack_strings_with_decimal_stack_offset() -> None:
 
 
 def test_reconstruct_stack_strings_single_bytes() -> None:
-    from re_agent.parity.deobfuscate import reconstruct_stack_strings
+    from reforge.parity.deobfuscate import reconstruct_stack_strings
 
     asm = [
         "mov [rsp+0x10], 0x63",  # 'c'
@@ -47,7 +47,7 @@ def test_reconstruct_stack_strings_single_bytes() -> None:
 
 
 def test_reconstruct_stack_strings_dword_packed() -> None:
-    from re_agent.parity.deobfuscate import reconstruct_stack_strings
+    from reforge.parity.deobfuscate import reconstruct_stack_strings
 
     # 0x6E696F63 in little endian = 'c', 'o', 'i', 'n'
     asm = [

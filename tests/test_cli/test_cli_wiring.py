@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from re_agent.cli.main import build_parser
+from reforge.cli.main import build_parser
 
 
 def test_recovered_pipeline_options_are_exact() -> None:

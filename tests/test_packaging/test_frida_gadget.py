@@ -12,7 +12,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from re_agent.packaging.frida_gadget import (
+from reforge.packaging.frida_gadget import (
     ANDROID_NS,
     GADGET_CONFIG_NAME,
     GADGET_LIBRARY_NAME,

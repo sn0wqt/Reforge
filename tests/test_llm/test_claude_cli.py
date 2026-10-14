@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from re_agent.llm.claude_cli import ClaudeCLIProvider
-from re_agent.llm.protocol import Message
+from reforge.llm.claude_cli import ClaudeCLIProvider
+from reforge.llm.protocol import Message
 
 
 def _completed(session_id: str = "session-1") -> CompletedProcess[str]:
@@ -26,7 +26,7 @@ def _completed(session_id: str = "session-1") -> CompletedProcess[str]:
 def test_claude_cli_send_parses_result_and_usage(monkeypatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "must-not-leak")
     provider = ClaudeCLIProvider(model="sonnet", max_budget_usd=1.5, effort="high")
-    with patch("re_agent.llm.claude_cli.subprocess.run", return_value=_completed()) as run:
+    with patch("reforge.llm.claude_cli.subprocess.run", return_value=_completed()) as run:
         result = provider.send(
             [
                 Message(role="system", content="system"),
@@ -47,7 +47,7 @@ def test_claude_cli_send_parses_result_and_usage(monkeypatch) -> None:
 def test_claude_cli_uses_real_session_resume() -> None:
     provider = ClaudeCLIProvider()
     conversation_id = provider.new_conversation("system")
-    with patch("re_agent.llm.claude_cli.subprocess.run", return_value=_completed()) as run:
+    with patch("reforge.llm.claude_cli.subprocess.run", return_value=_completed()) as run:
         provider.resume(conversation_id, "first")
         first = run.call_args.args[0]
         provider.resume(conversation_id, "second")
@@ -62,7 +62,7 @@ def test_claude_cli_surfaces_structured_error() -> None:
     completed = CompletedProcess(["claude"], 1, stdout=payload, stderr="")
     provider = ClaudeCLIProvider()
     with (
-        patch("re_agent.llm.claude_cli.subprocess.run", return_value=completed),
+        patch("reforge.llm.claude_cli.subprocess.run", return_value=completed),
         pytest.raises(RuntimeError, match="Not logged in"),
     ):
         provider.send([Message(role="user", content="hello")])

@@ -1,10 +1,10 @@
-"""Unit tests for re-agent hook CLI command."""
+"""Unit tests for reforge hook CLI command."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from re_agent.cli.main import main
+from reforge.cli.main import main
 
 
 def test_cmd_hook_ios(tmp_path: Path) -> None:
@@ -45,7 +45,7 @@ def test_cmd_hook_android(tmp_path: Path) -> None:
     assert out == 0
     assert hook_file.exists()
     content = hook_file.read_text(encoding="utf-8")
-    assert "ReAgentHook" in content
+    assert "ReforgeHook" in content
 
 
 def test_cmd_hook_rust(tmp_path: Path) -> None:
@@ -183,8 +183,8 @@ def test_cmd_hook_dynamic_does_not_invent_target_class(tmp_path: Path) -> None:
 
 
 def test_cmd_hook_sanitizes_complex_symbols() -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     complex_target = AnalyzedTarget(
         target="GetItem<int>$Inner[0]",
@@ -201,8 +201,8 @@ def test_cmd_hook_sanitizes_complex_symbols() -> None:
 
 
 def test_generate_universal_hook_types() -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     targets = [
         AnalyzedTarget("WalletModel", "GetCurrency", hook_type="return_override", return_value="999999999"),
@@ -223,15 +223,15 @@ def test_generate_universal_hook_types() -> None:
     assert "hk_WalletModel_GetCurrency" in code
     assert "return 999999999;" in code
     assert "*(int32_t*)((uintptr_t)self + 0x30) = 999999;" in code
-    assert "return false; // Skipped by re-agent" in code
+    assert "return false; // Skipped by reforge" in code
     assert "WorldToScreen" in code
-    assert "* 3.0f; // Speed multiplied by re-agent" in code
-    assert "Function disabled by re-agent" in code
+    assert "* 3.0f; // Speed multiplied by reforge" in code
+    assert "Function disabled by reforge" in code
 
 
 def test_generate_universal_hook_keeps_all_multi_field_offsets() -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     targets = [
         AnalyzedTarget(
@@ -255,11 +255,11 @@ def test_generate_universal_hook_keeps_all_multi_field_offsets() -> None:
 
 
 def test_universal_hook_bounds_review_candidates() -> None:
-    from re_agent.cli.cmd_hook import (
+    from reforge.cli.cmd_hook import (
         MAX_REVIEW_HOOK_CANDIDATES,
         generate_universal_hook_for_goal,
     )
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     targets = [
         AnalyzedTarget(
@@ -284,8 +284,8 @@ def test_universal_hook_bounds_review_candidates() -> None:
 
 
 def test_native_fields_remain_review_only_even_with_readiness_flags() -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     targets = [
         AnalyzedTarget(
@@ -323,8 +323,8 @@ def test_native_fields_remain_review_only_even_with_readiness_flags() -> None:
 
 
 def test_unresolved_field_offset_is_never_active() -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     target = AnalyzedTarget(
         "Wallet",
@@ -348,8 +348,8 @@ def test_unresolved_field_offset_is_never_active() -> None:
 
 
 def test_il2cpp_mutation_remains_review_only_even_with_readiness_flags() -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     verified = AnalyzedTarget(
         "Wallet",
@@ -383,8 +383,8 @@ def test_hook_generation_has_no_implicit_file_write(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     monkeypatch.chdir(tmp_path)
     generate_universal_hook_for_goal(
@@ -395,8 +395,8 @@ def test_hook_generation_has_no_implicit_file_write(
 
 
 def test_frida_output_has_modular_primary_and_secondary_groups() -> None:
-    from re_agent.cli.cmd_hook import generate_frida_java_script
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_frida_java_script
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     targets = [
         AnalyzedTarget("Wallet", "GetCoins", confidence=95),
@@ -410,8 +410,8 @@ def test_frida_output_has_modular_primary_and_secondary_groups() -> None:
 
 
 def test_frida_dex_uses_exact_recovered_overload() -> None:
-    from re_agent.cli.cmd_hook import generate_frida_java_script
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_frida_java_script
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     target = AnalyzedTarget(
         "com.game.Wallet",
@@ -436,8 +436,8 @@ def test_frida_dex_uses_exact_recovered_overload() -> None:
 
 
 def test_frida_hybrid_hermes_path_activates_verified_dex_overload() -> None:
-    from re_agent.cli.cmd_hook import generate_frida_java_script
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_frida_java_script
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     target = AnalyzedTarget(
         "com.game.Wallet",
@@ -464,8 +464,8 @@ def test_frida_hybrid_hermes_path_activates_verified_dex_overload() -> None:
 
 
 def test_frida_keeps_unverified_and_hermes_scaffolds_review_only() -> None:
-    from re_agent.cli.cmd_hook import generate_frida_java_script
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_frida_java_script
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     unverified = AnalyzedTarget(
         "com.game.Wallet",
@@ -508,8 +508,8 @@ def test_frida_keeps_unverified_and_hermes_scaffolds_review_only() -> None:
 
 
 def test_native_todo_scaffold_is_review_only_even_with_readiness_flags() -> None:
-    from re_agent.cli.cmd_hook import generate_cpp_hook_for_pathway
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_cpp_hook_for_pathway
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     target = AnalyzedTarget(
         "libgame.so",
@@ -532,8 +532,8 @@ def test_native_todo_scaffold_is_review_only_even_with_readiness_flags() -> None
 
 
 def test_frida_il2cpp_activates_only_verified_integral_method_rvas() -> None:
-    from re_agent.cli.cmd_hook import generate_frida_java_script
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_frida_java_script
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     method = AnalyzedTarget(
         "Wallet",
@@ -570,8 +570,8 @@ def test_frida_il2cpp_activates_only_verified_integral_method_rvas() -> None:
 
 
 def test_frida_il2cpp_float_return_remains_review_only() -> None:
-    from re_agent.cli.cmd_hook import generate_frida_java_script
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_frida_java_script
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     target = AnalyzedTarget(
         "MovementState",
@@ -599,7 +599,7 @@ def test_frida_il2cpp_float_return_remains_review_only() -> None:
 
 
 def test_standalone_rust_installation_is_disabled_pending_abi_review() -> None:
-    from re_agent.cli.cmd_hook import generate_rust_hook
+    from reforge.cli.cmd_hook import generate_rust_hook
 
     code = generate_rust_hook("0x1234", "GetCoins")
 
@@ -611,8 +611,8 @@ def test_standalone_rust_installation_is_disabled_pending_abi_review() -> None:
 
 
 def test_esp_helper_is_emitted_once_with_matching_signature() -> None:
-    from re_agent.cli.cmd_hook import generate_universal_hook_for_goal
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_universal_hook_for_goal
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     targets = [
         AnalyzedTarget("Player", "Position", hook_type="esp_overlay", confidence=95),
@@ -624,8 +624,8 @@ def test_esp_helper_is_emitted_once_with_matching_signature() -> None:
 
 
 def test_frida_scaffolding_uses_reforge_log_tag() -> None:
-    from re_agent.cli.cmd_hook import generate_frida_java_script
-    from re_agent.llm.analyzed_target import AnalyzedTarget
+    from reforge.cli.cmd_hook import generate_frida_java_script
+    from reforge.llm.analyzed_target import AnalyzedTarget
 
     target = AnalyzedTarget(
         "com.game.Wallet",

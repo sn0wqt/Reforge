@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from re_agent.cli.cmd_pipeline import cmd_pipeline
-from re_agent.packaging.split_apks import (
+from reforge.cli.cmd_pipeline import cmd_pipeline
+from reforge.packaging.split_apks import (
     SplitApkError,
     resolve_android_package_set,
     validate_installer_package,
@@ -112,7 +112,7 @@ def test_pipeline_wrapper_analyzes_the_resolved_base_apk(
         observed["package_set"] = args._android_package_set
         return 17
 
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._cmd_pipeline_impl", fake_pipeline)
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._cmd_pipeline_impl", fake_pipeline)
 
     result = cmd_pipeline(Namespace(binary=str(outer)))
 

@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from re_agent.llm.analyzed_target import AnalyzedTarget
-from re_agent.llm.semantic_analyzer import (
+from reforge.llm.analyzed_target import AnalyzedTarget
+from reforge.llm.semantic_analyzer import (
     _build_metadata_summary,
     _deduplicate_targets,
     _parse_llm_response,
@@ -570,9 +570,9 @@ def test_gemini_provider_uses_central_config_discovery(
         loaded_paths.append(path)
         return config
 
-    monkeypatch.setattr("re_agent.config.loader.load_config", fake_load_config)
+    monkeypatch.setattr("reforge.config.loader.load_config", fake_load_config)
     monkeypatch.setattr(
-        "re_agent.llm.registry.create_provider",
+        "reforge.llm.registry.create_provider",
         lambda _config: configured_provider,
     )
 

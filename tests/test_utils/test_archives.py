@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from re_agent.utils.archives import (
+from reforge.utils.archives import (
     ArchiveLimits,
     ArchiveSafetyError,
     extract_archive_bounded,
@@ -294,7 +294,7 @@ def test_failed_streaming_extraction_is_atomic(
             assert mode == "r"
             return io.BytesIO(b"xx")
 
-    monkeypatch.setattr("re_agent.utils.archives.MAX_ARCHIVE_MEMBER_BYTES", 1)
+    monkeypatch.setattr("reforge.utils.archives.MAX_ARCHIVE_MEMBER_BYTES", 1)
     destination = tmp_path / "bundle.js"
     destination.write_bytes(b"existing")
 

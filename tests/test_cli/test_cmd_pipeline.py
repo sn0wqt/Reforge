@@ -8,21 +8,21 @@ import struct
 import zipfile
 from pathlib import Path
 
-from re_agent.cli.cmd_pipeline import (
+from reforge.cli.cmd_pipeline import (
     _discover_hermes_candidates,
     _patch_textual_bundle,
     _repackage_android,
     _scan_js_primitive_properties,
     _write_hermes_candidate_evidence,
 )
-from re_agent.cli.main import main
-from re_agent.core.engine_detector import detect_architecture_from_path
-from re_agent.llm.analyzed_target import AnalyzedTarget
-from re_agent.packaging.frida_gadget import GADGET_LOADER_DESCRIPTOR
+from reforge.cli.main import main
+from reforge.core.engine_detector import detect_architecture_from_path
+from reforge.llm.analyzed_target import AnalyzedTarget
+from reforge.packaging.frida_gadget import GADGET_LOADER_DESCRIPTOR
 
 
 def test_cmd_pipeline_generic_binary(tmp_path: Path) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text(f"""
 project_profile:
   name: "generic-cpp"
@@ -87,15 +87,15 @@ def test_managed_gadget_install_is_used_without_path_flags(
         reason="test candidate",
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline.resolve_frida_gadget_path",
+        "reforge.cli.cmd_pipeline.resolve_frida_gadget_path",
         lambda _explicit=None, *, version=None: gadget_dir,
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline._local_frida_version",
+        "reforge.cli.cmd_pipeline._local_frida_version",
         lambda: "17.16.4",
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], [target]),
     )
 
@@ -113,7 +113,7 @@ def test_managed_gadget_install_is_used_without_path_flags(
         return True, str(signed)
 
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline._repackage_android",
+        "reforge.cli.cmd_pipeline._repackage_android",
         fake_repackage,
     )
 
@@ -139,7 +139,7 @@ def test_cmd_pipeline_uses_desktop_app_output_by_default(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "react-native"\n')
     apk_path = tmp_path / "base.apk"
     with zipfile.ZipFile(apk_path, "w") as archive:
@@ -154,11 +154,11 @@ def test_cmd_pipeline_uses_desktop_app_output_by_default(
 
     output_dir = tmp_path / "Desktop" / "runner_output"
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline.default_pipeline_output_dir",
+        "reforge.cli.cmd_pipeline.default_pipeline_output_dir",
         lambda _path: output_dir,
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], []),
     )
 
@@ -184,7 +184,7 @@ def test_cmd_pipeline_react_native_hermes(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text("""
 project_profile:
   name: "react-native"
@@ -196,7 +196,7 @@ project_profile:
         z.writestr("classes.dex", b"fake_dex_bytes")
 
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], []),
     )
 
@@ -234,7 +234,7 @@ def test_pipeline_stops_before_packaging_when_all_candidates_are_review_only(
     monkeypatch,
     capsys,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "react-native"\n')
     apk_path = tmp_path / "review-only.apk"
     with zipfile.ZipFile(apk_path, "w") as archive:
@@ -243,7 +243,7 @@ def test_pipeline_stops_before_packaging_when_all_candidates_are_review_only(
             b'const state = {"balance": 1};',
         )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], []),
     )
 
@@ -251,7 +251,7 @@ def test_pipeline_stops_before_packaging_when_all_candidates_are_review_only(
         raise AssertionError("review-only analysis must not offer packaging")
 
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline._repack_choice",
+        "reforge.cli.cmd_pipeline._repack_choice",
         fail_if_prompted,
     )
     output_dir = tmp_path / "review-output"
@@ -288,7 +288,7 @@ def test_interactive_android_repack_applies_textual_patch_before_packaging(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "react-native"\n')
     apk_path = tmp_path / "patchable.apk"
     with zipfile.ZipFile(apk_path, "w") as archive:
@@ -297,7 +297,7 @@ def test_interactive_android_repack_applies_textual_patch_before_packaging(
             b'const state = {"coins": 1};',
         )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], []),
     )
     observed: dict[str, object] = {}
@@ -320,11 +320,11 @@ def test_interactive_android_repack_applies_textual_patch_before_packaging(
         return True, str(signed)
 
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline._repack_choice",
+        "reforge.cli.cmd_pipeline._repack_choice",
         choose_repack,
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline._repackage_android",
+        "reforge.cli.cmd_pipeline._repackage_android",
         fake_repackage,
     )
     output_dir = tmp_path / "patch-output"
@@ -358,7 +358,7 @@ def test_cmd_pipeline_ios_hermes_bundle_and_deployment_notes(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "ios-arm64"\n')
     ipa_path = tmp_path / "react_ios.ipa"
     with zipfile.ZipFile(ipa_path, "w") as archive:
@@ -368,7 +368,7 @@ def test_cmd_pipeline_ios_hermes_bundle_and_deployment_notes(
         )
 
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], []),
     )
     output_dir = tmp_path / "ios-output"
@@ -402,7 +402,7 @@ def test_cmd_pipeline_webview_uses_source_maps_instead_of_shell_dex(
     tmp_path: Path,
     capsys,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
     apk_path = tmp_path / "capacitor.apk"
     source_map = json.dumps(
@@ -472,7 +472,7 @@ def test_pipeline_fails_when_requested_static_patch_is_ambiguous(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "react-native"\n')
     apk_path = tmp_path / "duplicate.apk"
     with zipfile.ZipFile(apk_path, "w") as archive:
@@ -481,7 +481,7 @@ def test_pipeline_fails_when_requested_static_patch_is_ambiguous(
             b'const a = {"coins": 1}; const b = {"coins": 2};',
         )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], []),
     )
     output_dir = tmp_path / "output"
@@ -514,7 +514,7 @@ def test_cmd_pipeline_android_apk_extracts_il2cpp_so(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "android-arm64"\n')
     apk_path = tmp_path / "unity.apk"
     with zipfile.ZipFile(apk_path, "w") as archive:
@@ -551,10 +551,10 @@ def test_cmd_pipeline_android_apk_extracts_il2cpp_so(
         return 0, [], [target]
 
     monkeypatch.setattr(
-        "re_agent.core.il2cpp_parser.run_il2cpp_dumper_cli",
+        "reforge.core.il2cpp_parser.run_il2cpp_dumper_cli",
         fake_dumper,
     )
-    monkeypatch.setattr("re_agent.cli.cmd_batch.cmd_batch", fake_batch)
+    monkeypatch.setattr("reforge.cli.cmd_batch.cmd_batch", fake_batch)
 
     output_dir = tmp_path / "unity-output"
     result = main(
@@ -588,7 +588,7 @@ def test_cmd_pipeline_ipa_extracts_unityframework_binary(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
     ipa_path = tmp_path / "game.ipa"
     with zipfile.ZipFile(ipa_path, "w") as archive:
@@ -628,10 +628,10 @@ def test_cmd_pipeline_ipa_extracts_unityframework_binary(
         return 0, [], [target]
 
     monkeypatch.setattr(
-        "re_agent.core.il2cpp_parser.run_il2cpp_dumper_cli",
+        "reforge.core.il2cpp_parser.run_il2cpp_dumper_cli",
         fake_dumper,
     )
-    monkeypatch.setattr("re_agent.cli.cmd_batch.cmd_batch", fake_batch)
+    monkeypatch.setattr("reforge.cli.cmd_batch.cmd_batch", fake_batch)
 
     output_dir = tmp_path / "ipa-output"
     result = main(
@@ -660,7 +660,7 @@ def test_cmd_pipeline_windows_gameassembly_extracts_dll(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
     zip_path = tmp_path / "windows_game.zip"
     with zipfile.ZipFile(zip_path, "w") as archive:
@@ -700,10 +700,10 @@ def test_cmd_pipeline_windows_gameassembly_extracts_dll(
         return 0, [], [target]
 
     monkeypatch.setattr(
-        "re_agent.core.il2cpp_parser.run_il2cpp_dumper_cli",
+        "reforge.core.il2cpp_parser.run_il2cpp_dumper_cli",
         fake_dumper,
     )
-    monkeypatch.setattr("re_agent.cli.cmd_batch.cmd_batch", fake_batch)
+    monkeypatch.setattr("reforge.cli.cmd_batch.cmd_batch", fake_batch)
 
     output_dir = tmp_path / "windows-output"
     result = main(
@@ -733,7 +733,7 @@ def test_metadata_only_ios_pipeline_uses_platform_neutral_input_stage(
     monkeypatch,
     capsys,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
     metadata_dir = tmp_path / "Dump0"
     metadata_dir.mkdir()
@@ -755,7 +755,7 @@ def test_metadata_only_ios_pipeline_uses_platform_neutral_input_stage(
         reason="Synthetic test evidence",
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.cmd_batch",
+        "reforge.cli.cmd_batch.cmd_batch",
         lambda _args: (0, [], [target]),
     )
 
@@ -1032,13 +1032,13 @@ def test_android_repackage_never_reuses_stale_signer_output(
                 )
         return True, ""
 
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: "apktool")
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._find_apktool", lambda: "apktool")
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline.shutil.which",
+        "reforge.cli.cmd_pipeline.shutil.which",
         lambda name: "java" if name == "java" else None,
     )
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._run_tool", fake_tool)
-    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", signer.as_posix())
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._run_tool", fake_tool)
+    monkeypatch.setenv("REFORGE_APK_SIGNER_JAR", signer.as_posix())
 
     success, detail = _repackage_android(
         apk,
@@ -1082,13 +1082,13 @@ def test_android_asset_repackage_does_not_require_apktool(
             verified.append(Path(command[command.index("--apks") + 1]))
         return True, "verified"
 
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: None)
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._find_apktool", lambda: None)
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline.shutil.which",
+        "reforge.cli.cmd_pipeline.shutil.which",
         lambda name: "java" if name == "java" else None,
     )
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._run_tool", fake_tool)
-    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", signer.as_posix())
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._run_tool", fake_tool)
+    monkeypatch.setenv("REFORGE_APK_SIGNER_JAR", signer.as_posix())
 
     success, detail = _repackage_android(
         apk,
@@ -1138,13 +1138,13 @@ def test_android_split_set_is_resigned_verified_and_packaged_together(
                 destination.write_bytes(source.read_bytes())
         return True, "verified"
 
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: None)
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._find_apktool", lambda: None)
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline.shutil.which",
+        "reforge.cli.cmd_pipeline.shutil.which",
         lambda name: "java" if name == "java" else None,
     )
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._run_tool", fake_tool)
-    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", signer.as_posix())
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._run_tool", fake_tool)
+    monkeypatch.setenv("REFORGE_APK_SIGNER_JAR", signer.as_posix())
 
     success, detail = _repackage_android(
         apk,
@@ -1215,13 +1215,13 @@ def test_android_repackage_embeds_and_verifies_explicit_gadget(
             signed.write_bytes(unsigned.read_bytes())
         return True, "verified"
 
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._find_apktool", lambda: "apktool")
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._find_apktool", lambda: "apktool")
     monkeypatch.setattr(
-        "re_agent.cli.cmd_pipeline.shutil.which",
+        "reforge.cli.cmd_pipeline.shutil.which",
         lambda name: "java" if name == "java" else None,
     )
-    monkeypatch.setattr("re_agent.cli.cmd_pipeline._run_tool", fake_tool)
-    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", signer.as_posix())
+    monkeypatch.setattr("reforge.cli.cmd_pipeline._run_tool", fake_tool)
+    monkeypatch.setenv("REFORGE_APK_SIGNER_JAR", signer.as_posix())
 
     success, detail = _repackage_android(
         apk,
@@ -1239,5 +1239,5 @@ def test_android_repackage_embeds_and_verifies_explicit_gadget(
     assert Path(detail).is_file()
     assert (output_dir / "FRIDA_GADGET_NOTES.txt").is_file()
     with zipfile.ZipFile(detail) as archive:
-        assert "lib/arm64-v8a/libreagent-gadget.so" in archive.namelist()
-        assert "assets/re-agent/frida-gadget-manifest.json" in archive.namelist()
+        assert "lib/arm64-v8a/libreforge-gadget.so" in archive.namelist()
+        assert "assets/reforge/frida-gadget-manifest.json" in archive.namelist()

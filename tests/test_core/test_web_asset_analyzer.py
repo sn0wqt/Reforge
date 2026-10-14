@@ -6,8 +6,8 @@ import json
 import zipfile
 from pathlib import Path
 
-from re_agent.core.candidates import split_candidates
-from re_agent.core.web_asset_analyzer import (
+from reforge.core.candidates import split_candidates
+from reforge.core.web_asset_analyzer import (
     discover_web_asset_candidates,
     patch_web_entry_bundle,
     render_web_response_interceptor,

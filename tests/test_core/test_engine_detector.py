@@ -5,7 +5,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from re_agent.core.engine_detector import (
+from reforge.core.engine_detector import (
     detect_architecture_from_path,
     detect_engine_type,
     detect_engine_type_from_path,

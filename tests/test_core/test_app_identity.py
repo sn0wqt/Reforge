@@ -7,7 +7,7 @@ import struct
 import zipfile
 from pathlib import Path
 
-from re_agent.core.app_identity import (
+from reforge.core.app_identity import (
     default_pipeline_output_dir,
     detect_application_identifier,
     detect_application_name,

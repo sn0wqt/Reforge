@@ -59,8 +59,7 @@ dev = [
 ]
 
 [project.scripts]
-reforge = "re_agent.cli.main:main"
-re-agent = "re_agent.cli.main:main"
+reforge = "reforge.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/sn0wqt/Reforge"
@@ -68,7 +67,7 @@ Repository = "https://github.com/sn0wqt/Reforge"
 Issues = "https://github.com/sn0wqt/Reforge/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/re_agent"]
+packages = ["src/reforge"]
 
 [tool.ruff]
 target-version = "py310"
@@ -97,7 +96,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["re_agent"]
+source = ["reforge"]
 
 [tool.coverage.report]
 fail_under = 70

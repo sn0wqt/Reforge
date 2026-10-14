@@ -5,8 +5,8 @@ from __future__ import annotations
 import plistlib
 from pathlib import Path
 
-from re_agent.core.ipa_scanner import IPAScanner
-from re_agent.core.swift_decoder import decode_swift_small_string, extract_swift_strings_from_bytes
+from reforge.core.ipa_scanner import IPAScanner
+from reforge.core.swift_decoder import decode_swift_small_string, extract_swift_strings_from_bytes
 
 
 def test_decode_swift_small_string() -> None:

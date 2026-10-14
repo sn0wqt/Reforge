@@ -22,7 +22,7 @@ ghidra-bridge info
 reforge init --profile generic-cpp
 ```
 
-Edit `reforge.yaml` (or `re-agent.yaml`) to configure:
+Edit `reforge.yaml` (or `reforge.yaml`) to configure:
 
 - an authenticated LLM provider;
 - `backend.cli_path: ghidra-bridge`;

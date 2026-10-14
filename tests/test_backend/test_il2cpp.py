@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from re_agent.backend.il2cpp import IL2CPPBackend
-from re_agent.backend.registry import create_backend
-from re_agent.config.schema import BackendConfig
+from reforge.backend.il2cpp import IL2CPPBackend
+from reforge.backend.registry import create_backend
+from reforge.config.schema import BackendConfig
 
 
 def test_il2cpp_backend_remaining_and_decompile(tmp_path: Path) -> None:

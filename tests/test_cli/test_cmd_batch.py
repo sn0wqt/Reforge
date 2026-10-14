@@ -1,10 +1,10 @@
-"""Unit tests for re-agent batch CLI command."""
+"""Unit tests for reforge batch CLI command."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from re_agent.cli.main import main
+from reforge.cli.main import main
 
 
 def _write_currency_metadata_config(
@@ -12,7 +12,7 @@ def _write_currency_metadata_config(
     *,
     allow_external_llm: bool,
 ) -> tuple[Path, Path]:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text(
         f"""\
 llm:
@@ -49,7 +49,7 @@ def _currency_metadata() -> dict[str, object]:
 
 
 def test_cmd_batch_without_evidence_fails_closed(tmp_path: Path) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text(f"""
 project_profile:
   name: "ios-arm64"
@@ -66,7 +66,7 @@ project_profile:
 
 
 def test_cmd_batch_symbol(tmp_path: Path) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text(f"""
 project_profile:
   name: "generic-cpp"
@@ -91,7 +91,7 @@ project_profile:
 
 
 def test_resolve_goal_keywords_clean() -> None:
-    from re_agent.cli.cmd_batch import _match_keyword, resolve_goal_keywords
+    from reforge.cli.cmd_batch import _match_keyword, resolve_goal_keywords
 
     keywords = resolve_goal_keywords("avoid hitting obstacles")
     assert "obstacles" in keywords or "hitting" in keywords
@@ -102,7 +102,7 @@ def test_resolve_goal_keywords_clean() -> None:
 
 
 def test_known_domain_goal_does_not_spend_an_llm_call() -> None:
-    from re_agent.cli.cmd_batch import resolve_goal_keywords
+    from reforge.cli.cmd_batch import resolve_goal_keywords
 
     class FailIfCalled:
         def send(self, _messages, **_kwargs):
@@ -118,7 +118,7 @@ def test_known_domain_goal_does_not_spend_an_llm_call() -> None:
 
 
 def test_rank_classes_by_relevance_wrapper_penalty() -> None:
-    from re_agent.cli.cmd_batch import rank_classes_by_relevance
+    from reforge.cli.cmd_batch import rank_classes_by_relevance
 
     candidates = [
         ("ThemeEffectCollision", [{"name": "OnHit"}], []),
@@ -133,7 +133,7 @@ def test_rank_classes_by_relevance_wrapper_penalty() -> None:
 
 
 def test_currency_ranking_rejects_framework_keys_and_prefers_wallet() -> None:
-    from re_agent.cli.cmd_batch import (
+    from reforge.cli.cmd_batch import (
         _match_candidate_keyword,
         rank_classes_by_relevance,
     )
@@ -189,7 +189,7 @@ def test_currency_ranking_rejects_framework_keys_and_prefers_wallet() -> None:
 
 
 def test_scalar_currency_field_filter_rejects_delegates_and_collections() -> None:
-    from re_agent.cli.cmd_batch import _is_scalar_currency_field_type
+    from reforge.cli.cmd_batch import _is_scalar_currency_field_type
 
     assert _is_scalar_currency_field_type("int")
     assert _is_scalar_currency_field_type("SafeInt")
@@ -199,7 +199,7 @@ def test_scalar_currency_field_filter_rejects_delegates_and_collections() -> Non
 
 
 def test_dump_merge_keeps_rva_signature_and_overloads() -> None:
-    from re_agent.cli.cmd_batch import _merge_dump_method_evidence
+    from reforge.cli.cmd_batch import _merge_dump_method_evidence
 
     script_methods = [
         {"method_name": "GetCurrency", "signature": "native-one"},
@@ -232,7 +232,7 @@ def test_dump_merge_keeps_rva_signature_and_overloads() -> None:
 
 
 def test_only_exact_executable_dex_override_is_activation_ready() -> None:
-    from re_agent.cli.cmd_batch import _method_activation_facts
+    from reforge.cli.cmd_batch import _method_activation_facts
 
     evidence = {
         "descriptor": "()I",
@@ -275,7 +275,7 @@ def test_large_metadata_inventory_detects_once_and_bounds_header_artifacts(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
     metadata_dir = tmp_path / "Dump0"
     metadata_dir.mkdir()
@@ -297,7 +297,7 @@ def test_large_metadata_inventory_detects_once_and_bounds_header_artifacts(
         for index in range(75)
     ]
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        "reforge.cli.cmd_batch.find_il2cpp_metadata_in_dir",
         lambda _path: {
             "methods": [],
             "structs": synthetic_structs,
@@ -305,11 +305,11 @@ def test_large_metadata_inventory_detects_once_and_bounds_header_artifacts(
         },
     )
     monkeypatch.setattr(
-        "re_agent.llm.registry.create_provider",
+        "reforge.llm.registry.create_provider",
         lambda _config: None,
     )
 
-    from re_agent.core import engine_detector
+    from reforge.core import engine_detector
 
     original_detect = engine_detector.detect_architecture_from_path
     detection_calls = 0
@@ -353,14 +353,14 @@ def test_metadata_join_does_not_add_lowercase_class_aliases(
 ) -> None:
     from argparse import Namespace
 
-    from re_agent.cli.cmd_batch import cmd_batch
+    from reforge.cli.cmd_batch import cmd_batch
 
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text('project_profile:\n  name: "generic-cpp"\n')
     metadata_dir = tmp_path / "Dump0"
     metadata_dir.mkdir()
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        "reforge.cli.cmd_batch.find_il2cpp_metadata_in_dir",
         lambda _path: {
             "methods": [
                 {
@@ -384,7 +384,7 @@ def test_metadata_join_does_not_add_lowercase_class_aliases(
         },
     )
     monkeypatch.setattr(
-        "re_agent.llm.registry.create_provider",
+        "reforge.llm.registry.create_provider",
         lambda _config: None,
     )
 
@@ -424,11 +424,11 @@ def test_goal_automatically_runs_configured_semantic_analysis(
     provider = object()
     calls: list[tuple[object, str, int]] = []
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        "reforge.cli.cmd_batch.find_il2cpp_metadata_in_dir",
         lambda _path: _currency_metadata(),
     )
     monkeypatch.setattr(
-        "re_agent.llm.registry.create_provider",
+        "reforge.llm.registry.create_provider",
         lambda _config: provider,
     )
 
@@ -438,7 +438,7 @@ def test_goal_automatically_runs_configured_semantic_analysis(
         return []
 
     monkeypatch.setattr(
-        "re_agent.llm.semantic_analyzer.analyze_metadata_with_llm",
+        "reforge.llm.semantic_analyzer.analyze_metadata_with_llm",
         fake_analysis,
     )
 
@@ -472,7 +472,7 @@ def test_denied_semantic_provider_never_initializes_and_keeps_local_results(
         allow_external_llm=False,
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        "reforge.cli.cmd_batch.find_il2cpp_metadata_in_dir",
         lambda _path: _currency_metadata(),
     )
 
@@ -480,7 +480,7 @@ def test_denied_semantic_provider_never_initializes_and_keeps_local_results(
         raise AssertionError("provider initialization must be policy-gated")
 
     monkeypatch.setattr(
-        "re_agent.llm.registry.create_provider",
+        "reforge.llm.registry.create_provider",
         forbidden_provider,
     )
 
@@ -516,15 +516,15 @@ def test_semantic_provider_failure_keeps_local_results(
         allow_external_llm=True,
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        "reforge.cli.cmd_batch.find_il2cpp_metadata_in_dir",
         lambda _path: _currency_metadata(),
     )
     monkeypatch.setattr(
-        "re_agent.llm.registry.create_provider",
+        "reforge.llm.registry.create_provider",
         lambda _config: object(),
     )
     monkeypatch.setattr(
-        "re_agent.llm.semantic_analyzer.analyze_metadata_with_llm",
+        "reforge.llm.semantic_analyzer.analyze_metadata_with_llm",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("quota exhausted")),
     )
 
@@ -556,10 +556,10 @@ def test_unknown_app_entities_flow_from_metadata_to_primary_candidates(
 ) -> None:
     from argparse import Namespace
 
-    from re_agent.cli.cmd_batch import cmd_batch
-    from re_agent.core.candidates import split_candidates
+    from reforge.cli.cmd_batch import cmd_batch
+    from reforge.core.candidates import split_candidates
 
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text(
         'project_profile:\n  name: "generic-cpp"\n'
         'data_handling:\n  allow_external_llm: false\n',
@@ -568,7 +568,7 @@ def test_unknown_app_entities_flow_from_metadata_to_primary_candidates(
     metadata_dir = tmp_path / "UnknownDump"
     metadata_dir.mkdir()
     monkeypatch.setattr(
-        "re_agent.cli.cmd_batch.find_il2cpp_metadata_in_dir",
+        "reforge.cli.cmd_batch.find_il2cpp_metadata_in_dir",
         lambda _path: {
             "methods": [],
             "classes": [],
@@ -625,10 +625,10 @@ def test_dex_named_tiers_exclude_framework_decoys_and_prefer_app_namespace(
     import zipfile
     from argparse import Namespace
 
-    from re_agent.cli.cmd_batch import cmd_batch
-    from re_agent.core.candidates import split_candidates
+    from reforge.cli.cmd_batch import cmd_batch
+    from reforge.core.candidates import split_candidates
 
-    config_file = tmp_path / "re-agent.yaml"
+    config_file = tmp_path / "reforge.yaml"
     config_file.write_text(
         'project_profile:\n  name: "generic-cpp"\n'
         'data_handling:\n  allow_external_llm: false\n',
@@ -663,7 +663,7 @@ def test_dex_named_tiers_exclude_framework_decoys_and_prefer_app_namespace(
     for item in methods:
         classes.setdefault(str(item["class_name"]), []).append(item)
     monkeypatch.setattr(
-        "re_agent.core.dex_parser.parse_apk_or_dex",
+        "reforge.core.dex_parser.parse_apk_or_dex",
         lambda _path: {"classes": classes, "methods": methods},
     )
 

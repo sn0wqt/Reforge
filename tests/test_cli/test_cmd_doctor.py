@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from re_agent.cli.main import main
+from reforge.cli.main import main
 
 
 def test_doctor_json_reports_ready(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(
-        "re_agent.cli.cmd_doctor.collect_toolchain_status",
+        "reforge.cli.cmd_doctor.collect_toolchain_status",
         lambda: [
             {
                 "name": "required-tool",
@@ -23,7 +23,7 @@ def test_doctor_json_reports_ready(tmp_path: Path, monkeypatch, capsys) -> None:
         ],
     )
     monkeypatch.setattr(
-        "re_agent.cli.cmd_doctor.managed_tools_root",
+        "reforge.cli.cmd_doctor.managed_tools_root",
         lambda: tmp_path,
     )
 
@@ -36,7 +36,7 @@ def test_doctor_json_reports_ready(tmp_path: Path, monkeypatch, capsys) -> None:
 
 def test_doctor_fails_when_required_tool_is_missing(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
-        "re_agent.cli.cmd_doctor.collect_toolchain_status",
+        "reforge.cli.cmd_doctor.collect_toolchain_status",
         lambda: [
             {
                 "name": "missing-tool",
@@ -58,7 +58,7 @@ def test_doctor_optional_android_workflows_do_not_block_analysis(
     capsys,
 ) -> None:
     monkeypatch.setattr(
-        "re_agent.cli.cmd_doctor.collect_toolchain_status",
+        "reforge.cli.cmd_doctor.collect_toolchain_status",
         lambda: [
             {
                 "name": "Python",
@@ -137,7 +137,7 @@ def test_doctor_optional_android_workflows_do_not_block_analysis(
 
 def test_doctor_banner_output(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
-        "re_agent.cli.cmd_doctor.collect_toolchain_status",
+        "reforge.cli.cmd_doctor.collect_toolchain_status",
         lambda: [],
     )
     assert main(["doctor"]) == 0

@@ -217,8 +217,8 @@ does not decode the manifest or resources and therefore does not require
 `apktool`. Structural changes—including Frida Gadget, manifest, smali,
 resources, or native libraries—also require `apktool`. The Windows setup script
 installs the signer in the managed tool directory; alternatively,
-`REFORGE_APK_SIGNER_JAR` (or legacy `RE_AGENT_APK_SIGNER_JAR`) can select one explicitly.
-`REFORGE_APKTOOL` (or legacy `RE_AGENT_APKTOOL`) can pin a specific apktool launcher;
+`REFORGE_APK_SIGNER_JAR` (or legacy `REFORGE_APK_SIGNER_JAR`) can select one explicitly.
+`REFORGE_APKTOOL` (or legacy `REFORGE_APKTOOL`) can pin a specific apktool launcher;
 otherwise PATH and managed installs are checked.
 Without runtime injection, repackaging is refused unless a real textual bundle
 patch was produced. A zero exit status is returned only when the requested
@@ -238,7 +238,7 @@ reforge pipeline --binary app.apk --goal "trace the player balance" `
 Runtime embedding remains deliberately opt-in. The pipeline never downloads
 Gadget during an analysis run; the separate setup script performs pinned,
 hash-verified installation. `REFORGE_FRIDA_GADGET_DIR` and
-`REFORGE_FRIDA_GADGET_VERSION` (or legacy `RE_AGENT_FRIDA_GADGET_*`) select the managed input automatically.
+`REFORGE_FRIDA_GADGET_VERSION` (or legacy `REFORGE_FRIDA_GADGET_*`) select the managed input automatically.
 `--frida-gadget-path` and `--frida-gadget-version` remain explicit overrides.
 A single `.so` or `.so.xz` may be supplied for a single-ABI APK; a directory
 must contain one matching ELF Gadget for every ABI shipped by a multi-ABI APK.

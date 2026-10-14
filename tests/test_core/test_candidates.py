@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from re_agent.core.candidates import (
+from reforge.core.candidates import (
     rank_candidates,
     render_candidate_summary,
     split_candidates,
     target_activation_facts,
 )
-from re_agent.llm.analyzed_target import AnalyzedTarget
+from reforge.llm.analyzed_target import AnalyzedTarget
 
 
 def test_primary_candidates_are_thresholded_and_limited() -> None:

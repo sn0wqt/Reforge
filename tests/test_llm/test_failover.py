@@ -7,15 +7,15 @@ from typing import Any
 
 import pytest
 
-from re_agent.llm.base import BaseLLMProvider
-from re_agent.llm.failover import (
+from reforge.llm.base import BaseLLMProvider
+from reforge.llm.failover import (
     FailoverLLMProvider,
     FailureKind,
     LLMFailoverError,
     ProviderRoute,
     classify_provider_failure,
 )
-from re_agent.llm.protocol import Message
+from reforge.llm.protocol import Message
 
 
 class _Provider(BaseLLMProvider):

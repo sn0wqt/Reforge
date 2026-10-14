@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 
-from re_agent.core.macho import (
+from reforge.core.macho import (
     macho_vm_address_for_file_offset,
     parse_macho_segments,
 )

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from re_agent.core.knowledge_graph import KnowledgeGraph
+from reforge.core.knowledge_graph import KnowledgeGraph
 
 
 def test_ingest_context_builds_function_edges(tmp_path: Path) -> None:

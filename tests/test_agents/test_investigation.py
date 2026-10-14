@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from re_agent.agents.reverser import ReverserAgent
-from re_agent.backend.stub import StubBackend
-from re_agent.core.models import FunctionTarget
-from re_agent.llm.protocol import Message
+from reforge.agents.reverser import ReverserAgent
+from reforge.backend.stub import StubBackend
+from reforge.core.models import FunctionTarget
+from reforge.llm.protocol import Message
 
 
 class _ActionLLM:

@@ -1,11 +1,11 @@
-"""Unit tests for re-agent trace CLI command."""
+"""Unit tests for reforge trace CLI command."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from subprocess import CalledProcessError
 
-from re_agent.cli.main import main
+from reforge.cli.main import main
 
 
 def test_cmd_trace_symbol(tmp_path: Path) -> None:
@@ -100,7 +100,7 @@ def test_cmd_trace_runs_existing_live_interface(tmp_path: Path, monkeypatch) -> 
         assert check is True
         commands.append(command)
 
-    monkeypatch.setattr("re_agent.cli.cmd_trace.subprocess.run", fake_run)
+    monkeypatch.setattr("reforge.cli.cmd_trace.subprocess.run", fake_run)
     output = tmp_path / "trace.ts"
 
     result = main(
@@ -124,7 +124,7 @@ def test_cmd_trace_returns_live_process_failure(tmp_path: Path, monkeypatch) -> 
     def fake_run(command, *, check):
         raise CalledProcessError(7, command)
 
-    monkeypatch.setattr("re_agent.cli.cmd_trace.subprocess.run", fake_run)
+    monkeypatch.setattr("reforge.cli.cmd_trace.subprocess.run", fake_run)
 
     result = main(
         [

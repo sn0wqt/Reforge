@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from re_agent.utils.address import normalize_address
+from reforge.utils.address import normalize_address
 
 
 @pytest.mark.parametrize("value", ["../secret", "..\\secret", "-1", "0xGG", "1" * 17])

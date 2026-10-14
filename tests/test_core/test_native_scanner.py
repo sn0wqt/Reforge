@@ -5,7 +5,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from re_agent.core.native_scanner import scan_native_evidence
+from reforge.core.native_scanner import scan_native_evidence
 
 
 def test_scans_direct_native_symbols_as_review_only(tmp_path: Path) -> None:

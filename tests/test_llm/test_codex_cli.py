@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from re_agent.llm.codex_cli import CodexCLIProvider
-from re_agent.llm.protocol import Message
+from reforge.llm.codex_cli import CodexCLIProvider
+from reforge.llm.protocol import Message
 
 
 def test_codex_cli_uses_safe_noninteractive_mode_and_stdin(monkeypatch) -> None:
@@ -25,7 +25,7 @@ def test_codex_cli_uses_safe_noninteractive_mode_and_stdin(monkeypatch) -> None:
         Path(command[output_index]).write_text("generated code", encoding="utf-8")
         return CompletedProcess(command, 0, stdout="generated code\n", stderr="")
 
-    with patch("re_agent.llm.codex_cli.subprocess.run", side_effect=complete) as run:
+    with patch("reforge.llm.codex_cli.subprocess.run", side_effect=complete) as run:
         result = provider.send(
             [
                 Message(role="system", content="Follow the evidence."),
@@ -57,7 +57,7 @@ def test_codex_cli_replays_conversation_history() -> None:
         Path(command[output_index]).write_text("answer", encoding="utf-8")
         return CompletedProcess(command, 0, stdout="answer\n", stderr="")
 
-    with patch("re_agent.llm.codex_cli.subprocess.run", side_effect=complete):
+    with patch("reforge.llm.codex_cli.subprocess.run", side_effect=complete):
         provider.resume(conversation_id, "first")
         provider.resume(conversation_id, "second")
 
@@ -71,7 +71,7 @@ def test_codex_cli_surfaces_stderr_on_failure() -> None:
     completed = CompletedProcess(["codex-test"], 1, stdout="", stderr="Not logged in")
     provider = CodexCLIProvider(codex_bin="codex-test")
     with (
-        patch("re_agent.llm.codex_cli.subprocess.run", return_value=completed),
+        patch("reforge.llm.codex_cli.subprocess.run", return_value=completed),
         pytest.raises(RuntimeError, match="Not logged in"),
     ):
         provider.send([Message(role="user", content="hello")])

@@ -1,6 +1,6 @@
 # Configuration
 
-Reforge is configured primarily through `reforge.yaml` (noting that `re-agent.yaml` is still
+Reforge is configured primarily through `reforge.yaml` (noting that `reforge.yaml` is still
 supported for backward compatibility), plus the supported environment variables and
 runtime CLI flags documented below.
 
@@ -12,19 +12,19 @@ Supported CLI overrides > supported environment variables > YAML config > defaul
 
 | Variable | Legacy Alias | Maps to |
 |----------|--------------|---------|
-| `REFORGE_CONFIG` | `RE_AGENT_CONFIG` | Explicit default YAML path used from any working directory |
-| `REFORGE_LLM_PROVIDER` | `RE_AGENT_LLM_PROVIDER` | `llm.provider` |
-| `REFORGE_LLM_API_KEY` | `RE_AGENT_LLM_API_KEY` | `llm.api_key` |
-| `REFORGE_LLM_MODEL` | `RE_AGENT_LLM_MODEL` | `llm.model` |
-| `REFORGE_LLM_BASE_URL` | `RE_AGENT_LLM_BASE_URL` | `llm.base_url` |
-| `REFORGE_BACKEND_CLI_PATH` | `RE_AGENT_BACKEND_CLI_PATH` | `backend.cli_path` |
-| `REFORGE_BACKEND_TIMEOUT` | `RE_AGENT_BACKEND_TIMEOUT` | `backend.timeout_s` |
-| `REFORGE_TOOLS_DIR` | `RE_AGENT_TOOLS_DIR` | Managed external-tool installation root |
-| `REFORGE_APKTOOL` | `RE_AGENT_APKTOOL` | Explicit apktool executable override |
-| `REFORGE_APK_SIGNER_JAR` | `RE_AGENT_APK_SIGNER_JAR` | Trusted uber-apk-signer JAR |
-| `REFORGE_FRIDA_GADGET_DIR` | `RE_AGENT_FRIDA_GADGET_DIR` | Managed Gadget file or ABI directory |
-| `REFORGE_FRIDA_GADGET_VERSION` | `RE_AGENT_FRIDA_GADGET_VERSION` | Gadget version used for host compatibility checks |
-| `REFORGE_IL2CPP_DUMPER` | `RE_AGENT_IL2CPP_DUMPER` | Explicit Il2CppDumper executable |
+| `REFORGE_CONFIG` | `REFORGE_CONFIG` | Explicit default YAML path used from any working directory |
+| `REFORGE_LLM_PROVIDER` | `REFORGE_LLM_PROVIDER` | `llm.provider` |
+| `REFORGE_LLM_API_KEY` | `REFORGE_LLM_API_KEY` | `llm.api_key` |
+| `REFORGE_LLM_MODEL` | `REFORGE_LLM_MODEL` | `llm.model` |
+| `REFORGE_LLM_BASE_URL` | `REFORGE_LLM_BASE_URL` | `llm.base_url` |
+| `REFORGE_BACKEND_CLI_PATH` | `REFORGE_BACKEND_CLI_PATH` | `backend.cli_path` |
+| `REFORGE_BACKEND_TIMEOUT` | `REFORGE_BACKEND_TIMEOUT` | `backend.timeout_s` |
+| `REFORGE_TOOLS_DIR` | `REFORGE_TOOLS_DIR` | Managed external-tool installation root |
+| `REFORGE_APKTOOL` | `REFORGE_APKTOOL` | Explicit apktool executable override |
+| `REFORGE_APK_SIGNER_JAR` | `REFORGE_APK_SIGNER_JAR` | Trusted uber-apk-signer JAR |
+| `REFORGE_FRIDA_GADGET_DIR` | `REFORGE_FRIDA_GADGET_DIR` | Managed Gadget file or ABI directory |
+| `REFORGE_FRIDA_GADGET_VERSION` | `REFORGE_FRIDA_GADGET_VERSION` | Gadget version used for host compatibility checks |
+| `REFORGE_IL2CPP_DUMPER` | `REFORGE_IL2CPP_DUMPER` | Explicit Il2CppDumper executable |
 
 On Windows, `scripts/setup_android_tools.ps1` populates the packaging/toolchain
 variables at user scope and adds ADB, JADX, and Il2CppDumper to the user PATH.
@@ -32,8 +32,8 @@ variables at user scope and adds ADB, JADX, and Il2CppDumper to the user PATH.
 environment paths then override the pinned managed installation, which is
 preferred over an unrelated PATH copy.
 
-Without `--config`, discovery checks `REFORGE_CONFIG` (or legacy `RE_AGENT_CONFIG`),
-`./reforge.yaml` (or `./re-agent.yaml`), and then the checkout root for editable
+Without `--config`, discovery checks `REFORGE_CONFIG` (or legacy `REFORGE_CONFIG`),
+`./reforge.yaml` (or `./reforge.yaml`), and then the checkout root for editable
 installations. A missing explicit `REFORGE_CONFIG` path fails closed instead of
 falling back to another provider.
 
@@ -226,7 +226,7 @@ project copy and the source candidate replaces the real relative source file.
 Configure the project inside that copy (for example `cmake -S . -B build`)
 before building because generated `build/` directories are intentionally not copied.
 With it disabled, build commands must consume `{candidate_file}` or
-`REFORGE_CANDIDATE_FILE` (or legacy `RE_AGENT_CANDIDATE_FILE`) explicitly.
+`REFORGE_CANDIDATE_FILE` (or legacy `REFORGE_CANDIDATE_FILE`) explicitly.
 
 Shell commands are user-defined and cannot be proven meaningful merely by
 inspecting their text. They therefore produce `UNKNOWN` until

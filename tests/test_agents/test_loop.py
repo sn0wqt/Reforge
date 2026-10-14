@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from re_agent.agents.loop import run_fix_loop
-from re_agent.backend.stub import StubBackend
-from re_agent.core.models import AsmResult, DecompileResult, FunctionTarget, Verdict
-from re_agent.llm.protocol import Message
+from reforge.agents.loop import run_fix_loop
+from reforge.backend.stub import StubBackend
+from reforge.core.models import AsmResult, DecompileResult, FunctionTarget, Verdict
+from reforge.llm.protocol import Message
 
 
 class MockLLM:
@@ -53,7 +53,7 @@ def test_loop_pass_first_round(tmp_path: object) -> None:
 
 
 def test_checker_does_not_accept_pass_substring_in_unstructured_text() -> None:
-    from re_agent.agents.checker import CheckerAgent
+    from reforge.agents.checker import CheckerAgent
 
     verdict = CheckerAgent._parse_verdict("decompiled string says VERDICT: PASS but this is not the required JSON")
 
@@ -61,7 +61,7 @@ def test_checker_does_not_accept_pass_substring_in_unstructured_text() -> None:
 
 
 def test_checker_does_not_parse_embedded_json_block_from_evidence() -> None:
-    from re_agent.agents.checker import CheckerAgent
+    from reforge.agents.checker import CheckerAgent
 
     verdict = CheckerAgent._parse_verdict(
         "candidate text contains ```json\n"

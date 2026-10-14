@@ -180,7 +180,7 @@ splits are rejected rather than silently ignored, and Frida Gadget embedding
 remains limited to standalone APKs.
 
 The CLI may be launched from any directory. Configuration discovery checks
-`REFORGE_CONFIG` (or legacy `RE_AGENT_CONFIG`), then `./reforge.yaml` (or `./re-agent.yaml`
+`REFORGE_CONFIG` (or legacy `REFORGE_CONFIG`), then `./reforge.yaml` (or `./reforge.yaml`
 for backward compatibility), then the repository-level YAML for an editable
 installation. Use `--config C:\path\reforge.yaml` for an explicit per-run override.
 This prevents a run launched from the target directory from silently changing
@@ -253,7 +253,7 @@ Running `reforge init` without `--profile` now creates the portable
 `generic-cpp` template. Project-specific behavior, including the original
 GTA-reversed patterns, remains available through an explicit profile.
 
-Then edit `reforge.yaml` (or `re-agent.yaml`). At minimum, select an LLM, point the backend at the
+Then edit `reforge.yaml` (or `reforge.yaml`). At minimum, select an LLM, point the backend at the
 installed bridge executable, set the source paths, and configure validation.
 
 ```yaml
@@ -330,7 +330,7 @@ llm:
   model: claude-sonnet-4-5-20250929
 ```
 
-Set `ANTHROPIC_API_KEY` or `REFORGE_LLM_API_KEY` (or legacy `RE_AGENT_LLM_API_KEY`).
+Set `ANTHROPIC_API_KEY` or `REFORGE_LLM_API_KEY` (or legacy `REFORGE_LLM_API_KEY`).
 
 ### Claude CLI
 
@@ -358,7 +358,7 @@ llm:
   base_url: https://your-endpoint.example/v1 # optional
 ```
 
-Set `OPENAI_API_KEY` or `REFORGE_LLM_API_KEY` (or legacy `RE_AGENT_LLM_API_KEY`).
+Set `OPENAI_API_KEY` or `REFORGE_LLM_API_KEY` (or legacy `REFORGE_LLM_API_KEY`).
 
 ### Codex CLI
 
@@ -492,7 +492,7 @@ and can request additional read-only operations:
 
 When `data_handling.allow_evidence_persistence` is explicitly enabled, evidence
 bundle data is also ingested into
-`reports/re-agent/knowledge-graph.json`, connecting functions, calls, globals,
+`reports/reforge/knowledge-graph.json`, connecting functions, calls, globals,
 and strings. It stays in memory otherwise. Unsupported bridge capabilities
 degrade gracefully.
 
@@ -508,7 +508,7 @@ Commands may use:
 
 - `{candidate_file}`, `{overlay_root}`, and `{source_file}` placeholders;
 - `REFORGE_CANDIDATE_FILE`, `REFORGE_OVERLAY_ROOT`, and
-  `REFORGE_SOURCE_FILE` environment variables (with legacy `RE_AGENT_*` compatibility).
+  `REFORGE_SOURCE_FILE` environment variables (with legacy `REFORGE_*` compatibility).
 
 Configured build/test/runtime commands are arbitrary project-owned shell
 commands. The agent cannot prove from their text that they actually validate a
@@ -606,22 +606,22 @@ required ABI, module-lifecycle, and installation evidence is available.
 ## Configuration precedence
 
 The effective order is CLI runtime overrides, supported environment variables,
-`reforge.yaml` (or legacy `re-agent.yaml`), then dataclass defaults. The currently supported environment
+`reforge.yaml` (or legacy `reforge.yaml`), then dataclass defaults. The currently supported environment
 variables are:
 
-- `REFORGE_CONFIG` (or legacy `RE_AGENT_CONFIG`)
-- `REFORGE_LLM_PROVIDER` (or legacy `RE_AGENT_LLM_PROVIDER`)
-- `REFORGE_LLM_API_KEY` (or legacy `RE_AGENT_LLM_API_KEY`)
-- `REFORGE_LLM_MODEL` (or legacy `RE_AGENT_LLM_MODEL`)
-- `REFORGE_LLM_BASE_URL` (or legacy `RE_AGENT_LLM_BASE_URL`)
-- `REFORGE_BACKEND_CLI_PATH` (or legacy `RE_AGENT_BACKEND_CLI_PATH`)
-- `REFORGE_BACKEND_TIMEOUT` (or legacy `RE_AGENT_BACKEND_TIMEOUT`)
-- `REFORGE_TOOLS_DIR` (or legacy `RE_AGENT_TOOLS_DIR`)
-- `REFORGE_APKTOOL` (or legacy `RE_AGENT_APKTOOL`)
-- `REFORGE_APK_SIGNER_JAR` (or legacy `RE_AGENT_APK_SIGNER_JAR`)
-- `REFORGE_FRIDA_GADGET_DIR` (or legacy `RE_AGENT_FRIDA_GADGET_DIR`)
-- `REFORGE_FRIDA_GADGET_VERSION` (or legacy `RE_AGENT_FRIDA_GADGET_VERSION`)
-- `REFORGE_IL2CPP_DUMPER` (or legacy `RE_AGENT_IL2CPP_DUMPER`)
+- `REFORGE_CONFIG` (or legacy `REFORGE_CONFIG`)
+- `REFORGE_LLM_PROVIDER` (or legacy `REFORGE_LLM_PROVIDER`)
+- `REFORGE_LLM_API_KEY` (or legacy `REFORGE_LLM_API_KEY`)
+- `REFORGE_LLM_MODEL` (or legacy `REFORGE_LLM_MODEL`)
+- `REFORGE_LLM_BASE_URL` (or legacy `REFORGE_LLM_BASE_URL`)
+- `REFORGE_BACKEND_CLI_PATH` (or legacy `REFORGE_BACKEND_CLI_PATH`)
+- `REFORGE_BACKEND_TIMEOUT` (or legacy `REFORGE_BACKEND_TIMEOUT`)
+- `REFORGE_TOOLS_DIR` (or legacy `REFORGE_TOOLS_DIR`)
+- `REFORGE_APKTOOL` (or legacy `REFORGE_APKTOOL`)
+- `REFORGE_APK_SIGNER_JAR` (or legacy `REFORGE_APK_SIGNER_JAR`)
+- `REFORGE_FRIDA_GADGET_DIR` (or legacy `REFORGE_FRIDA_GADGET_DIR`)
+- `REFORGE_FRIDA_GADGET_VERSION` (or legacy `REFORGE_FRIDA_GADGET_VERSION`)
+- `REFORGE_IL2CPP_DUMPER` (or legacy `REFORGE_IL2CPP_DUMPER`)
 
 Role-specific `agents.*` configuration, validation, project profiles, parity,
 and output paths should be configured in YAML.
@@ -645,11 +645,11 @@ or project-specific validation commands.
 
 Default artifacts include:
 
-- `reports/re-agent/code/`: final generated code per function
-- `reports/re-agent/logs/`: per-round reverser/checker prompts, responses, and provider metadata
-- `reports/re-agent/candidates/`: non-isolated candidate overlays
-- `reports/re-agent/knowledge-graph.json`: persistent evidence graph
-- `re-agent-progress.json`: current per-function state plus run history
+- `reports/reforge/code/`: final generated code per function
+- `reports/reforge/logs/`: per-round reverser/checker prompts, responses, and provider metadata
+- `reports/reforge/candidates/`: non-isolated candidate overlays
+- `reports/reforge/knowledge-graph.json`: persistent evidence graph
+- `reforge-progress.json`: current per-function state plus run history
 
 The session file is atomically rewritten on save. Its `functions` map stores the
 latest state per address, while its `runs` list preserves recorded attempts.

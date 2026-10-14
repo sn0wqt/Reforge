@@ -15,7 +15,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: ruff check src/ tests/
-      - run: mypy src/re_agent/
+      - run: mypy src/reforge/
 
   test:
     runs-on: ${{ matrix.os }}
@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: pytest tests/ -m "not llm and not ghidra" --strict-markers --cov=re_agent --cov-branch --cov-report=term-missing --cov-fail-under=70
+      - run: pytest tests/ -m "not llm and not ghidra" --strict-markers --cov=reforge --cov-branch --cov-report=term-missing --cov-fail-under=70
 
   package:
     runs-on: ubuntu-latest
@@ -52,4 +52,3 @@ jobs:
       - run: python -m build
       - run: pip install dist/*.whl
       - run: reforge --version
-      - run: re-agent --version

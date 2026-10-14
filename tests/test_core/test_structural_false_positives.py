@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from re_agent.core.structural_analysis import analyze_structures
+from reforge.core.structural_analysis import analyze_structures
 
 
 def test_unrelated_numeric_getter_is_not_currency() -> None:
