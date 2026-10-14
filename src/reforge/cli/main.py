@@ -159,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_device.add_argument("--usb", action="store_true", help="Use the connected USB Frida device")
     live_device.add_argument("--host", help="Use a remote Frida host (HOST:PORT)")
     trace_p.add_argument("--output", help="Output file path")
+    trace_p.add_argument("--timeout", type=float, default=None, help="Stop tracing after N seconds")
 
     # pipeline
     pipe_p = _command_parser(sub, "pipeline", help="Run the universal analysis and packaging pipeline")

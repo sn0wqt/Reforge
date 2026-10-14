@@ -1160,7 +1160,7 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
         configured_version = (
             gadget_cli_version
             or os.environ.get("REFORGE_FRIDA_GADGET_VERSION")
-            or os.environ.get("REFORGE_FRIDA_GADGET_VERSION")
+            or os.environ.get("RE_AGENT_FRIDA_GADGET_VERSION")
         )
         resolved_gadget = resolve_frida_gadget_path(
             gadget_cli_value,

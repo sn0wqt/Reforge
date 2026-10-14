@@ -145,3 +145,29 @@ def test_cmd_trace_rejects_device_without_live_target(tmp_path: Path) -> None:
     output = tmp_path / "trace.ts"
     assert main(["trace", "--symbol", "GetCoins", "--usb", "--output", output.as_posix()]) == 2
     assert not output.exists()
+
+
+def test_cmd_trace_handles_timeout(tmp_path: Path, monkeypatch) -> None:
+    from subprocess import TimeoutExpired
+
+    def fake_run(command, *, check, timeout=None):
+        assert timeout == 5.0
+        raise TimeoutExpired(command, timeout)
+
+    monkeypatch.setattr("reforge.cli.cmd_trace.subprocess.run", fake_run)
+
+    result = main(
+        [
+            "trace",
+            "--symbol",
+            "GetCoins",
+            "--spawn",
+            "com.example.game",
+            "--timeout",
+            "5.0",
+            "--output",
+            (tmp_path / "trace.ts").as_posix(),
+        ]
+    )
+
+    assert result == 0

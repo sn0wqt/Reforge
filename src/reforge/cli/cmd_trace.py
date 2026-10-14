@@ -178,9 +178,16 @@ def cmd_trace(args: argparse.Namespace) -> int:
             cmd.extend(["-n", attach_target])
 
         cmd.extend(["-l", str(out_path)])
+        timeout = getattr(args, "timeout", None)
         try:
             print(f"[*] Running command: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
+            if timeout is not None:
+                subprocess.run(cmd, check=True, timeout=timeout)
+            else:
+                subprocess.run(cmd, check=True)
+        except subprocess.TimeoutExpired:
+            print(f"[*] Live tracing session completed ({timeout}s limit reached).", file=sys.stderr)
+            return 0
         except FileNotFoundError:
             print("[!] Frida CLI was not found on PATH.", file=sys.stderr)
             return 2

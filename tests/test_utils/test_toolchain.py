@@ -21,10 +21,15 @@ def test_managed_tool_resolvers_find_versioned_install(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("REFORGE_TOOLS_DIR", str(tmp_path))
+    monkeypatch.delenv("RE_AGENT_TOOLS_DIR", raising=False)
     monkeypatch.delenv("REFORGE_APK_SIGNER_JAR", raising=False)
+    monkeypatch.delenv("RE_AGENT_APK_SIGNER_JAR", raising=False)
     monkeypatch.delenv("REFORGE_APKTOOL", raising=False)
+    monkeypatch.delenv("RE_AGENT_APKTOOL", raising=False)
     monkeypatch.delenv("REFORGE_FRIDA_GADGET_DIR", raising=False)
+    monkeypatch.delenv("RE_AGENT_FRIDA_GADGET_DIR", raising=False)
     monkeypatch.delenv("REFORGE_IL2CPP_DUMPER", raising=False)
+    monkeypatch.delenv("RE_AGENT_IL2CPP_DUMPER", raising=False)
     monkeypatch.setattr("reforge.utils.toolchain.shutil.which", lambda _name: None)
 
     signer = tmp_path / "uber-apk-signer" / "1.3.0" / "uber-apk-signer-1.3.0.jar"
@@ -52,7 +57,9 @@ def test_explicit_invalid_tool_does_not_hide_managed_fallback(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("REFORGE_TOOLS_DIR", str(tmp_path))
+    monkeypatch.delenv("RE_AGENT_TOOLS_DIR", raising=False)
     monkeypatch.delenv("REFORGE_APK_SIGNER_JAR", raising=False)
+    monkeypatch.delenv("RE_AGENT_APK_SIGNER_JAR", raising=False)
     signer = tmp_path / "uber-apk-signer" / "1.3.0" / "uber-apk-signer-1.3.0.jar"
     signer.parent.mkdir(parents=True)
     signer.write_bytes(b"jar")
@@ -67,21 +74,22 @@ def test_apktool_environment_override_is_shared_by_pipeline_and_doctor(
     launcher = tmp_path / "apktool.cmd"
     launcher.write_text("@echo off\n", encoding="utf-8")
     monkeypatch.setenv("REFORGE_APKTOOL", str(launcher))
+    monkeypatch.delenv("RE_AGENT_APKTOOL", raising=False)
 
     assert resolve_apktool() == launcher.resolve()
 
 
 def test_reforge_tools_dir_and_signer_precedence(tmp_path: Path, monkeypatch) -> None:
     reforge_tools = tmp_path / "reforge_tools"
-    reforge_tools = tmp_path / "reforge_tools"
+    legacy_tools = tmp_path / "legacy_tools"
     monkeypatch.setenv("REFORGE_TOOLS_DIR", str(reforge_tools))
-    monkeypatch.setenv("REFORGE_TOOLS_DIR", str(reforge_tools))
+    monkeypatch.setenv("RE_AGENT_TOOLS_DIR", str(legacy_tools))
     assert managed_tools_root() == reforge_tools
 
     reforge_signer = tmp_path / "reforge_signer.jar"
     reforge_signer.write_bytes(b"jar1")
-    reforge_signer = tmp_path / "reforge_signer.jar"
-    reforge_signer.write_bytes(b"jar2")
+    legacy_signer = tmp_path / "legacy_signer.jar"
+    legacy_signer.write_bytes(b"jar2")
     monkeypatch.setenv("REFORGE_APK_SIGNER_JAR", str(reforge_signer))
-    monkeypatch.setenv("REFORGE_APK_SIGNER_JAR", str(reforge_signer))
+    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", str(legacy_signer))
     assert resolve_apk_signer() == reforge_signer.resolve()

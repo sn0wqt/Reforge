@@ -132,6 +132,7 @@ def run_process(
                         ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
                         capture_output=True,
                         check=False,
+                        timeout=5.0,
                     )
             else:
                 killpg = getattr(os, "killpg", None)
