@@ -483,3 +483,8 @@ def load_config(
 
     # 4. Build typed config from the merged dict.
     return _build_config(raw)
+
+
+def validate_config(config: ReforgeConfig) -> None:
+    """Validate a loaded ReforgeConfig instance."""
+    _validate_config(config)
