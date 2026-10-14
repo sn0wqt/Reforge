@@ -187,7 +187,12 @@ def test_shell_placeholders_are_data(tmp_path: Path, quote: str) -> None:
     file.write_text("int f() {}")
     command = "test -f " + quote + "{candidate_file}" + quote
     result = validate_candidate(
-        ValidationConfig(build_commands=[command], working_directory=str(tmp_path), trust_configured_commands=True),
+        ValidationConfig(
+            build_commands=[command],
+            working_directory=str(tmp_path),
+            trust_configured_commands=True,
+            allow_host_commands=True,
+        ),
         file,
         None,
     )

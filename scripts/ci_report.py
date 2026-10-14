@@ -34,7 +34,7 @@ def main() -> None:
 
     if not errors and Path("pytest.log").exists():
         lines = Path("pytest.log").read_text(encoding="utf-8", errors="ignore").splitlines()
-        errors = [l for l in lines if "FAILED" in l or "ERROR" in l][:30]
+        errors = [line for line in lines if "FAILED" in line or "ERROR" in line][:30]
 
     if not token or not repo or not sha:
         print("[ci_report] Missing GitHub env variables.")
