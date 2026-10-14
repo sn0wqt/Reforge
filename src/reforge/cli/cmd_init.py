@@ -1,4 +1,4 @@
-"""reforge init command — generates config file."""
+"""reforge init command :  generates config file."""
 
 from __future__ import annotations
 

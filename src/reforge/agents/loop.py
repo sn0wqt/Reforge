@@ -1,4 +1,4 @@
-"""Fix loop — reverser -> checker -> fix, bounded by max rounds."""
+"""Fix loop :  reverser -> checker -> fix, bounded by max rounds."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Checker agent — verifies reversed code against Ghidra decompilation."""
+"""Checker agent :  verifies reversed code against Ghidra decompilation."""
 
 from __future__ import annotations
 

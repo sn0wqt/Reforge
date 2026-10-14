@@ -1,51 +1,44 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
-## Project overview
+## Project Overview
 
-`Reforge` is a Python 3.10+ CLI for evidence-driven reverse engineering. Its main architectural flow is:
+Reforge is an evidence-driven binary reverse-engineering agent (Python 3.10+):
 
 ```text
-CLI -> configuration/policy -> backend + local artifact analysis
-    -> candidate discovery or reverser/checker loop
-    -> structural/validation/parity gates -> reports + session state
+CLI -> Config -> Backend/Artifact Analysis -> Discovery / Reverser-Checker Loop -> Verification/Parity -> Reports
 ```
 
-The installed command is `reforge` (with `reforge` supported as an alias), backed by `reforge.cli.main:main`. Source uses a `src/` layout and tests mirror package areas under `tests/`.
+- Primary command: `reforge`, backed by `reforge.cli.main:main`.
+- Source layout: `src/reforge/`.
+- Test layout: `tests/`.
 
-## Development commands
+## Development Commands
 
-Install the package and development dependencies in an activated virtual environment:
+Install in development mode:
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-Full Ghidra-backed development may also require an editable sibling bridge checkout:
-
-```bash
-python -m pip install -e "../ghidra-ai-bridge[headless]"
-```
-
-Run the CI-equivalent checks:
+Run test suite and quality checks:
 
 ```bash
 ruff check src/ tests/
 mypy src/reforge/
 pytest tests/ -m "not llm and not ghidra" --strict-markers --tb=short
-pytest tests/ -m "not llm and not ghidra" --strict-markers \
-  --cov=reforge --cov-branch --cov-report=term-missing --cov-fail-under=70
+pytest tests/ -m "not llm and not ghidra" --strict-markers --cov=reforge --cov-branch --cov-report=term-missing --cov-fail-under=70
 ```
 
-Run a test file or one test by node ID:
+Targeted testing:
 
 ```bash
 pytest tests/test_cli/test_main.py -q
 pytest tests/test_cli/test_main.py::test_name -q
 ```
 
-Build and smoke-test the distributable package:
+Build package:
 
 ```bash
 python -m pip install build
@@ -54,9 +47,7 @@ python -m pip install dist/*.whl
 reforge --version
 ```
 
-There is no repository-established formatter command; Ruff linting, strict mypy, and pytest are the enforced checks. CI runs on Linux and Windows across Python 3.10-3.14.
-
-Useful CLI entry points while developing:
+Common CLI invocations:
 
 ```bash
 reforge doctor
@@ -69,57 +60,44 @@ reforge parity --address 0x401000 --strict-exit
 reforge status
 ```
 
-Global `--config` belongs before the subcommand:
+Global options precede subcommands (e.g. `reforge --config custom.yaml status`).
 
-```bash
-reforge --config path/to/reforge.yaml status
-```
-
-Tests marked `llm` require provider credentials; tests marked `ghidra` require `ghidra-ai-bridge`. The default CI suite excludes both.
+Tests marked `llm` require API credentials; tests marked `ghidra` require `ghidra-ai-bridge`. Both are excluded in standard CI runs.
 
 ## Architecture
 
-### CLI and configuration
+### CLI and Configuration
+- `src/reforge/cli/main.py`: `argparse` definition with lazy command imports.
+- `src/reforge/config/`: Dataclass schemas, YAML loading, environment overrides, and data handling policy.
+- Precedence: **CLI overrides > `REFORGE_*` environment variables > `reforge.yaml` > defaults**.
+- External LLM access is denied by default; each active provider must be explicitly allowed under `data_handling`.
 
-- `src/reforge/cli/main.py` owns the no-abbreviation `argparse` surface and lazily imports command handlers. Core commands are `init`, `reverse`, `parity`, `status`, and `estimate`; mobile/artifact commands are `batch`, `pipeline`, `hook`, `trace`, `doctor`, and `scan-strings`.
-- `src/reforge/config/` defines dataclass schemas, defaults, loading, and data-handling policy. Precedence is **CLI overrides > supported `REFORGE_*` environment variables (with `REFORGE_*` compatibility) > YAML (`reforge.yaml` or legacy `reforge.yaml`) > defaults**. Unknown keys and invalid values fail closed.
-- Role-specific `agents.reverser` and `agents.checker` settings overlay top-level LLM settings. Switching providers intentionally strips inherited provider-specific credentials, endpoints, models, and fallbacks.
-- External LLM use is deny-by-default and each primary/fallback route must pass `data_handling` policy. Prompt logging and persistent evidence are separate opt-ins.
+### Artifact Analysis and Backend
+- `src/reforge/core/engine_detector.py`: Detects Android, iOS, Windows, Unity/IL2CPP, React Native/Hermes, DEX, and native binaries.
+- `src/reforge/core/`: Dedicated local parsers for DEX, IL2CPP metadata, native symbols, Mach-O, and web assets.
+- `src/reforge/utils/archives.py`: Fail-closed archive extraction protecting against path traversal, symlinks, and zip bombs.
+- `src/reforge/backend/protocol.py`: `REBackend` abstraction. Implementations include Ghidra Bridge, IL2CPP metadata, and stubs.
 
-### Artifact analysis and backend layer
+### LLM and Reversal Loop
+- `src/reforge/llm/`: Provider interfaces for Claude (API/CLI), OpenAI, Codex CLI, and Gemini API with failover routing.
+- `src/reforge/orchestrator/`: Manages address and class runs.
+- `src/reforge/agents/loop.py`: Coordinates independent `ReverserAgent` and `CheckerAgent` in bounded feedback rounds.
+- Backend queries from agents are read-only and strictly validated.
 
-- `src/reforge/core/engine_detector.py` selects Android, iOS, Windows, Unity/IL2CPP, React Native/Hermes, DEX, or native pathways using archive layout, directory contents, magic bytes, and metadata evidence. Ambiguous metadata-only inputs require an explicit `--platform` rather than a guessed platform.
-- `src/reforge/core/dex_parser.py`, `il2cpp_parser.py`, `native_scanner.py`, `ipa_scanner.py`, `macho.py`, and related modules perform bounded local analysis. APK/IPA identity extraction feeds safe naming and Android namespace filtering.
-- Archive handling in `src/reforge/utils/archives.py` is intentionally fail-closed: path traversal, links/reparse points, encryption, duplicates, oversized members, and suspicious compression are rejected.
-- `src/reforge/backend/protocol.py` defines the `REBackend` abstraction and optional capability flags. `backend/registry.py` selects Ghidra bridge, IL2CPP metadata, or stub implementations. Enhanced evidence must be capability-checked because older bridge installations degrade gracefully.
+### Candidate Validation and Parity
+- Multi-gate verification: Checker `PASS`, objective structural verification, candidate build/test execution, and parity checks.
+- `src/reforge/verification/candidate.py`: Evaluates code in isolated candidate overlays without modifying the original source tree.
+- `src/reforge/parity/`: 11 heuristic signals comparing disassembly against generated source (GREEN / YELLOW / RED).
+- `src/reforge/core/session.py`: Atomic progress persistence with locking, quarantine, and merge-on-save.
 
-### LLM and reversal orchestration
+### Universal Pipeline
+- `src/reforge/cli/cmd_pipeline.py`: Detection, extraction, batch analysis, optional Hermes patching, hook scaffolding, and packaging.
+- `src/reforge/core/candidates.py`: Strict activation boundaries. Only verified primitive returns with complete type descriptors are emitted as active hooks.
+- `src/reforge/cli/cmd_doctor.py`: Independent health checks for analysis, packaging, and Frida Gadget dependencies.
 
-- `src/reforge/llm/protocol.py` provides the small provider interface; `llm/registry.py` lazily constructs API or local-CLI providers, and `llm/failover.py` controls retries and route changes. Safety/policy, invalid-request, and unknown failures do not trigger provider shopping.
-- `src/reforge/cli/cmd_reverse.py` performs validation and data-policy preflight before constructing providers, then selects the backend and persistent session.
-- `src/reforge/orchestrator/` coordinates address- or class-level runs. `agents/loop.py` drives independent `ReverserAgent` and `CheckerAgent` roles through bounded rounds: gather evidence, generate code, obtain strict checker JSON, run non-LLM structural verification, and feed failures into the next round.
-- Model-requested backend actions are read-only and narrowly validated; the reversal loop does not expose model-directed shell or filesystem operations.
+## Key Invariants
 
-### Candidate validation, parity, and persistence
-
-- Acceptance is conjunctive: checker `PASS`, no objective `FAIL`, configured candidate validation accepted, and parity not blocked by configured RED/YELLOW policy.
-- `src/reforge/verification/candidate.py` writes generated code to an overlay rather than the original source tree. Project validation and host shell commands are separately controlled high-trust features; passing commands count as evidence only when explicitly trusted.
-- `src/reforge/verification/objective.py` treats missing evidence as `UNKNOWN`; only strong structural contradictions should become `FAIL`.
-- `src/reforge/parity/` combines deterministic local signals, optional Ghidra evidence, semantic rules, and manual overrides into GREEN/YELLOW/RED status.
-- `src/reforge/core/session.py` persists function/run state with locking, merge-before-save, fsync, atomic replacement, and corrupt-file quarantine. `src/reforge/reports/` writes accepted code and authorized reports/logs.
-
-### Batch and universal pipeline
-
-- `src/reforge/cli/cmd_batch.py` is local-first discovery: parse DEX/IL2CPP evidence, derive and rank candidates, optionally ask an LLM to refine a bounded shortlist, then ground every LLM result back against submitted evidence.
-- `src/reforge/core/candidates.py` enforces the activation gate. A score alone is never mutation or ABI proof. Active Java/DEX return overrides require an exact executable declaration and compatible primitive return; active IL2CPP return overrides require an exact nonzero method RVA and compatible bool/integer type. Native offsets and unsupported types remain review-only.
-- `src/reforge/cli/cmd_pipeline.py` composes detection, extraction, batch analysis, optional textual Hermes patching, hook generation, packaging, summaries, and `pipeline_manifest.json`. Hermes bytecode pseudo-JS is analysis-only; only original textual bundles may be patched.
-- Pipeline output distinguishes static artifact generation from installation and runtime behavior verification. Android rebuild/sign happens only for a verified textual patch or explicitly requested, validated Frida Gadget embedding. iOS signing is not attempted on Windows.
-- `doctor` reports core analysis, packaging, and Gadget/deployment readiness independently so missing optional deployment tooling does not imply core analysis is unavailable.
-
-## Repository-specific invariants
-
-- Preserve the design sequence: **local evidence -> bounded LLM input -> independently grounded output**.
-- Do not promote strings, symbols, candidate scores, or native addresses into callable ABI or mutation proof.
-- Keep default data-handling denial, prompt-persistence opt-ins, overlay isolation, and host-command consent fail-closed.
-- Treat `pipeline_manifest.json` as the source of truth for completed pipeline stages; generated hooks are not equivalent to installation or runtime verification.
-- Match nearby code style: Python 3.10-compatible typing, 120-character Ruff line length, strict mypy, and lazy imports for optional providers/tool integrations.
+- Follow the sequence: **local evidence -> bounded LLM input -> independently verified output**.
+- Never promote strings, symbols, or unverified native offsets into active mutation hooks.
+- Keep data-handling denials, prompt persistence opt-ins, and host command execution fail-closed.
+- Code style: Python 3.10+ typing, 120-character line length (Ruff), strict mypy, and lazy provider imports.

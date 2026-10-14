@@ -1,4 +1,4 @@
-"""reforge reverse command — single function or class reversal."""
+"""reforge reverse command :  single function or class reversal."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def cmd_reverse(args: argparse.Namespace) -> int:
 
 
 def _dry_run(args: argparse.Namespace, config: object) -> int:
-    print("Dry run mode — no LLM calls will be made.\n")
+    print("Dry run mode :  no LLM calls will be made.\n")
 
     if args.address:
         print(f"Would reverse: {args.address}")

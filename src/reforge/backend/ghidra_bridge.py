@@ -106,7 +106,7 @@ class GhidraBridgeBackend:
         stderr_lower = stderr.lower()
         if any(pat in stderr_lower for pat in self._UNKNOWN_CMD_PATTERNS):
             return False
-        # Non-zero but no "unknown command" — likely just bad args for
+        # Non-zero but no "unknown command" :  likely just bad args for
         # a valid sub-command.  Double-check with a dummy invocation.
         rc2, _stdout2, stderr2 = run_cmd_split(
             [self._cli_path, subcmd, "__probe__"], timeout_s=min(self._timeout_s, 10)

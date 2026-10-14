@@ -1,4 +1,4 @@
-"""reforge status command — show reversal progress."""
+"""reforge status command :  show reversal progress."""
 
 from __future__ import annotations
 

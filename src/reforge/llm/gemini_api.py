@@ -1,4 +1,4 @@
-"""Google Gemini API provider — supports API key AND Vertex AI service account auth."""
+"""Google Gemini API provider :  supports API key AND Vertex AI service account auth."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""reforge parity command — run parity checks."""
+"""reforge parity command :  run parity checks."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Backend factory — creates a backend from configuration."""
+"""Backend factory :  creates a backend from configuration."""
 
 from __future__ import annotations
 
