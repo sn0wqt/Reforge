@@ -1,4 +1,4 @@
-"""re-agent init command — generates config file."""
+"""reforge init command — generates config file."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from re_agent.config.defaults import DEFAULT_CONFIG_YAML, EXAMPLE_PROFILE_TEMPLA
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    config_path = Path(getattr(args, "config", None) or "re-agent.yaml")
+    config_path = Path(getattr(args, "config", None) or "reforge.yaml")
 
     if config_path.exists():
         print(f"Config already exists: {config_path}")
@@ -29,7 +29,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             data["project_profile"] = {}
         for key, value in profile_overrides.items():
             data["project_profile"][key] = value
-        content = "# re-agent configuration\n"
+        content = "# reforge configuration\n"
         content += f"# Profile: {args.profile}\n\n"
         content += yaml.dump(data, default_flow_style=False, sort_keys=False)
     elif args.profile:

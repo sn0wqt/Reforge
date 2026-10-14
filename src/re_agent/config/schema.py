@@ -1,4 +1,4 @@
-"""Configuration schema dataclasses for re-agent."""
+"""Configuration schema dataclasses for Reforge."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class ProjectProfile:
         ]
     )
     hooks_csv: str | None = None
-    name: str = "generic-cpp"
+    name: str = "reforge"
     language_standard: str = "C++20"
     prompt_rules: list[str] = field(
         default_factory=lambda: [
@@ -193,3 +193,6 @@ class ReAgentConfig:
             data_handling=DataHandlingConfig(),
             output=OutputConfig(),
         )
+
+
+ReforgeConfig = ReAgentConfig

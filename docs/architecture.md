@@ -1,6 +1,6 @@
 # Architecture
 
-re-agent is structured as a layered pipeline:
+Reforge is structured as a layered pipeline:
 
 ```
 CLI -> Config -> Orchestrator -> Evidence Loop -> LLM Providers

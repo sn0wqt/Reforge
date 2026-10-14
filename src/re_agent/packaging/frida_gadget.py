@@ -245,7 +245,7 @@ def write_gadget_deployment_notes(output_dir: Path, embedding: GadgetEmbedding) 
         f"Interaction: listen on 127.0.0.1:{embedding.port}, on_load={embedding.on_load}\n\n"
         "The APK has a new signing certificate. The original installed app normally must be\n"
         "uninstalled first. Signature pinning, anti-tamper checks, or Play Integrity may reject\n"
-        "the rebuilt package; re-agent cannot bypass or claim compatibility with those controls.\n\n"
+        "the rebuilt package; Reforge cannot bypass or claim compatibility with those controls.\n\n"
         "Typical local connection:\n"
         f"  {adb_command} forward tcp:{embedding.port} tcp:{embedding.port}\n"
         f"  frida -H 127.0.0.1:{embedding.port} -n Gadget -l Hook_Frida.js\n\n"
@@ -483,7 +483,7 @@ _LOADER_SMALI = r""".class public Lre/agent/GadgetInitProvider;
 
     :catch_0
     move-exception v0
-    const-string v1, "re-agent"
+    const-string v1, "reforge"
     const-string v2, "Frida Gadget load failed"
     invoke-static {v1, v2, v0}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
     const/4 v0, 0x0

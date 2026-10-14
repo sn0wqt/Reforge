@@ -12,7 +12,7 @@ gates, structural verification, and parity analysis in one autonomous workflow.
 ## What it does
 
 ```text
-re-agent reverse --class CTrain
+reforge reverse --class CTrain
     │
     ├── Configuration (YAML + supported environment overrides + CLI flags)
     ├── Function selection (dependency-order | easiest-first | high-impact)
@@ -85,10 +85,10 @@ installs and configures the managed Android tools:
 powershell -ExecutionPolicy Bypass -File .\scripts\setup_android_tools.ps1
 
 # Open a new terminal so the persistent PATH/environment updates are visible.
-re-agent doctor
+reforge doctor
 ```
 
-`re-agent doctor` reports core analysis, Android repackaging, and non-root
+`reforge doctor` reports core analysis, Android repackaging, and non-root
 Gadget readiness independently. A missing optional deployment tool therefore
 does not make core analysis fail. Its JSON `ready` field refers to core
 analysis; inspect `capabilities` for workflow-specific readiness.
@@ -125,12 +125,12 @@ Upstream sources: [Frida releases](https://github.com/frida/frida/releases),
 
 | Goal | Command |
 |---|---|
-| Check whether the machine is ready | `re-agent doctor` |
-| Find and rank targets from an APK/dump | `re-agent batch --binary app.apk --goal "..."` |
-| Run detection, analysis, hook generation, and optional packaging | `re-agent pipeline --binary app.apk --goal "..."` |
-| Build a signed non-root Gadget APK | `re-agent pipeline --binary app.apk --goal "..." --embed-frida-gadget` |
-| Generate or launch a live logging trace | `re-agent trace --class CLASS --symbol METHOD ...` |
-| Deeply reconstruct functions from Ghidra/IL2CPP evidence | `re-agent reverse --address RVA` or `re-agent reverse --class CLASS` |
+| Check whether the machine is ready | `reforge doctor` |
+| Find and rank targets from an APK/dump | `reforge batch --binary app.apk --goal "..."` |
+| Run detection, analysis, hook generation, and optional packaging | `reforge pipeline --binary app.apk --goal "..."` |
+| Build a signed non-root Gadget APK | `reforge pipeline --binary app.apk --goal "..." --embed-frida-gadget` |
+| Generate or launch a live logging trace | `reforge trace --class CLASS --symbol METHOD ...` |
+| Deeply reconstruct functions from Ghidra/IL2CPP evidence | `reforge reverse --address RVA` or `reforge reverse --class CLASS` |
 
 `pipeline` is the normal end-to-end APK command. `batch` is candidate discovery
 without packaging. `trace` observes a running app; it does not search a dump.
@@ -159,7 +159,7 @@ the complete set, and writes:
 - `INSTALL_SPLIT_APKS.txt`: exact ADB and Shizuku/InstallWithOptions steps.
 
 ```powershell
-re-agent pipeline `
+reforge pipeline `
   --binary "C:\path\downloaded-app.xapk" `
   --goal "authorized test goal" `
   --repack-apk `
@@ -180,17 +180,18 @@ splits are rejected rather than silently ignored, and Frida Gadget embedding
 remains limited to standalone APKs.
 
 The CLI may be launched from any directory. Configuration discovery checks
-`RE_AGENT_CONFIG`, then `./re-agent.yaml`, then the repository-level YAML for
-an editable installation. Use `--config C:\path\re-agent.yaml` for an explicit
-per-run override. This prevents a run launched from the target directory from
-silently changing providers or data-handling policy.
+`REFORGE_CONFIG` (or legacy `RE_AGENT_CONFIG`), then `./reforge.yaml` (or `./re-agent.yaml`
+for backward compatibility), then the repository-level YAML for an editable
+installation. Use `--config C:\path\reforge.yaml` for an explicit per-run override.
+This prevents a run launched from the target directory from silently changing
+providers or data-handling policy.
 
 ### Non-root Android workflow
 
 After setup, no signer or Gadget path is required:
 
 ```powershell
-re-agent pipeline `
+reforge pipeline `
   --binary "C:\path\game.apk" `
   --goal "give infinite coins" `
   --embed-frida-gadget
@@ -240,19 +241,19 @@ Create a configuration in the target project:
 
 ```bash
 # Recommended portable default
-re-agent init --profile generic-cpp
+reforge init --profile generic-cpp
 
 # Other available profiles
-# re-agent init --profile windows-x64
-# re-agent init --profile gta-reversed
-# re-agent init --profile openrct2
+# reforge init --profile windows-x64
+# reforge init --profile gta-reversed
+# reforge init --profile openrct2
 ```
 
-Running `re-agent init` without `--profile` now creates the portable
+Running `reforge init` without `--profile` now creates the portable
 `generic-cpp` template. Project-specific behavior, including the original
 GTA-reversed patterns, remains available through an explicit profile.
 
-Then edit `re-agent.yaml`. At minimum, select an LLM, point the backend at the
+Then edit `reforge.yaml` (or `re-agent.yaml`). At minimum, select an LLM, point the backend at the
 installed bridge executable, set the source paths, and configure validation.
 
 ```yaml
@@ -314,9 +315,9 @@ For exploration without build validation, explicitly set
 Start with one function before launching a class run:
 
 ```bash
-re-agent reverse --address 0x401000
-re-agent reverse --class CTrain --max-functions 10
-re-agent status
+reforge reverse --address 0x401000
+reforge reverse --class CTrain --max-functions 10
+reforge status
 ```
 
 ## LLM providers
@@ -329,7 +330,7 @@ llm:
   model: claude-sonnet-4-5-20250929
 ```
 
-Set `ANTHROPIC_API_KEY` or `RE_AGENT_LLM_API_KEY`.
+Set `ANTHROPIC_API_KEY` or `REFORGE_LLM_API_KEY` (or legacy `RE_AGENT_LLM_API_KEY`).
 
 ### Claude CLI
 
@@ -357,7 +358,7 @@ llm:
   base_url: https://your-endpoint.example/v1 # optional
 ```
 
-Set `OPENAI_API_KEY` or `RE_AGENT_LLM_API_KEY`.
+Set `OPENAI_API_KEY` or `REFORGE_LLM_API_KEY` (or legacy `RE_AGENT_LLM_API_KEY`).
 
 ### Codex CLI
 
@@ -506,8 +507,8 @@ Python cache files are not copied. Temporary project copies are deleted unless
 Commands may use:
 
 - `{candidate_file}`, `{overlay_root}`, and `{source_file}` placeholders;
-- `RE_AGENT_CANDIDATE_FILE`, `RE_AGENT_OVERLAY_ROOT`, and
-  `RE_AGENT_SOURCE_FILE` environment variables.
+- `REFORGE_CANDIDATE_FILE`, `REFORGE_OVERLAY_ROOT`, and
+  `REFORGE_SOURCE_FILE` environment variables (with legacy `RE_AGENT_*` compatibility).
 
 Configured build/test/runtime commands are arbitrary project-owned shell
 commands. The agent cannot prove from their text that they actually validate a
@@ -528,7 +529,7 @@ The reversal pipeline runs the 11 built-in heuristic parity signals against the
 generated candidate body. RED is blocking by default; YELLOW can be made
 blocking with `validation.parity_fail_on_yellow`.
 
-The standalone command is different: `re-agent parity` analyzes functions in
+The standalone command is different: `reforge parity` analyzes functions in
 the existing source tree. It also supports semantic-rule files and manual check
 overrides. Its process exit code remains zero on RED unless `--strict-exit` is
 used.
@@ -556,30 +557,30 @@ individual toggle for every signal.
 ## CLI reference
 
 Global options must precede the subcommand, for example
-`re-agent --config custom.yaml status`.
+`reforge --config custom.yaml status`.
 
 | Command | Purpose |
 |---|---|
-| `re-agent doctor [--json]` | Report analysis, packaging, and Gadget capabilities independently |
-| `re-agent init --profile generic-cpp` | Create `re-agent.yaml` from a profile |
-| `re-agent reverse --address ADDR` | Reverse one function |
-| `re-agent reverse --class CLASS --max-functions N` | Reverse a bounded class batch |
-| `re-agent reverse --class CLASS --dry-run` | Show a target plan without LLM calls |
-| `re-agent reverse ... --max-rounds N --skip-parity` | Override loop/parity behavior |
-| `re-agent parity --address ADDR --strict-exit` | Analyze an existing source function |
-| `re-agent parity --filter REGEX --limit N --output report.json` | Filter and export parity results |
-| `re-agent parity ... --skip-ghidra` | Run source-only parity signals |
-| `re-agent status --class CLASS --format text` | Show session progress |
-| `re-agent estimate --address ADDR` | Estimate one function |
-| `re-agent estimate --class CLASS --limit N` | Estimate a class batch |
-| `re-agent batch --binary FILE --goal TEXT --limit N` | Rank a complete local candidate inventory and semantically refine a bounded shortlist |
-| `re-agent pipeline --binary FILE --goal TEXT --no-repack` | Generate pathway-aware candidate reports and review hook scaffolds |
-| `re-agent pipeline --metadata-dir DIR --platform ios --goal TEXT --no-repack` | Analyze a metadata-only IL2CPP dump with an explicit platform when auto-detection is ambiguous |
-| `re-agent trace --class CLASS --symbol METHOD --assembly Assembly-CSharp` | Generate a Frida trace script |
-| `re-agent trace ... --attach PROCESS --usb` | Generate the script and attach it through the local Frida CLI |
-| `re-agent pipeline --binary app.apk --goal TEXT --embed-frida-gadget` | Use the managed matching Gadget binaries, rebuild, sign, and verify an Android APK |
+| `reforge doctor [--json]` | Report analysis, packaging, and Gadget capabilities independently |
+| `reforge init --profile generic-cpp` | Create `reforge.yaml` from a profile |
+| `reforge reverse --address ADDR` | Reverse one function |
+| `reforge reverse --class CLASS --max-functions N` | Reverse a bounded class batch |
+| `reforge reverse --class CLASS --dry-run` | Show a target plan without LLM calls |
+| `reforge reverse ... --max-rounds N --skip-parity` | Override loop/parity behavior |
+| `reforge parity --address ADDR --strict-exit` | Analyze an existing source function |
+| `reforge parity --filter REGEX --limit N --output report.json` | Filter and export parity results |
+| `reforge parity ... --skip-ghidra` | Run source-only parity signals |
+| `reforge status --class CLASS --format text` | Show session progress |
+| `reforge estimate --address ADDR` | Estimate one function |
+| `reforge estimate --class CLASS --limit N` | Estimate a class batch |
+| `reforge batch --binary FILE --goal TEXT --limit N` | Rank a complete local candidate inventory and semantically refine a bounded shortlist |
+| `reforge pipeline --binary FILE --goal TEXT --no-repack` | Generate pathway-aware candidate reports and review hook scaffolds |
+| `reforge pipeline --metadata-dir DIR --platform ios --goal TEXT --no-repack` | Analyze a metadata-only IL2CPP dump with an explicit platform when auto-detection is ambiguous |
+| `reforge trace --class CLASS --symbol METHOD --assembly Assembly-CSharp` | Generate a Frida trace script |
+| `reforge trace ... --attach PROCESS --usb` | Generate the script and attach it through the local Frida CLI |
+| `reforge pipeline --binary app.apk --goal TEXT --embed-frida-gadget` | Use the managed matching Gadget binaries, rebuild, sign, and verify an Android APK |
 
-Use `re-agent <command> --help` for the exact option list.
+Use `reforge <command> --help` for the exact option list.
 
 Pipeline reports retain the complete evidence-ranked candidate inventory.
 Generated hook files stay bounded: active blocks require complete readiness
@@ -605,21 +606,22 @@ required ABI, module-lifecycle, and installation evidence is available.
 ## Configuration precedence
 
 The effective order is CLI runtime overrides, supported environment variables,
-`re-agent.yaml`, then dataclass defaults. The currently supported environment
+`reforge.yaml` (or legacy `re-agent.yaml`), then dataclass defaults. The currently supported environment
 variables are:
 
-- `RE_AGENT_LLM_PROVIDER`
-- `RE_AGENT_LLM_API_KEY`
-- `RE_AGENT_LLM_MODEL`
-- `RE_AGENT_LLM_BASE_URL`
-- `RE_AGENT_BACKEND_CLI_PATH`
-- `RE_AGENT_BACKEND_TIMEOUT`
-- `RE_AGENT_TOOLS_DIR`
-- `RE_AGENT_APKTOOL`
-- `RE_AGENT_APK_SIGNER_JAR`
-- `RE_AGENT_FRIDA_GADGET_DIR`
-- `RE_AGENT_FRIDA_GADGET_VERSION`
-- `RE_AGENT_IL2CPP_DUMPER`
+- `REFORGE_CONFIG` (or legacy `RE_AGENT_CONFIG`)
+- `REFORGE_LLM_PROVIDER` (or legacy `RE_AGENT_LLM_PROVIDER`)
+- `REFORGE_LLM_API_KEY` (or legacy `RE_AGENT_LLM_API_KEY`)
+- `REFORGE_LLM_MODEL` (or legacy `RE_AGENT_LLM_MODEL`)
+- `REFORGE_LLM_BASE_URL` (or legacy `RE_AGENT_LLM_BASE_URL`)
+- `REFORGE_BACKEND_CLI_PATH` (or legacy `RE_AGENT_BACKEND_CLI_PATH`)
+- `REFORGE_BACKEND_TIMEOUT` (or legacy `RE_AGENT_BACKEND_TIMEOUT`)
+- `REFORGE_TOOLS_DIR` (or legacy `RE_AGENT_TOOLS_DIR`)
+- `REFORGE_APKTOOL` (or legacy `RE_AGENT_APKTOOL`)
+- `REFORGE_APK_SIGNER_JAR` (or legacy `RE_AGENT_APK_SIGNER_JAR`)
+- `REFORGE_FRIDA_GADGET_DIR` (or legacy `RE_AGENT_FRIDA_GADGET_DIR`)
+- `REFORGE_FRIDA_GADGET_VERSION` (or legacy `RE_AGENT_FRIDA_GADGET_VERSION`)
+- `REFORGE_IL2CPP_DUMPER` (or legacy `RE_AGENT_IL2CPP_DUMPER`)
 
 Role-specific `agents.*` configuration, validation, project profiles, parity,
 and output paths should be configured in YAML.
@@ -677,7 +679,7 @@ context and LLMs to produce and validate candidate C/C++ implementations.
 
 The full binary-backed reversal workflow currently uses Ghidra through
 `ghidra-ai-bridge`. Existing source can be checked with source-only parity via
-`re-agent parity --skip-ghidra`, but that mode has less evidence.
+`reforge parity --skip-ghidra`, but that mode has less evidence.
 
 ### Which LLM providers are supported?
 

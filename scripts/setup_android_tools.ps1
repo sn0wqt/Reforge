@@ -1,10 +1,34 @@
 [CmdletBinding()]
 param(
-    [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA "auto-re-agent\tools")
+    [string]$InstallRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+
+if (-not $InstallRoot) {
+    if ($env:REFORGE_TOOLS_DIR) {
+        $InstallRoot = $env:REFORGE_TOOLS_DIR
+    } elseif ($env:RE_AGENT_TOOLS_DIR) {
+        $InstallRoot = $env:RE_AGENT_TOOLS_DIR
+    } elseif ($env:LOCALAPPDATA) {
+        $reforgePath = Join-Path $env:LOCALAPPDATA "Reforge\tools"
+        $legacyPath = Join-Path $env:LOCALAPPDATA "auto-re-agent\tools"
+        if ((Test-Path -LiteralPath $legacyPath) -and -not (Test-Path -LiteralPath $reforgePath)) {
+            $InstallRoot = $legacyPath
+        } else {
+            $InstallRoot = $reforgePath
+        }
+    } else {
+        $reforgePath = Join-Path $HOME ".local\share\Reforge\tools"
+        $legacyPath = Join-Path $HOME ".local\share\auto-re-agent\tools"
+        if ((Test-Path -LiteralPath $legacyPath) -and -not (Test-Path -LiteralPath $reforgePath)) {
+            $InstallRoot = $legacyPath
+        } else {
+            $InstallRoot = $reforgePath
+        }
+    }
+}
 
 $SignerVersion = "1.3.0"
 $SignerSha256 = "e1299fd6fcf4da527dd53735b56127e8ea922a321128123b9c32d619bba1d835"
@@ -83,7 +107,7 @@ if ($hostFridaVersion -ne $FridaVersion) {
 }
 
 $resolvedInstallRoot = [IO.Path]::GetFullPath($InstallRoot)
-$tempRoot = Join-Path $env:TEMP ("re-agent-tools-" + [guid]::NewGuid().ToString("N"))
+$tempRoot = Join-Path $env:TEMP ("reforge-tools-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $resolvedInstallRoot, $tempRoot | Out-Null
 
 try {
@@ -129,10 +153,15 @@ try {
     Expand-Archive -LiteralPath $dumperZip -DestinationPath $dumperDir -Force
     $dumperExe = Join-Path $dumperDir "Il2CppDumper.exe"
 
+    [Environment]::SetEnvironmentVariable("REFORGE_TOOLS_DIR", $resolvedInstallRoot, "User")
     [Environment]::SetEnvironmentVariable("RE_AGENT_TOOLS_DIR", $resolvedInstallRoot, "User")
+    [Environment]::SetEnvironmentVariable("REFORGE_APK_SIGNER_JAR", $signerJar, "User")
     [Environment]::SetEnvironmentVariable("RE_AGENT_APK_SIGNER_JAR", $signerJar, "User")
+    [Environment]::SetEnvironmentVariable("REFORGE_FRIDA_GADGET_DIR", $gadgetDir, "User")
     [Environment]::SetEnvironmentVariable("RE_AGENT_FRIDA_GADGET_DIR", $gadgetDir, "User")
+    [Environment]::SetEnvironmentVariable("REFORGE_FRIDA_GADGET_VERSION", $FridaVersion, "User")
     [Environment]::SetEnvironmentVariable("RE_AGENT_FRIDA_GADGET_VERSION", $FridaVersion, "User")
+    [Environment]::SetEnvironmentVariable("REFORGE_IL2CPP_DUMPER", $dumperExe, "User")
     [Environment]::SetEnvironmentVariable("RE_AGENT_IL2CPP_DUMPER", $dumperExe, "User")
     Add-UserPathEntry $platformDir
     Add-UserPathEntry (Join-Path $jadxDir "bin")
@@ -152,7 +181,7 @@ try {
         -Encoding utf8
 
     Write-Host "[+] Android tools installed in $resolvedInstallRoot"
-    Write-Host "[+] Open a new terminal, then run: re-agent doctor"
+    Write-Host "[+] Open a new terminal, then run: reforge doctor (or: re-agent doctor)"
 }
 finally {
     if (Test-Path -LiteralPath $tempRoot) {

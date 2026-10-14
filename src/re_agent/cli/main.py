@@ -1,4 +1,4 @@
-"""CLI entry point for re-agent."""
+"""CLI entry point for Reforge."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _command_parser(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="re-agent",
+        prog="reforge",
         description="Autonomous reverse engineering agent",
         allow_abbrev=False,
     )
@@ -53,13 +53,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         default=None,
-        help="Explicit config file path (otherwise use standard config discovery)",
+        help="Explicit config file path (defaults to reforge.yaml or re-agent.yaml)",
     )
 
     sub = parser.add_subparsers(dest="command", help="Available commands")
 
     # init
-    init_p = _command_parser(sub, "init", help="Initialize re-agent.yaml config file")
+    init_p = _command_parser(sub, "init", help="Initialize reforge.yaml config file")
     init_p.add_argument("--profile", default=None, help="Use a built-in project profile template")
 
     # reverse
@@ -213,7 +213,7 @@ def _resolve_default_config_argument(args: argparse.Namespace) -> None:
     configured = getattr(args, "config", None)
     if command == "init":
         if configured is None:
-            args.config = "re-agent.yaml"
+            args.config = "reforge.yaml"
         return
     if command is None:
         return

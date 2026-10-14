@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-`auto-re-agent` is a Python 3.10+ CLI for evidence-driven reverse engineering. Its main architectural flow is:
+`Reforge` is a Python 3.10+ CLI for evidence-driven reverse engineering. Its main architectural flow is:
 
 ```text
 CLI -> configuration/policy -> backend + local artifact analysis
@@ -12,7 +12,7 @@ CLI -> configuration/policy -> backend + local artifact analysis
     -> structural/validation/parity gates -> reports + session state
 ```
 
-The installed command is `re-agent`, backed by `re_agent.cli.main:main`. Source uses a `src/` layout and tests mirror package areas under `tests/`.
+The installed command is `reforge` (with `re-agent` supported as an alias), backed by `re_agent.cli.main:main`. Source uses a `src/` layout and tests mirror package areas under `tests/`.
 
 ## Development commands
 
@@ -51,7 +51,7 @@ Build and smoke-test the distributable package:
 python -m pip install build
 python -m build
 python -m pip install dist/*.whl
-re-agent --version
+reforge --version
 ```
 
 There is no repository-established formatter command; Ruff linting, strict mypy, and pytest are the enforced checks. CI runs on Linux and Windows across Python 3.10-3.14.
@@ -59,20 +59,20 @@ There is no repository-established formatter command; Ruff linting, strict mypy,
 Useful CLI entry points while developing:
 
 ```bash
-re-agent doctor
-re-agent init --profile generic-cpp
-re-agent reverse --address 0x401000
-re-agent reverse --class CTrain --max-functions 5
-re-agent batch --binary app.apk --goal "..."
-re-agent pipeline --binary app.apk --goal "..." --no-repack
-re-agent parity --address 0x401000 --strict-exit
-re-agent status
+reforge doctor
+reforge init --profile generic-cpp
+reforge reverse --address 0x401000
+reforge reverse --class CTrain --max-functions 5
+reforge batch --binary app.apk --goal "..."
+reforge pipeline --binary app.apk --goal "..." --no-repack
+reforge parity --address 0x401000 --strict-exit
+reforge status
 ```
 
 Global `--config` belongs before the subcommand:
 
 ```bash
-re-agent --config path/to/re-agent.yaml status
+reforge --config path/to/reforge.yaml status
 ```
 
 Tests marked `llm` require provider credentials; tests marked `ghidra` require `ghidra-ai-bridge`. The default CI suite excludes both.
@@ -82,7 +82,7 @@ Tests marked `llm` require provider credentials; tests marked `ghidra` require `
 ### CLI and configuration
 
 - `src/re_agent/cli/main.py` owns the no-abbreviation `argparse` surface and lazily imports command handlers. Core commands are `init`, `reverse`, `parity`, `status`, and `estimate`; mobile/artifact commands are `batch`, `pipeline`, `hook`, `trace`, `doctor`, and `scan-strings`.
-- `src/re_agent/config/` defines dataclass schemas, defaults, loading, and data-handling policy. Precedence is **CLI overrides > supported `RE_AGENT_*` environment variables > YAML > defaults**. Unknown keys and invalid values fail closed.
+- `src/re_agent/config/` defines dataclass schemas, defaults, loading, and data-handling policy. Precedence is **CLI overrides > supported `REFORGE_*` environment variables (with `RE_AGENT_*` compatibility) > YAML (`reforge.yaml` or legacy `re-agent.yaml`) > defaults**. Unknown keys and invalid values fail closed.
 - Role-specific `agents.reverser` and `agents.checker` settings overlay top-level LLM settings. Switching providers intentionally strips inherited provider-specific credentials, endpoints, models, and fallbacks.
 - External LLM use is deny-by-default and each primary/fallback route must pass `data_handling` policy. Prompt logging and persistent evidence are separate opt-ins.
 

@@ -1,9 +1,9 @@
 # Getting Started
 
-Install `auto-re-agent` and the Ghidra bridge from PyPI:
+Install `Reforge` and the Ghidra bridge from PyPI:
 
 ```bash
-python3 -m pip install --upgrade "auto-re-agent[providers,headless]>=0.3.0"
+python3 -m pip install --upgrade "reforge[providers,headless]>=0.3.0"
 ```
 
 ## Prepare Ghidra
@@ -19,10 +19,10 @@ ghidra-bridge info
 ## Configure the agent
 
 ```bash
-re-agent init --profile generic-cpp
+reforge init --profile generic-cpp
 ```
 
-Edit `re-agent.yaml` to configure:
+Edit `reforge.yaml` (or `re-agent.yaml`) to configure:
 
 - an authenticated LLM provider;
 - `backend.cli_path: ghidra-bridge`;
@@ -38,16 +38,16 @@ validation for an unverified exploratory run.
 
 ```bash
 # Start with one function
-re-agent reverse --address 0x401000
+reforge reverse --address 0x401000
 
 # Then run a bounded class batch
-re-agent reverse --class CTrain --max-functions 5
+reforge reverse --class CTrain --max-functions 5
 
 # Analyze existing source-tree parity
-re-agent parity --address 0x401000 --strict-exit
+reforge parity --address 0x401000 --strict-exit
 
 # Inspect recorded progress
-re-agent status
+reforge status
 ```
 
 See the repository [README](../README.md) for providers, validation semantics,

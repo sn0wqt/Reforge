@@ -10,16 +10,28 @@ from pathlib import Path
 
 def managed_tools_root() -> Path:
     """Return the per-user directory used by the Android setup script."""
-    configured = os.environ.get("RE_AGENT_TOOLS_DIR")
+    configured = os.environ.get("REFORGE_TOOLS_DIR") or os.environ.get("RE_AGENT_TOOLS_DIR")
     if configured:
         return Path(configured).expanduser()
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / "auto-re-agent" / "tools"
+        reforge_dir = Path(local_app_data) / "Reforge" / "tools"
+        legacy_dir = Path(local_app_data) / "auto-re-agent" / "tools"
+        if legacy_dir.is_dir() and not reforge_dir.is_dir():
+            return legacy_dir
+        return reforge_dir
     xdg_data = os.environ.get("XDG_DATA_HOME")
     if xdg_data:
-        return Path(xdg_data).expanduser() / "auto-re-agent" / "tools"
-    return Path.home() / ".local" / "share" / "auto-re-agent" / "tools"
+        reforge_dir = Path(xdg_data).expanduser() / "Reforge" / "tools"
+        legacy_dir = Path(xdg_data).expanduser() / "auto-re-agent" / "tools"
+        if legacy_dir.is_dir() and not reforge_dir.is_dir():
+            return legacy_dir
+        return reforge_dir
+    reforge_home = Path.home() / ".local" / "share" / "Reforge" / "tools"
+    legacy_home = Path.home() / ".local" / "share" / "auto-re-agent" / "tools"
+    if legacy_home.is_dir() and not reforge_home.is_dir():
+        return legacy_home
+    return reforge_home
 
 
 def _version_key(path: Path) -> tuple[tuple[int, ...], str]:
@@ -39,7 +51,11 @@ def _version_directories(parent: Path) -> list[Path]:
 
 def resolve_apk_signer(explicit: str | Path | None = None) -> Path | None:
     """Resolve an explicitly trusted or managed uber-apk-signer JAR."""
-    values = [explicit, os.environ.get("RE_AGENT_APK_SIGNER_JAR")]
+    values = [
+        explicit,
+        os.environ.get("REFORGE_APK_SIGNER_JAR"),
+        os.environ.get("RE_AGENT_APK_SIGNER_JAR"),
+    ]
     for value in values:
         if not value:
             continue
@@ -57,7 +73,11 @@ def resolve_apk_signer(explicit: str | Path | None = None) -> Path | None:
 
 def resolve_apktool(explicit: str | Path | None = None) -> Path | None:
     """Resolve an executable apktool launcher consistently across commands."""
-    values = [explicit, os.environ.get("RE_AGENT_APKTOOL")]
+    values = [
+        explicit,
+        os.environ.get("REFORGE_APKTOOL"),
+        os.environ.get("RE_AGENT_APKTOOL"),
+    ]
     for value in values:
         if not value:
             continue
@@ -92,7 +112,11 @@ def resolve_frida_gadget_path(
     version: str | None = None,
 ) -> Path | None:
     """Resolve a local Gadget file/directory without downloading anything."""
-    values = [explicit, os.environ.get("RE_AGENT_FRIDA_GADGET_DIR")]
+    values = [
+        explicit,
+        os.environ.get("REFORGE_FRIDA_GADGET_DIR"),
+        os.environ.get("RE_AGENT_FRIDA_GADGET_DIR"),
+    ]
     for value in values:
         if not value:
             continue
@@ -112,7 +136,11 @@ def resolve_frida_gadget_path(
 
 def resolve_il2cpp_dumper(explicit: str | Path | None = None) -> Path | None:
     """Resolve Il2CppDumper from an explicit path, environment, PATH, or managed install."""
-    values = [explicit, os.environ.get("RE_AGENT_IL2CPP_DUMPER")]
+    values = [
+        explicit,
+        os.environ.get("REFORGE_IL2CPP_DUMPER"),
+        os.environ.get("RE_AGENT_IL2CPP_DUMPER"),
+    ]
     for value in values:
         if not value:
             continue

@@ -1,6 +1,6 @@
-# Platform-Agnostic Profile Guide for auto-re-agent
+# Platform-Agnostic Profile Guide for Reforge
 
-`auto-re-agent` supports evidence collection, candidate ranking, and hook
+`Reforge` supports evidence collection, candidate ranking, and hook
 scaffolding across multiple operating systems, architectures, and binary
 formats. Generated hooks remain candidates until their ABI, offset, build, and
 runtime behavior have been validated.
@@ -13,19 +13,19 @@ When initializing a new reverse-engineering project, select the profile matching
 
 ```bash
 # Portable C++ default
-re-agent init --profile generic-cpp
+reforge init --profile generic-cpp
 
 # iOS ARM64 binaries (Mach-O)
-re-agent init --profile ios-arm64
+reforge init --profile ios-arm64
 
 # Android ARM64 shared libraries (.so / ELF)
-re-agent init --profile android-arm64
+reforge init --profile android-arm64
 
 # Windows x64 executables and DLLs (PE)
-re-agent init --profile windows-x64
+reforge init --profile windows-x64
 
 # Linux x64 executables and shared objects (ELF)
-re-agent init --profile linux-x64
+reforge init --profile linux-x64
 ```
 
 ---
@@ -100,7 +100,7 @@ For a Unity package containing both the native IL2CPP binary and
 sidecars used by candidate discovery:
 
 ```bash
-re-agent pipeline --binary game.apk --il2cpp-dumper /trusted/Il2CppDumper \
+reforge pipeline --binary game.apk --il2cpp-dumper /trusted/Il2CppDumper \
   --goal "find the player balance" --no-repack
 ```
 
@@ -116,7 +116,7 @@ Unity image in `dump.cs` establishes the target, the pipeline reports that
 evidence. If the metadata remains ambiguous, select the known target explicitly:
 
 ```bash
-re-agent pipeline --metadata-dir /path/to/Dump0 --platform ios \
+reforge pipeline --metadata-dir /path/to/Dump0 --platform ios \
   --goal "find the player balance" --no-repack
 ```
 
@@ -191,15 +191,15 @@ Interactive terminal runs offer packaging or hook/report-only output at the end
 of supported Android and Windows pathways. Automation should use exactly one of:
 
 ```bash
-re-agent pipeline --binary app.apk --goal "grant unlimited diamonds" --repack-apk
-re-agent pipeline --binary app.apk --goal "grant unlimited diamonds" --no-repack
+reforge pipeline --binary app.apk --goal "grant unlimited diamonds" --repack-apk
+reforge pipeline --binary app.apk --goal "grant unlimited diamonds" --no-repack
 ```
 
 Split-delivered applications may be supplied as a directory or an outer
 ZIP/XAPK/APKS archive containing `base.apk` and its configuration splits:
 
 ```powershell
-re-agent pipeline --binary app.xapk --goal "authorized test goal" `
+reforge pipeline --binary app.xapk --goal "authorized test goal" `
   --repack-apk --installer-package com.example.installer
 ```
 
@@ -217,8 +217,9 @@ does not decode the manifest or resources and therefore does not require
 `apktool`. Structural changes—including Frida Gadget, manifest, smali,
 resources, or native libraries—also require `apktool`. The Windows setup script
 installs the signer in the managed tool directory; alternatively,
-`RE_AGENT_APK_SIGNER_JAR` can select one explicitly. `RE_AGENT_APKTOOL` can pin
-a specific apktool launcher; otherwise PATH and managed installs are checked.
+`REFORGE_APK_SIGNER_JAR` (or legacy `RE_AGENT_APK_SIGNER_JAR`) can select one explicitly.
+`REFORGE_APKTOOL` (or legacy `RE_AGENT_APKTOOL`) can pin a specific apktool launcher;
+otherwise PATH and managed installs are checked.
 Without runtime injection, repackaging is refused unless a real textual bundle
 patch was produced. A zero exit status is returned only when the requested
 artifact exists, its signature/alignment verify, and the expected modified
@@ -229,15 +230,15 @@ embed Frida Gadget from the managed tool installation:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup_android_tools.ps1
-re-agent doctor
-re-agent pipeline --binary app.apk --goal "trace the player balance" `
+reforge doctor
+reforge pipeline --binary app.apk --goal "trace the player balance" `
   --embed-frida-gadget --frida-gadget-on-load resume
 ```
 
 Runtime embedding remains deliberately opt-in. The pipeline never downloads
 Gadget during an analysis run; the separate setup script performs pinned,
-hash-verified installation. `RE_AGENT_FRIDA_GADGET_DIR` and
-`RE_AGENT_FRIDA_GADGET_VERSION` select the managed input automatically.
+hash-verified installation. `REFORGE_FRIDA_GADGET_DIR` and
+`REFORGE_FRIDA_GADGET_VERSION` (or legacy `RE_AGENT_FRIDA_GADGET_*`) select the managed input automatically.
 `--frida-gadget-path` and `--frida-gadget-version` remain explicit overrides.
 A single `.so` or `.so.xz` may be supplied for a single-ABI APK; a directory
 must contain one matching ELF Gadget for every ABI shipped by a multi-ABI APK.

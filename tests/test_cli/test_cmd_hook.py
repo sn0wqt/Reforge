@@ -621,3 +621,22 @@ def test_esp_helper_is_emitted_once_with_matching_signature() -> None:
     code = generate_universal_hook_for_goal("esp", analyzed_targets=targets)
     assert code.count("struct Vector2 { float x, y; };") == 1
     assert "WorldToScreen(worldPos, viewMatrix, screenW, screenH, screenPos)" in code
+
+
+def test_frida_scaffolding_uses_reforge_log_tag() -> None:
+    from re_agent.cli.cmd_hook import generate_frida_java_script
+    from re_agent.llm.analyzed_target import AnalyzedTarget
+
+    target = AnalyzedTarget(
+        "com.game.Wallet",
+        "getCoins",
+        confidence=95,
+        parameter_types=(),
+        method_descriptor="()I",
+        signature_verified=True,
+        address_verified=True,
+        implementation_ready=True,
+    )
+    code = generate_frida_java_script("unlimited coins", [target], pathway="android-java-kotlin-dex")
+    assert "[reforge]" in code
+    assert "Reforge Frida candidate scaffolding loaded" in code

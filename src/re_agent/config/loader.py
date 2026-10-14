@@ -81,44 +81,52 @@ def discover_config_path() -> Path | None:
     """Find the default configuration for an installed or editable checkout.
 
     The CLI is commonly launched from the directory that contains the target
-    binary rather than from the re-agent repository.  In an editable install,
+    binary rather than from the Reforge repository.  In an editable install,
     silently falling back to dataclass defaults in that situation changes the
     configured provider and data-handling policy.  Prefer an explicit
-    ``RE_AGENT_CONFIG`` path, then the current directory, then the editable
-    checkout root.  A normal wheel install has no checkout-level YAML and
-    therefore continues to use schema defaults unless the user supplies one.
+    ``REFORGE_CONFIG`` or ``RE_AGENT_CONFIG`` path, then the current directory,
+    then the editable checkout root.  A normal wheel install has no checkout-level
+    YAML and therefore continues to use schema defaults unless the user supplies one.
     """
-    configured = os.environ.get("RE_AGENT_CONFIG")
+    configured = os.environ.get("REFORGE_CONFIG") or os.environ.get("RE_AGENT_CONFIG")
     if configured:
         configured_path = Path(configured).expanduser()
         if not configured_path.is_file():
             raise FileNotFoundError(f"Config file not found: {configured_path}")
         return configured_path.resolve()
 
-    cwd_config = Path.cwd() / "re-agent.yaml"
-    if cwd_config.is_file():
-        return cwd_config.resolve()
+    for filename in ("reforge.yaml", "re-agent.yaml"):
+        cwd_config = Path.cwd() / filename
+        if cwd_config.is_file():
+            return cwd_config.resolve()
 
     # loader.py -> config -> re_agent -> src -> repository root
-    checkout_config = Path(__file__).resolve().parents[3] / "re-agent.yaml"
-    if checkout_config.is_file():
-        return checkout_config.resolve()
+    repo_root = Path(__file__).resolve().parents[3]
+    for filename in ("reforge.yaml", "re-agent.yaml"):
+        checkout_config = repo_root / filename
+        if checkout_config.is_file():
+            return checkout_config.resolve()
     return None
 
 
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
-    """Overlay RE_AGENT_* environment variables onto the raw config dict."""
-    env_mappings: list[tuple[str, list[str], type]] = [
-        ("RE_AGENT_LLM_PROVIDER", ["llm", "provider"], str),
-        ("RE_AGENT_LLM_API_KEY", ["llm", "api_key"], str),
-        ("RE_AGENT_LLM_MODEL", ["llm", "model"], str),
-        ("RE_AGENT_LLM_BASE_URL", ["llm", "base_url"], str),
-        ("RE_AGENT_BACKEND_CLI_PATH", ["backend", "cli_path"], str),
-        ("RE_AGENT_BACKEND_TIMEOUT", ["backend", "timeout_s"], int),
+    """Overlay REFORGE_* or RE_AGENT_* environment variables onto the raw config dict."""
+    env_mappings: list[tuple[tuple[str, ...], list[str], type]] = [
+        (("REFORGE_LLM_PROVIDER", "RE_AGENT_LLM_PROVIDER"), ["llm", "provider"], str),
+        (("REFORGE_LLM_API_KEY", "RE_AGENT_LLM_API_KEY"), ["llm", "api_key"], str),
+        (("REFORGE_LLM_MODEL", "RE_AGENT_LLM_MODEL"), ["llm", "model"], str),
+        (("REFORGE_LLM_BASE_URL", "RE_AGENT_LLM_BASE_URL"), ["llm", "base_url"], str),
+        (("REFORGE_BACKEND_CLI_PATH", "RE_AGENT_BACKEND_CLI_PATH"), ["backend", "cli_path"], str),
+        (("REFORGE_BACKEND_TIMEOUT", "RE_AGENT_BACKEND_TIMEOUT"), ["backend", "timeout_s"], int),
     ]
 
-    for env_var, key_path, cast_type in env_mappings:
-        value = os.environ.get(env_var)
+    for env_vars, key_path, cast_type in env_mappings:
+        value = None
+        for env_var in env_vars:
+            val = os.environ.get(env_var)
+            if val is not None:
+                value = val
+                break
         if value is None:
             continue
 

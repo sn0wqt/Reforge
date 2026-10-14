@@ -652,7 +652,7 @@ def _write_ios_notes(
                 f"Pathway: {architecture.display_name}",
                 "",
                 "Apple IPA code signing requires macOS codesign, a provisioning profile,",
-                "and an Apple Developer certificate. auto-re-agent does not claim to sign",
+                "and an Apple Developer certificate. Reforge does not claim to sign",
                 "an IPA from Windows.",
                 "",
                 bundle_note,
@@ -764,12 +764,12 @@ def _repackage_android(
         return (
             False,
             "No trusted uber-apk-signer JAR was found. Run "
-            "scripts/setup_android_tools.ps1 or set RE_AGENT_APK_SIGNER_JAR.",
+            "scripts/setup_android_tools.ps1 or set REFORGE_APK_SIGNER_JAR / RE_AGENT_APK_SIGNER_JAR.",
         )
 
     signed_apk = output_dir / "modded_app-aligned-signed.apk"
     with tempfile.TemporaryDirectory(
-        prefix="re-agent-apktool-",
+        prefix="reforge-apktool-",
         dir=str(output_dir),
     ) as temporary:
         temporary_path = Path(temporary)
@@ -797,7 +797,7 @@ def _repackage_android(
                 return (
                     False,
                     "apktool is required for manifest/native structural changes, but "
-                    "was not found on PATH and RE_AGENT_APKTOOL is not a valid launcher.",
+                    "was not found on PATH and neither REFORGE_APKTOOL nor RE_AGENT_APKTOOL is a valid launcher.",
                 )
             ok, output = _run_tool(
                 [apktool, "d", "-f", str(binary_path), "-o", str(decoded)]
@@ -1080,7 +1080,7 @@ def _write_patch_summary(
 ) -> Path:
     summary = output_dir / "patch_diff_summary.txt"
     lines = [
-        "re-agent Analysis and Patch Summary",
+        "Reforge Analysis and Patch Summary",
         "===================================",
         f"Pathway {architecture.pathway_id}: {architecture.display_name}",
         f"Platform: {architecture.platform}",
@@ -1157,7 +1157,11 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
             print("[!] Frida Gadget embedding currently supports a single Android APK input only.")
             return 2
         local_frida = _local_frida_version()
-        configured_version = gadget_cli_version or os.environ.get("RE_AGENT_FRIDA_GADGET_VERSION")
+        configured_version = (
+            gadget_cli_version
+            or os.environ.get("REFORGE_FRIDA_GADGET_VERSION")
+            or os.environ.get("RE_AGENT_FRIDA_GADGET_VERSION")
+        )
         resolved_gadget = resolve_frida_gadget_path(
             gadget_cli_value,
             version=str(configured_version or local_frida or "") or None,
@@ -1205,7 +1209,7 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
     ]
 
     print("==========================================================")
-    print("[*] re-agent Universal Analysis Pipeline")
+    print("[*] Reforge Universal Analysis Pipeline")
     print("==========================================================")
     if not configured_output_dir:
         print(f"[+] Default output directory: {output_dir.resolve()}")
@@ -1427,7 +1431,7 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
         from re_agent.cli.cmd_batch import cmd_batch
 
         batch_args = argparse.Namespace(
-            config=getattr(args, "config", "re-agent.yaml"),
+            config=getattr(args, "config", None) or "reforge.yaml",
             auto_discover=True,
             goal=goal or None,
             symbol=None,
@@ -1959,7 +1963,7 @@ def cmd_pipeline(args: argparse.Namespace) -> int:
     if not source.exists() or (source.is_file() and source.suffix.casefold() == ".apk"):
         return _cmd_pipeline_impl(args)
 
-    with tempfile.TemporaryDirectory(prefix="re-agent-split-input-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="reforge-split-input-") as temporary:
         try:
             package_set = resolve_android_package_set(
                 source,

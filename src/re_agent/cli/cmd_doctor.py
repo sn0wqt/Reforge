@@ -1,4 +1,4 @@
-"""Environment diagnostics for re-agent analysis and Android deployment tools."""
+"""Environment diagnostics for Reforge analysis and Android deployment tools."""
 
 from __future__ import annotations
 
@@ -236,7 +236,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
         return 0 if ready else 2
 
-    print("re-agent toolchain doctor")
+    print("reforge toolchain doctor")
     print(f"Managed tools: {managed_tools_root()}")
     for entry in entries:
         required_for = entry.get("required_for", ())

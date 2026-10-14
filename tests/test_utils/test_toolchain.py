@@ -69,3 +69,19 @@ def test_apktool_environment_override_is_shared_by_pipeline_and_doctor(
     monkeypatch.setenv("RE_AGENT_APKTOOL", str(launcher))
 
     assert resolve_apktool() == launcher.resolve()
+
+
+def test_reforge_tools_dir_and_signer_precedence(tmp_path: Path, monkeypatch) -> None:
+    reforge_tools = tmp_path / "reforge_tools"
+    re_agent_tools = tmp_path / "re_agent_tools"
+    monkeypatch.setenv("REFORGE_TOOLS_DIR", str(reforge_tools))
+    monkeypatch.setenv("RE_AGENT_TOOLS_DIR", str(re_agent_tools))
+    assert managed_tools_root() == reforge_tools
+
+    reforge_signer = tmp_path / "reforge_signer.jar"
+    reforge_signer.write_bytes(b"jar1")
+    re_agent_signer = tmp_path / "re_agent_signer.jar"
+    re_agent_signer.write_bytes(b"jar2")
+    monkeypatch.setenv("REFORGE_APK_SIGNER_JAR", str(reforge_signer))
+    monkeypatch.setenv("RE_AGENT_APK_SIGNER_JAR", str(re_agent_signer))
+    assert resolve_apk_signer() == reforge_signer.resolve()

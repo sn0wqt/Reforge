@@ -133,3 +133,12 @@ def test_doctor_optional_android_workflows_do_not_block_analysis(
     assert payload["capabilities"]["android_structural_repack"]["ready"] is False
     assert payload["capabilities"]["gadget_non_root"]["ready"] is False
     assert payload["full_android_toolchain_ready"] is False
+
+
+def test_doctor_banner_output(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        "re_agent.cli.cmd_doctor.collect_toolchain_status",
+        lambda: [],
+    )
+    assert main(["doctor"]) == 0
+    assert "reforge toolchain doctor" in capsys.readouterr().out

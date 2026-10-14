@@ -83,7 +83,9 @@ def test_embed_gadget_patches_manifest_loader_config_and_hashes(tmp_path: Path) 
     config = json.loads((decoded / "lib" / "arm64-v8a" / GADGET_CONFIG_NAME).read_text())
     assert config["interaction"]["on_load"] == "wait"
     assert config["interaction"]["port"] == 28042
-    assert "loadLibrary" in (decoded / "smali" / "re" / "agent" / "GadgetInitProvider.smali").read_text()
+    smali_text = (decoded / "smali" / "re" / "agent" / "GadgetInitProvider.smali").read_text()
+    assert "loadLibrary" in smali_text
+    assert 'const-string v1, "reforge"' in smali_text
 
     manifest = ElementTree.parse(decoded / "AndroidManifest.xml").getroot()
     application = manifest.find("application")
@@ -190,3 +192,4 @@ def test_deployment_notes_are_truthful(tmp_path: Path) -> None:
     assert "forward tcp:28042 tcp:28042" in notes
     assert "new signing certificate" in notes
     assert "Play Integrity" in notes
+    assert "Reforge" in notes

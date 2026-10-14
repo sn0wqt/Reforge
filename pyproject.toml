@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "auto-re-agent"
+name = "reforge"
 version = "0.3.0"
 description = "Evidence-driven autonomous reverse-engineering agent with agentic Ghidra analysis, independent LLM verification, candidate validation, and parity checks"
 readme = "README.md"
@@ -59,12 +59,13 @@ dev = [
 ]
 
 [project.scripts]
+reforge = "re_agent.cli.main:main"
 re-agent = "re_agent.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/sn0wqt/auto-re-agent"
-Repository = "https://github.com/sn0wqt/auto-re-agent"
-Issues = "https://github.com/sn0wqt/auto-re-agent/issues"
+Homepage = "https://github.com/sn0wqt/Reforge"
+Repository = "https://github.com/sn0wqt/Reforge"
+Issues = "https://github.com/sn0wqt/Reforge/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/re_agent"]

@@ -17,7 +17,7 @@ def test_load_default_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     config = load_config(None)
     assert isinstance(config, ReAgentConfig)
     assert config.llm.provider == "codex"
-    assert config.project_profile.name == "generic-cpp"
+    assert config.project_profile.name == "reforge"
     assert config.project_profile.source_root == "output"
     assert config.backend.type == "ghidra-bridge"
     assert config.backend.cli_path == "ghidra-bridge"
@@ -44,13 +44,45 @@ def test_default_config_discovery_works_outside_checkout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REFORGE_CONFIG", raising=False)
     monkeypatch.delenv("RE_AGENT_CONFIG", raising=False)
 
     discovered = discover_config_path()
 
     assert discovered is not None
-    assert discovered.name == "re-agent.yaml"
+    assert discovered.name in ("reforge.yaml", "re-agent.yaml")
     assert discovered.parent.name == "auto-re-agent"
+
+
+def test_reforge_config_env_takes_precedence_over_re_agent_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reforge_cfg = tmp_path / "reforge-custom.yaml"
+    reforge_cfg.write_text("llm:\n  provider: codex\n", encoding="utf-8")
+    legacy_cfg = tmp_path / "legacy-custom.yaml"
+    legacy_cfg.write_text("llm:\n  provider: claude\n", encoding="utf-8")
+
+    monkeypatch.setenv("REFORGE_CONFIG", str(reforge_cfg))
+    monkeypatch.setenv("RE_AGENT_CONFIG", str(legacy_cfg))
+
+    assert discover_config_path() == reforge_cfg.resolve()
+
+
+def test_reforge_yaml_takes_precedence_over_re_agent_yaml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REFORGE_CONFIG", raising=False)
+    monkeypatch.delenv("RE_AGENT_CONFIG", raising=False)
+
+    legacy_yaml = tmp_path / "re-agent.yaml"
+    legacy_yaml.write_text("llm:\n  provider: claude\n", encoding="utf-8")
+    reforge_yaml = tmp_path / "reforge.yaml"
+    reforge_yaml.write_text("llm:\n  provider: codex\n", encoding="utf-8")
+
+    assert discover_config_path() == reforge_yaml.resolve()
 
 
 def test_explicit_environment_config_wins_default_discovery(
@@ -137,6 +169,16 @@ def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     config = load_config(None)
     assert config.llm.provider == "openai"
     assert config.llm.model == "gpt-4o"
+
+
+def test_reforge_env_override_takes_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RE_AGENT_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("REFORGE_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("RE_AGENT_LLM_MODEL", "gpt-4o")
+    monkeypatch.setenv("REFORGE_LLM_MODEL", "claude-3-7-sonnet")
+    config = load_config(None)
+    assert config.llm.provider == "anthropic"
+    assert config.llm.model == "claude-3-7-sonnet"
 
 
 def test_unknown_top_level_section_is_rejected(tmp_path: Path) -> None:

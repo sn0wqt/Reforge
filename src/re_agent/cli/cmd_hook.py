@@ -525,7 +525,7 @@ def generate_frida_java_script(
             replacement: {return_value},
             pathway: {json.dumps(pathway)}
         }};
-        console.log("[re-agent] Hermes property candidate: " + JSON.stringify(candidate));
+        console.log("[reforge] Hermes property candidate: " + JSON.stringify(candidate));
         // Runtime binding is app-specific. Attach this candidate at the JS/native
         // persistence bridge instead of compiling decompiler pseudo-JS.
     }} catch (error) {{
@@ -543,10 +543,10 @@ def generate_frida_java_script(
     try {{
         const TargetClass = Java.use({cls_js});
         const overload = TargetClass[{method_js}].overload({overload_args});
-                console.log("[re-agent] Installing verified return override for "
+                console.log("[reforge] Installing verified return override for "
                     + {label_js} + " " + {json.dumps(method_descriptor)});
                 overload.implementation = function ({fn_params}) {{
-                    console.log("[re-agent] Entered " + {label_js});
+                    console.log("[reforge] Entered " + {label_js});
                     return {return_value};
                 }};
     }} catch (error) {{
@@ -557,7 +557,7 @@ def generate_frida_java_script(
         const TargetClass = Java.use({cls_js});
         const overloads = TargetClass[{method_js}].overloads;
         overloads.forEach(function (overload) {{
-            console.log("[re-agent] Candidate overload (disabled pending signature review): "
+            console.log("[reforge] Candidate overload (disabled pending signature review): "
                 + overload.toString());
         }});
     }} catch (error) {{
@@ -572,19 +572,19 @@ def generate_frida_java_script(
             }.get(pathway, "libil2cpp.so")
             pointer_literal = _native_pointer_literal(getattr(target, "return_value", None))
             if mutation_enabled and pointer_literal is not None:
-                on_leave = f"""console.log("[re-agent] Original return: " + retval);
+                on_leave = f"""console.log("[reforge] Original return: " + retval);
                  retval.replace({pointer_literal});
-                 console.log("[re-agent] Replaced return for " + {label_js});"""
+                 console.log("[reforge] Replaced return for " + {label_js});"""
             else:
-                on_leave = 'console.log("[re-agent] Return unchanged; ABI/type verification required: " + retval);'
+                on_leave = 'console.log("[reforge] Return unchanged; ABI/type verification required: " + retval);'
             return f"""{header}
     try {{
         const module = Process.getModuleByName({json.dumps(module_name)});
         const address = module.base.add(0x{method_rva:X});
-        console.log("[re-agent] Attaching RVA interceptor at " + address
+        console.log("[reforge] Attaching RVA interceptor at " + address
             + " in " + module.name);
          Interceptor.attach(address, {{
-             onEnter(args) {{ console.log("[re-agent] Entered " + {label_js}); }},
+             onEnter(args) {{ console.log("[reforge] Entered " + {label_js}); }},
              onLeave(retval) {{
                  {on_leave}
              }}
@@ -602,7 +602,7 @@ def generate_frida_java_script(
         const method = TargetClass["- " + {method_js}] || TargetClass["+ " + {method_js}];
         if (!method) throw new Error("selector not found");
         Interceptor.attach(method.implementation, {{
-            onEnter(args) {{ console.log("[re-agent] Entered " + {label_js}); }},
+            onEnter(args) {{ console.log("[reforge] Entered " + {label_js}); }},
             onLeave(retval) {{
                 // Review the real ABI before enabling a return replacement.
             }}
@@ -617,7 +617,7 @@ def generate_frida_java_script(
         const address = exported;
         if (address === null || address.isNull()) throw new Error("address unresolved");
         Interceptor.attach(address, {{
-            onEnter(args) {{ console.log("[re-agent] Entered " + {label_js}); }},
+            onEnter(args) {{ console.log("[reforge] Entered " + {label_js}); }},
             onLeave(retval) {{
                 // Review the real ABI before changing arguments or return values.
             }}
@@ -657,7 +657,7 @@ def generate_frida_java_script(
 // Run with: frida -U -f <bundle-or-package-id> -l Hook_Frida.js
 
 {wrapper_start}
-    console.log("[+] re-agent Frida candidate scaffolding loaded");
+    console.log("[+] Reforge Frida candidate scaffolding loaded");
 
     // ============================================================================
     // TARGET GROUP A (VERIFIED ACTIVE TARGETS - >=85% CONFIDENCE)

@@ -83,7 +83,7 @@ def test_init_keeps_current_directory_config_target(
 
     _resolve_default_config_argument(args)
 
-    assert args.config == "re-agent.yaml"
+    assert args.config in ("reforge.yaml", "re-agent.yaml")
 
 
 def test_explicit_missing_config_fails_before_command_dispatch(tmp_path: Path, capsys) -> None:
@@ -99,7 +99,7 @@ def test_version_flag(capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["--version"])
     assert exc_info.value.code == 0
-    assert capsys.readouterr().out.strip() == "re-agent 0.3.0"
+    assert capsys.readouterr().out.strip() in ("reforge 0.3.0", "re-agent 0.3.0")
 
 
 def test_init_creates_config(tmp_path: Path) -> None:

@@ -1,15 +1,15 @@
-"""Default configuration templates for re-agent."""
+"""Default configuration templates for Reforge."""
 
 from __future__ import annotations
 
 from typing import Any
 
 DEFAULT_CONFIG_YAML: str = """\
-# re-agent configuration
-# See: https://github.com/sn0wqt/auto-re-agent for documentation.
+# Reforge configuration
+# See: https://github.com/sn0wqt/Reforge for documentation.
 
 project_profile:
-  name: "generic-cpp"
+  name: "reforge"
   language_standard: "C++20"
   prompt_rules:
     - "Preserve the detected ABI, calling convention, widths, and signedness"
@@ -110,6 +110,22 @@ output:
 """
 
 EXAMPLE_PROFILE_TEMPLATES: dict[str, dict[str, Any]] = {
+    "reforge": {
+        "name": "reforge",
+        "language_standard": "C++20",
+        "prompt_rules": [
+            "Preserve the detected ABI, calling convention, widths, and signedness",
+            "Use evidence-backed names and retain address-based placeholders when unresolved",
+        ],
+        "hook_patterns": [],
+        "stub_patterns": [r"TODO|NOT_IMPLEMENTED"],
+        "stub_markers": ["NOT_IMPLEMENTED"],
+        "stub_call_prefix": "__re_agent_no_stub_prefix__",
+        "class_macro": "",
+        "source_root": "output",
+        "source_extensions": [".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"],
+        "hooks_csv": None,
+    },
     "generic-cpp": {
         "name": "generic-cpp",
         "language_standard": "C++20",
