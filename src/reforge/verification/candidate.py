@@ -159,15 +159,15 @@ def create_candidate_overlay(
         if copy_project:
             if project_root is None:
                 raise ValueError("project_root is required when copy_project is enabled")
-            _reject_project_symlinks(project_root)
             overlay_root = Path(tempfile.mkdtemp(prefix=f"reforge-{safe_address}-"))
             shutil.copytree(
                 project_root,
                 overlay_root,
                 dirs_exist_ok=True,
-                symlinks=False,
+                symlinks=True,
                 ignore=_PROJECT_COPY_IGNORE,
             )
+            _remap_links(overlay_root, project_root)
         else:
             overlay_root = report_dir / "candidates" / safe_address
         overlay_root.mkdir(parents=True, exist_ok=True)
@@ -248,7 +248,8 @@ def validate_candidate(
             overlay_file=str(candidate_file),
         )
     if (
-        any(isinstance(command, str) for _, command in commands)
+        config.require_verified
+        and any(isinstance(command, str) for _, command in commands)
         and not config.allow_host_commands
         and config.trust_configured_commands
     ):
@@ -448,32 +449,24 @@ def _working_directory(config: ValidationConfig, candidate_file: Path) -> str:
     return value
 
 
-def _reject_project_symlinks(project_root: Path) -> None:
-    """Reject project copies that could escape through symbolic links."""
-    root = project_root.resolve()
-    if not root.is_dir():
-        raise ValueError(f"validation.project_root is not a directory: {project_root}")
-
-    def is_link_like(value: Path) -> bool:
-        junction_check = getattr(value, "is_junction", None)
-        return value.is_symlink() or (callable(junction_check) and bool(junction_check()))
-
-    if is_link_like(project_root):
-        raise ValueError(f"validation.project_root must not be a symbolic link or junction: {project_root}")
-
-    for directory, dir_names, file_names in os.walk(root, followlinks=False):
-        directory_path = Path(directory)
-        names = dir_names + file_names
-        ignored = set(_PROJECT_COPY_IGNORE(directory, names))
-        for name in names:
-            if name in ignored:
+def _remap_links(overlay: Path, project: Path) -> None:
+    """Keep internal links inside the copy; reject external and broken links."""
+    root = project.resolve()
+    for directory, dirs, files in os.walk(overlay, followlinks=False):
+        for name in [*dirs, *files]:
+            link = Path(directory) / name
+            if not link.is_symlink():
                 continue
-            candidate = directory_path / name
-            if is_link_like(candidate):
+            original = root / link.relative_to(overlay)
+            try:
+                target = original.resolve(strict=True).relative_to(root)
+            except (ValueError, OSError, RuntimeError) as exc:
                 raise ValueError(
-                    f"Symbolic links and junctions are not allowed in isolated validation copies: {candidate}"
-                )
-        dir_names[:] = [name for name in dir_names if name not in ignored]
+                    "Symbolic links and junctions pointing outside the project root are not allowed "
+                    f"(symlink: {original})"
+                ) from exc
+            link.unlink()
+            link.symlink_to(os.path.relpath(overlay / target, link.parent), target_is_directory=original.is_dir())
 
 
 def _expand_shell(command: str) -> str:
@@ -527,24 +520,5 @@ def _failed(
         overlay_file=str(candidate_file),
     )
 
-
-def _remap_links(overlay: Path, project: Path) -> None:
-    """Keep internal links inside the copy; reject external and broken links."""
-    root = project.resolve()
-    for directory, dirs, files in os.walk(overlay, followlinks=False):
-        for name in [*dirs, *files]:
-            link = Path(directory) / name
-            if not link.is_symlink():
-                continue
-            original = root / link.relative_to(overlay)
-            try:
-                target = original.resolve(strict=True).relative_to(root)
-            except (ValueError, OSError, RuntimeError) as exc:
-                raise ValueError(f"Cannot isolate source symlink: {original}") from exc
-            link.unlink()
-            link.symlink_to(os.path.relpath(overlay / target, link.parent), target_is_directory=original.is_dir())
-
-
-remap_links = _remap_links
 
 

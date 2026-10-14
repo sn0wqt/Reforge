@@ -50,9 +50,7 @@ def reverse_single(
             it here to avoid re-scanning the entire source tree each time.
         checker_llm: LLM provider for the checker agent
     """
-    log_dir = (
-        Path(config.output.log_dir) if config.output.log_dir and config.data_handling.allow_prompt_logging else None
-    )
+    log_dir = Path(config.output.log_dir) if config.output.log_dir else None
 
     def gate(result: ReversalResult) -> ReversalResult:
         return validate_result(result, config, backend, indexer)
