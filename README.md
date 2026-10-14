@@ -28,7 +28,7 @@ Generated code is placed in isolated candidate overlays rather than modifying th
 
 - Python 3.10+
 - Git
-- Ghidra with [ghidra-ai-bridge](https://github.com/sn0wqt/ghidra-ai-bridge) (or an existing [ghidra_bridge](https://github.com/justfoxing/ghidra_bridge) setup)
+- Ghidra with [ghidra-bridge](https://github.com/Dryxio/ghidra-bridge)
 - An authenticated LLM provider:
   - Local CLIProxyAPI (recommended for Antigravity Gemini and Codex models)
   - Codex CLI (`codex`)
@@ -49,7 +49,7 @@ python3 -m pip install -e ".[dev,providers]"
 If using Ghidra as your decompiler backend, install `ghidra-ai-bridge`:
 
 ```bash
-python3 -m pip install "ghidra-ai-bridge @ git+https://github.com/sn0wqt/ghidra-ai-bridge.git@main"
+python3 -m pip install "ghidra-ai-bridge @ git+https://github.com/Dryxio/ghidra-bridge.git@main"
 ```
 
 ## Android Toolchain Setup

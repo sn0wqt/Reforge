@@ -84,7 +84,7 @@ backend:
   timeout_s: 45
 ```
 
-Requires an external Ghidra bridge (`ghidra-ai-bridge` or `ghidra_bridge`) installed and configured to communicate with your Ghidra instance.
+Requires [ghidra-bridge](https://github.com/Dryxio/ghidra-bridge) (`ghidra-ai-bridge`) installed and configured to communicate with your Ghidra instance.
 
 ## Data Handling
 
