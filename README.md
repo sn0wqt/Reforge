@@ -188,12 +188,22 @@ llm:
 ```
 Requires `OPENAI_API_KEY` or `REFORGE_LLM_API_KEY`.
 
+### CLIProxyAPI / Antigravity
+
+Connects to local CLIProxyAPI (`http://127.0.0.1:8317/v1`) using your authenticated Antigravity session and auto-detected `CLIPROXY_API_KEY`:
+
+```yaml
+llm:
+  provider: cliproxy
+  model: gemini-3.8-flash-high
+```
+
 ### Codex CLI
 
 ```yaml
 llm:
   provider: codex
-  model: gpt-5.6-sol
+  model: gpt-6.1-sol
   cli_path: codex
   effort: high
 ```
@@ -201,21 +211,16 @@ Uses local `codex exec` with an authenticated session.
 
 ### Multi-Model Reverser and Checker
 
-Use a fast primary model for generation and a high-reasoning model for checking:
+Reconstruct functions with Gemini 3.8 Flash High and run independent verification checks with GPT 6.1 Sol:
 
 ```yaml
-llm:
-  provider: gemini
-  model: gemini-3.6-flash
-  fallbacks:
-    - provider: codex
-      model: gpt-5.6-sol
-      effort: high
-
 agents:
+  reverser:
+    provider: cliproxy
+    model: gemini-3.8-flash-high
   checker:
     provider: codex
-    model: gpt-5.6-sol
+    model: gpt-6.1-sol
     effort: high
 ```
 
@@ -226,7 +231,7 @@ External model access is opt-in by default:
 ```yaml
 data_handling:
   allow_external_llm: true
-  allowed_providers: [claude, codex, gemini]
+  allowed_providers: [cliproxy, codex, gemini, claude]
   allow_prompt_logging: false
   allow_evidence_persistence: false
   max_prompt_chars: 120000

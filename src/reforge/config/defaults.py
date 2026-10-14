@@ -32,12 +32,28 @@ project_profile:
   hooks_csv: null
 
 llm:
-  provider: "codex"
-  model: "gpt-5.6-sol"
+  provider: "cliproxy"
+  model: "gemini-3.8-flash-high"
   cli_path: "codex"
   effort: "high"
   timeout_s: 600
   max_retries: 0
+
+agents:
+  reverser:
+    provider: "cliproxy"
+    model: "gemini-3.8-flash-high"
+    cli_path: "codex"
+    effort: "high"
+    timeout_s: 600
+    max_retries: 0
+  checker:
+    provider: "codex"
+    model: "gpt-6.1-sol"
+    cli_path: "codex"
+    effort: "high"
+    timeout_s: 600
+    max_retries: 0
 
 backend:
   type: "ghidra-bridge"

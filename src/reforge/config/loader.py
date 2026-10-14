@@ -240,6 +240,13 @@ def _build_llm_config(
     if raw_fallbacks and not allow_fallbacks:
         raise ValueError("Nested LLM fallback chains are not supported")
 
+    if "model" not in values or values["model"] is None:
+        provider = str(values.get("provider", LLMConfig.provider))
+        if provider == "codex":
+            values["model"] = "gpt-6.1-sol"
+        elif provider in ("cliproxy", "cli-proxy", "antigravity", "antigravity-cli", "gemini-cli"):
+            values["model"] = "gemini-3.8-flash-high"
+
     config = _build_with_coercion(LLMConfig, values)
     fallbacks: list[LLMConfig] = []
     for index, item in enumerate(raw_fallbacks):
@@ -262,7 +269,11 @@ def _build_agents_config(
     if unknown_roles:
         raise ValueError(f"Unknown agents role(s): {', '.join(unknown_roles)}")
 
+    default_agents = AgentModelsConfig()
+
     def role(name: str) -> LLMConfig | None:
+        if name not in data:
+            return default_agents.reverser if name == "reverser" else default_agents.checker
         value = data.get(name)
         if value is None:
             return None

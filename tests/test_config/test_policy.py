@@ -56,3 +56,14 @@ def test_policy_accepts_provider_aliases() -> None:
         fallbacks=[LLMConfig(provider="gemini-cli")],
     )
     require_provider_allowed(policy, config, role="reverser")
+
+
+def test_policy_accepts_cliproxy_aliases() -> None:
+    policy = DataHandlingConfig(
+        allow_external_llm=True,
+        allowed_providers=["cliproxy"],
+    )
+    config = LLMConfig(
+        provider="cli-proxy",
+    )
+    require_provider_allowed(policy, config, role="reverser")

@@ -580,7 +580,7 @@ def _deduplicate_targets(targets: list[AnalyzedTarget]) -> list[AnalyzedTarget]:
 
 def create_gemini_provider(
     api_key: str | None = None,
-    model: str = "gemini-3.6-flash",
+    model: str = "gemini-3.8-flash-high",
 ) -> LLMProvider:
     """Create the configured Gemini provider."""
     try:

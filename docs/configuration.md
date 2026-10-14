@@ -32,47 +32,49 @@ When `--config` is omitted, Reforge checks `REFORGE_CONFIG`, `./reforge.yaml`, a
 
 ```yaml
 llm:
-  provider: "claude"        # claude | claude-cli | gemini | openai | openai-compat | codex
-  model: "claude-sonnet-4-5-20250929"
+  provider: "cliproxy"        # cliproxy | codex | claude | gemini | openai | openai-compat
+  model: "gemini-3.8-flash-high"
   api_key: null
   base_url: null
   max_tokens: 4096
   temperature: 0.0
-  timeout_s: 1800
+  timeout_s: 600
   max_retries: 1
   retry_base_delay_s: 1.0
   fallbacks:
     - provider: codex
-      model: gpt-5.6-sol
+      model: gpt-6.1-sol
       effort: high
     - provider: antigravity
-      model: gemini-3.6-flash
+      model: gemini-3.8-flash-high
   input_cost_per_million: 0.0
   output_cost_per_million: 0.0
 ```
 
 Provider details:
 
+- `cliproxy`: Local CLIProxyAPI gateway (`http://127.0.0.1:8317/v1`) using Antigravity OAuth and auto-detected `CLIPROXY_API_KEY`
+- `codex`: Local Codex CLI via authenticated session (`codex exec`). Uses `model: gpt-6.1-sol` and `effort: high`
 - `claude`: Anthropic API via `ANTHROPIC_API_KEY`
-- `openai` / `openai-compat`: OpenAI-compatible endpoint via `OPENAI_API_KEY`
-- `codex`: Local Codex CLI via authenticated session (`codex exec`). Uses `model: gpt-5.6-sol` and `effort: high`
 - `claude-cli`: Local Claude Code CLI session (`claude`)
 - `gemini`: Google GenAI API via `GEMINI_API_KEY` or Vertex AI service account JSON
+- `openai` / `openai-compat`: OpenAI-compatible endpoint via `OPENAI_API_KEY`
 - `fallbacks`: Ordered list of fallback providers if the primary fails with retriable errors
 
-Role-specific overrides allow different models for reverser and checker roles:
+Role-specific overrides configure separate models for the reverser (heavy reconstruction) and checker (verification review):
 
 ```yaml
 agents:
   reverser:
-    provider: claude-cli
-    model: sonnet
-    max_budget_usd: 1.0
-    effort: high
+    provider: cliproxy
+    model: gemini-3.8-flash-high
+    timeout_s: 600
   checker:
     provider: codex
-    model: gpt-5.6-sol
+    model: gpt-6.1-sol
+    cli_path: codex
     effort: high
+    timeout_s: 600
 ```
 
 ## Backend Configuration
@@ -93,7 +95,7 @@ External model access is opt-in to prevent accidental leakage of proprietary cod
 ```yaml
 data_handling:
   allow_external_llm: true
-  allowed_providers: [gemini, codex, antigravity]
+  allowed_providers: [cliproxy, codex, gemini, antigravity]
   allow_prompt_logging: false
   allow_evidence_persistence: false
   max_prompt_chars: 120000

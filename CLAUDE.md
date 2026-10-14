@@ -79,7 +79,7 @@ Tests marked `llm` require API credentials; tests marked `ghidra` require `ghidr
 - `src/reforge/backend/protocol.py`: `REBackend` abstraction. Implementations include Ghidra Bridge, IL2CPP metadata, and stubs.
 
 ### LLM and Reversal Loop
-- `src/reforge/llm/`: Provider interfaces for Claude (API/CLI), OpenAI, Codex CLI, and Gemini API with failover routing.
+- `src/reforge/llm/`: Provider interfaces for CLIProxyAPI (Antigravity), Codex CLI, Claude (API/CLI), OpenAI, and Gemini API with failover routing.
 - `src/reforge/orchestrator/`: Manages address and class runs.
 - `src/reforge/agents/loop.py`: Coordinates independent `ReverserAgent` and `CheckerAgent` in bounded feedback rounds.
 - Backend queries from agents are read-only and strictly validated.

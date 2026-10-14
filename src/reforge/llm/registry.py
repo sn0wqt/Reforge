@@ -75,7 +75,7 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
         from reforge.llm.codex_cli import CodexCLIProvider
 
         return CodexCLIProvider(
-            model=config.model,
+            model=config.model or "gpt-6.1-sol",
             timeout_s=config.timeout_s,
             codex_bin=config.cli_path or "codex",
             effort=config.effort,
@@ -90,6 +90,31 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
             max_tokens=config.max_tokens,
             temperature=config.temperature,
             base_url=config.base_url,
+            timeout_s=config.timeout_s,
+        )
+
+    if config.provider in ("cliproxy", "cli-proxy"):
+        import os
+        import re
+        from pathlib import Path
+
+        from reforge.llm.openai_compat import OpenAIProvider
+
+        api_key = config.api_key or os.environ.get("CLIPROXY_API_KEY")
+        if not api_key:
+            proxy_cfg = Path.home() / "CLIProxyAPI" / "config.yaml"
+            if proxy_cfg.is_file():
+                match = re.search(r"sk-local-[a-f0-9]+", proxy_cfg.read_text(encoding="utf-8"))
+                if match:
+                    api_key = match.group(0)
+
+        base_url = config.base_url or os.environ.get("CLIPROXY_BASE_URL", "http://127.0.0.1:8317/v1")
+        return OpenAIProvider(
+            api_key=api_key or "sk-local-cliproxy",
+            model=config.model or "gemini-3.8-flash-high",
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            base_url=base_url,
             timeout_s=config.timeout_s,
         )
 
@@ -111,7 +136,7 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
         from reforge.llm.antigravity_cli import AntigravityCLIProvider
 
         return AntigravityCLIProvider(
-            model=config.model or "gemini-3.6-flash",
+            model=config.model or "gemini-3.8-flash-high",
             timeout_s=config.timeout_s,
             agy_bin=config.cli_path or "agy",
         )
@@ -119,6 +144,6 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
     raise ValueError(
         f"Unknown LLM provider: {config.provider!r}. "
         f"Supported providers: 'claude', 'claude-cli', 'gemini', 'google-gemini', "
-        f"'antigravity', 'antigravity-cli', 'gemini-cli', 'openai', "
-        f"'openai-compat', 'codex'."
+        f"'antigravity', 'antigravity-cli', 'gemini-cli', 'cliproxy', 'cli-proxy', "
+        f"'openai', 'openai-compat', 'codex'."
     )

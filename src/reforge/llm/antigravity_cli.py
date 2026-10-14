@@ -17,7 +17,7 @@ class AntigravityCLIProvider(BaseLLMProvider):
 
     def __init__(
         self,
-        model: str = "gemini-3.6-flash",
+        model: str = "gemini-3.8-flash-high",
         timeout_s: int = 600,
         agy_bin: str = "agy",
     ) -> None:

@@ -61,7 +61,12 @@ def test_registry_creates_gemini_provider() -> None:
 
 
 def test_registry_creates_codex_provider() -> None:
-    provider = create_provider(LLMConfig(provider="codex", model="gpt-5.6-sol"))
+    provider = create_provider(LLMConfig(provider="codex", model="gpt-6.1-sol"))
+    assert provider.supports_conversations
+
+
+def test_registry_creates_cliproxy_provider() -> None:
+    provider = create_provider(LLMConfig(provider="cliproxy", model="gemini-3.8-flash-high", api_key="test-key"))
     assert provider.supports_conversations
 
 

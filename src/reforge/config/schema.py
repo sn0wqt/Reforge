@@ -40,8 +40,8 @@ class ProjectProfile:
 class LLMConfig:
     """LLM provider configuration."""
 
-    provider: str = "codex"
-    model: str | None = "gpt-5.6-sol"
+    provider: str = "cliproxy"
+    model: str | None = "gemini-3.8-flash-high"
     api_key: str | None = None
     base_url: str | None = None
     max_tokens: int = 4096
@@ -67,8 +67,26 @@ class AgentModelsConfig:
     :class:`LLMConfig`.
     """
 
-    reverser: LLMConfig | None = None
-    checker: LLMConfig | None = None
+    reverser: LLMConfig | None = field(
+        default_factory=lambda: LLMConfig(
+            provider="cliproxy",
+            model="gemini-3.8-flash-high",
+            cli_path="codex",
+            effort="high",
+            timeout_s=600,
+            max_retries=0,
+        )
+    )
+    checker: LLMConfig | None = field(
+        default_factory=lambda: LLMConfig(
+            provider="codex",
+            model="gpt-6.1-sol",
+            cli_path="codex",
+            effort="high",
+            timeout_s=600,
+            max_retries=0,
+        )
+    )
 
 
 @dataclass

@@ -16,7 +16,7 @@ def test_load_default_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr("reforge.config.loader.discover_config_path", lambda: None)
     config = load_config(None)
     assert isinstance(config, ReforgeConfig)
-    assert config.llm.provider == "codex"
+    assert config.llm.provider == "cliproxy"
     assert config.project_profile.name == "reforge"
     assert config.project_profile.source_root == "output"
     assert config.backend.type == "ghidra-bridge"
@@ -225,7 +225,7 @@ agents:
     )
     config = load_config(path)
     assert config.agents.checker is not None
-    assert config.agents.checker.model == "gpt-5.6-sol"
+    assert config.agents.checker.model == "gpt-6.1-sol"
     assert config.agents.checker.model != "gemini-model"
     assert config.agents.checker.service_account_file is None
 
