@@ -28,7 +28,7 @@ Generated code is placed in isolated candidate overlays rather than modifying th
 
 - Python 3.10+
 - Git
-- Ghidra with [ghidra-bridge](https://github.com/Dryxio/ghidra-bridge)
+- Ghidra with [ghidra-bridge](https://github.com/Dryxio/ghidra-bridge) or [REA](https://github.com/morluto/rea) MCP server (`--backend rea`)
 - An authenticated LLM provider:
   - Local CLIProxyAPI (recommended for Antigravity Gemini and Codex models)
   - Codex CLI (`codex`)
@@ -274,7 +274,7 @@ frida -H 127.0.0.1:27042 -n Gadget -l "C:\path\app_output\Hook_Frida.js"
 
 ## Parity Verification Signals
 
-Reforge evaluates generated code against decompilation with 11 heuristic signals:
+Reforge evaluates generated code against decompilation and High-Pcode SSA def-use value flow with 14 heuristic signals:
 
 | Signal | Level | Description |
 |---|---|---|
@@ -282,13 +282,35 @@ Reforge evaluates generated code against decompilation with 11 heuristic signals
 | Stub markers | RED | Source contains configured stub marker |
 | Trivial stub | RED | Small plugin-call body with no control flow |
 | Large ASM, tiny source | RED | Large disassembly with disproportionately small source |
+| Memory writes mismatch | RED | High-Pcode has state-mutating memory writes missing from source |
 | Plugin-call heavy | YELLOW | Plugin calls dominate function body |
 | Short body | YELLOW | Body has fewer than six lines |
 | Low call count | YELLOW | Callees in disassembly greatly exceed source calls |
 | FP sensitivity | YELLOW | Floating-point ops in assembly missing from source |
 | Call-count mismatch | YELLOW | Source and assembly call counts differ beyond threshold |
 | NaN logic | YELLOW | Disassembly NaN checks missing from source |
+| Branch conditions mismatch | YELLOW | High-Pcode conditional branches missing from source control flow |
+| Parameter usage mismatch | YELLOW | Critical formal parameters in High-Pcode unused in source |
 | Inline wrapper | INFO | Source forwards directly to internal implementation |
+
+## Static Triage and Inspection Scanners
+
+Reforge includes built-in, pure-Python static scanners for deep binary and application inspection without requiring heavy external tools:
+
+| Scanner | Module | Capabilities |
+|---|---|---|
+| Binary Mitigations | `reforge.core.scanners.mitigation_scanner` | Static ASLR/PIE, NX/DEP, Stack Canaries, RELRO, SafeSEH, CFG, Fortify, and RPATH for ELF, PE, and Mach-O |
+| Go Runtime | `reforge.core.scanners.go_scanner` | Go buildinfo 16-byte aligned magic, compiler versions, module paths, build flags, and dependency graphs |
+| Rust Runtime | `reforge.core.scanners.rust_scanner` | Cargo-auditable `.dep-v0` zlib decompression, crate dependencies, and rustc commit hashes |
+| .NET / Unity | `reforge.core.scanners.dotnet_scanner` | PE CLI Header Directory 14, ECMA-335 `BSJB` metadata root, assembly references, and Unity Mono detection |
+| Flutter / Dart | `reforge.core.scanners.flutter_scanner` | Dart VM snapshot hashes (`0xf50xf50xdc0xdc`), GNU build-id, Dart package manifests, and snapshot ABIs |
+| Electron & ASAR | `reforge.utils.asar` & `electron_scanner` | Chromium Pickle ASAR header validation, zero-unpack range streaming, companion `.unpacked` resolution, and fuse sentinels |
+| SQLite & WAL | `reforge.core.scanners.sqlite_scanner` | Read-only schema extraction (`immutable=1&mode=ro`), quiescence verification, table/column/index/trigger inspection, and WAL frames |
+| Network Captures | `reforge.core.scanners.har_scanner` | HAR 1.2 parsing, structural auth redaction, URL userinfo scrubbing, and automatic 4-rule path templating (`numeric`, `uuid`, `hex`, `iso-date`) |
+| Web & JS Deobfuscation | `reforge.utils.web_deobfuscator` | Webpack 4/5 unbundling, string array lookup inlining, hex/unicode decoding, Electron IPC channel tracing, and `contextBridge` mapping |
+| Hardened ADB | `reforge.utils.adb` | Safe shell operand quoting (`quote_shell_operand`), NUL-delimited directory listing, split APK puller, and `dumpsys package` parser |
+| Live Frida Runner | `reforge.dynamic.frida_runner` | Interactive Frida session manager with circular FIFO buffer (16 MiB), secret redaction, and paused spawn orphan prevention |
+
 
 Run parity independently on existing source:
 
