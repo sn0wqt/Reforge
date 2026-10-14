@@ -188,4 +188,3 @@ def test_session_bind_archives_history(tmp_path: Path) -> None:
     archived = raw["history"][0]
     assert archived["identity"] == "identity-alpha"
     assert "00000100" in archived["functions"]
-

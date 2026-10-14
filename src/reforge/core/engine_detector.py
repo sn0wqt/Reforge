@@ -15,7 +15,11 @@ from reforge.core.scanners.dotnet_scanner import DotNetScanner
 from reforge.core.scanners.electron_scanner import ElectronScanner
 from reforge.core.scanners.flutter_scanner import FlutterScanner
 from reforge.core.scanners.go_scanner import GoScanner
+from reforge.core.scanners.mitigation_scanner import MitigationScanner
+from reforge.core.scanners.pe_resource_scanner import PeResourceScanner
+from reforge.core.scanners.plist_scanner import PlistScanner
 from reforge.core.scanners.rust_scanner import RustScanner
+from reforge.core.scanners.wasm_scanner import WasmScanner
 from reforge.utils.archives import (
     ArchiveSafetyError,
     inspect_archive,
@@ -264,10 +268,7 @@ def _resolve_web_entry_bundle(
     infos: Sequence[zipfile.ZipInfo],
 ) -> tuple[str | None, str | None]:
     """Return ``(index_html, entry_javascript)`` for packaged web apps."""
-    by_normalized = {
-        info.filename.replace("\\", "/").casefold(): info
-        for info in infos
-    }
+    by_normalized = {info.filename.replace("\\", "/").casefold(): info for info in infos}
     index_info = next(
         (by_normalized[name] for name in ANDROID_WEB_INDEX_MEMBERS if name in by_normalized),
         None,
@@ -424,23 +425,27 @@ def _detect_archive(path: Path) -> ArchitectureDetection:
             detected_components=component_tuple,
             detection_notes=(
                 f"packaged web index: {web_index_member}",
-                *(
-                    (f"deployed JavaScript entry: {web_bundle_member}",)
-                    if web_bundle_member
-                    else ()
-                ),
+                *((f"deployed JavaScript entry: {web_bundle_member}",) if web_bundle_member else ()),
             ),
         )
 
     if is_ios:
+        apple_info = PlistScanner.scan_ipa_file(path)
+        apple_notes = tuple(apple_info.notes) if apple_info is not None else ()
+        display_label = (
+            f"Apple iOS App ({apple_info.bundle_name or apple_info.bundle_id})"
+            if apple_info and (apple_info.bundle_name or apple_info.bundle_id)
+            else "Native iOS Swift / Objective-C"
+        )
         return _detection(
             8,
             "native-ios-swift-objc",
             "ios",
             "ios-swift-objc",
-            "Native iOS Swift / Objective-C",
+            display_label,
             package_type="ipa",
             detected_components=component_tuple,
+            detection_notes=apple_notes,
         )
 
     if any("libapp.so" in name for name in normalized):
@@ -551,7 +556,35 @@ def _detect_file(path: Path) -> ArchitectureDetection:
             "unity-il2cpp",
             "Unity IL2CPP (iOS)",
         )
+    if magic.startswith(b"\x00asm") or path.suffix.lower() == ".wasm":
+        wasm_info = WasmScanner.scan_file(path)
+        if wasm_info is not None:
+            return _detection(
+                7,
+                f"wasm-{wasm_info.runtime}",
+                "wasm",
+                "wasm",
+                f"WebAssembly ({wasm_info.runtime})",
+                detection_notes=tuple(wasm_info.notes),
+            )
+
+    if path.suffix.lower() == ".asar":
+        return _detection(
+            6,
+            "electron-asar",
+            "desktop",
+            "electron-asar",
+            "Electron ASAR Container",
+            package_type="asar",
+        )
+
     if magic.startswith(b"MZ") or path.suffix.lower() in {".exe", ".dll"}:
+        mit_report = MitigationScanner.scan_file(path)
+        mit_notes = tuple(mit_report.notes) if mit_report is not None else ()
+        pe_res = PeResourceScanner.scan_file(path)
+        pe_notes = tuple(pe_res.notes) if pe_res is not None else ()
+        combined_aux_notes = (*pe_notes, *mit_notes)
+
         dotnet_info = DotNetScanner.probe_file(path)
         if dotnet_info is not None:
             if dotnet_info.is_unity:
@@ -561,7 +594,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                     "windows",
                     "unity-dotnet",
                     "Unity .NET / Mono (Windows)",
-                    detection_notes=dotnet_info.notes,
+                    detection_notes=(*dotnet_info.notes, *combined_aux_notes),
                 )
             return _detection(
                 7,
@@ -569,7 +602,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                 "windows",
                 "dotnet",
                 f".NET Assembly ({dotnet_info.clr_version})",
-                detection_notes=dotnet_info.notes,
+                detection_notes=(*dotnet_info.notes, *combined_aux_notes),
             )
         go_info = GoScanner.probe_file(path)
         if go_info is not None:
@@ -579,7 +612,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                 "windows",
                 "go",
                 f"Go Binary ({go_info.version})",
-                detection_notes=go_info.notes,
+                detection_notes=(*go_info.notes, *combined_aux_notes),
             )
         rust_info = RustScanner.probe_file(path)
         if rust_info is not None:
@@ -589,7 +622,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                 "windows",
                 "rust",
                 f"Rust Binary ({len(rust_info.crates)} crates)",
-                detection_notes=rust_info.notes,
+                detection_notes=(*rust_info.notes, *combined_aux_notes),
             )
         electron_info = ElectronScanner.probe_file(path)
         if electron_info is not None and electron_info.is_electron:
@@ -599,16 +632,24 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                 "windows",
                 "electron",
                 "Electron Desktop (Windows)",
-                detection_notes=electron_info.notes,
+                detection_notes=(*electron_info.notes, *combined_aux_notes),
             )
+        display_pe_name = "Native C/C++ Windows"
+        if pe_res and (pe_res.product_name or pe_res.company_name):
+            name_part = pe_res.product_name or "Windows App"
+            display_pe_name = f"{name_part} (PE Binary)"
         return _detection(
             7,
             "native-cpp-unreal-flutter",
             "windows",
             "native-pe",
-            "Native C/C++ Windows",
+            display_pe_name,
+            detection_notes=combined_aux_notes,
         )
     if magic.startswith(b"\x7fELF") or path.suffix.lower() == ".so":
+        mit_report = MitigationScanner.scan_file(path)
+        mit_notes = tuple(mit_report.notes) if mit_report is not None else ()
+
         if path.name.lower() in ("libapp.so", "libflutter.so"):
             flutter_info = FlutterScanner.probe_file(path)
             if flutter_info is not None:
@@ -618,7 +659,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                     "android",
                     "flutter",
                     "Flutter AOT Library",
-                    detection_notes=flutter_info.notes,
+                    detection_notes=(*flutter_info.notes, *mit_notes),
                 )
         go_info = GoScanner.probe_file(path)
         if go_info is not None:
@@ -628,7 +669,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                 "unknown",
                 "go",
                 f"Go ELF Binary ({go_info.version})",
-                detection_notes=go_info.notes,
+                detection_notes=(*go_info.notes, *mit_notes),
             )
         rust_info = RustScanner.probe_file(path)
         if rust_info is not None:
@@ -638,7 +679,7 @@ def _detect_file(path: Path) -> ArchitectureDetection:
                 "unknown",
                 "rust",
                 f"Rust ELF Binary ({len(rust_info.crates)} crates)",
-                detection_notes=rust_info.notes,
+                detection_notes=(*rust_info.notes, *mit_notes),
             )
         return _detection(
             7,
@@ -646,14 +687,18 @@ def _detect_file(path: Path) -> ArchitectureDetection:
             "unknown",
             "native-elf",
             "Native ELF (platform unresolved)",
+            detection_notes=mit_notes,
         )
     if is_mach_o(path):
+        mit_report = MitigationScanner.scan_file(path)
+        mit_notes = tuple(mit_report.notes) if mit_report is not None else ()
         return _detection(
             8,
             "native-ios-swift-objc",
             "ios",
             "ios-macho",
             "Native iOS Swift / Objective-C",
+            detection_notes=mit_notes,
         )
     return _detection(
         7,
@@ -776,13 +821,46 @@ def detect_architecture_from_path(
             "Android Java / Kotlin DEX",
             package_type="directory",
         )
-    if any(name.startswith("payload/") for name in normalized):
+    if any(name.startswith("payload/") or name.endswith("info.plist") for name in normalized):
+        apple_info = PlistScanner.scan_file(path)
+        apple_notes = tuple(apple_info.notes) if apple_info is not None else ()
+        display_label = (
+            f"Apple iOS App ({apple_info.bundle_name or apple_info.bundle_id})"
+            if apple_info and (apple_info.bundle_name or apple_info.bundle_id)
+            else "Native iOS Swift / Objective-C"
+        )
         return _detection(
             8,
             "native-ios-swift-objc",
             "ios",
             "ios-swift-objc",
-            "Native iOS Swift / Objective-C",
+            display_label,
+            package_type="directory",
+            detection_notes=apple_notes,
+        )
+    if any(name.endswith(".wasm") for name in normalized):
+        wasm_files = [path / n for n in names if n.endswith(".wasm")]
+        wasm_notes: list[str] = []
+        if wasm_files:
+            winfo = WasmScanner.scan_file(wasm_files[0])
+            if winfo:
+                wasm_notes = list(winfo.notes)
+        return _detection(
+            7,
+            "wasm-generic",
+            "wasm",
+            "wasm",
+            "WebAssembly Directory",
+            package_type="directory",
+            detection_notes=tuple(wasm_notes),
+        )
+    if any(name.endswith(".asar") for name in normalized):
+        return _detection(
+            6,
+            "electron-asar",
+            "desktop",
+            "electron-asar",
+            "Electron Desktop Application",
             package_type="directory",
         )
     if any(name.endswith(".so") for name in normalized):
@@ -812,11 +890,7 @@ def detect_architecture_from_path(
         "native-cpp-unreal-flutter",
         unresolved_platform,
         "native-cpp",
-        (
-            f"Native C/C++ ({unresolved_platform.title()})"
-            if normalized_hint
-            else "Native C/C++ / Unreal / Flutter"
-        ),
+        (f"Native C/C++ ({unresolved_platform.title()})" if normalized_hint else "Native C/C++ / Unreal / Flutter"),
         package_type="directory",
         detection_notes=(f"explicit --platform {platform_hint}",) if normalized_hint else (),
     )

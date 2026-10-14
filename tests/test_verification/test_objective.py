@@ -61,9 +61,7 @@ class _CFGBackend:
         return AnalysisArtifact("cfg", target, json.dumps({"data": self.blocks}))
 
 
-EARLY_RETURN_SOURCE = (
-    "int f(int x) { if (x == 0) return 10; if (x == 1) return 20; if (x == 2) return 30; return 0; }"
-)
+EARLY_RETURN_SOURCE = "int f(int x) { if (x == 0) return 10; if (x == 1) return 20; if (x == 2) return 30; return 0; }"
 EARLY_RETURN_CFG = [
     {"index": 0, "out": [1, 2]},
     {"index": 1, "out": []},
@@ -122,4 +120,3 @@ def test_linear_cfg_blocks_do_not_imply_branching() -> None:
         _CFGBackend("int f(int x) { return x; }", blocks),  # type: ignore[arg-type]
     )
     assert result.verdict == Verdict.PASS
-

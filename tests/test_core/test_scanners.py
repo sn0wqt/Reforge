@@ -186,7 +186,7 @@ def test_flutter_scanner_probe(tmp_path: Path) -> None:
         b"\x7fELF"
         + (b"\x00" * 32)
         + b"\xf5\xf5\xdc\xdc"  # Magic
-        + (b"\x00" * 16)       # Header padding to reach offset + 20
+        + (b"\x00" * 16)  # Header padding to reach offset + 20
         + snapshot_hash
         + b"\x00\x00package:shared_preferences/sp.dart\x00package:dio/dio.dart\x00"
     )

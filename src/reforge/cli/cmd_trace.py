@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal
 
 from reforge.utils.address import format_address
 from reforge.utils.paths import safe_filename
@@ -166,6 +167,44 @@ def cmd_trace(args: argparse.Namespace) -> int:
 
     if attach_target or spawn_target:
         print("[*] Initiating live Frida tracing session...")
+        from reforge.dynamic.frida_runner import (
+            FridaSessionConfig,
+            is_frida_available,
+            run_frida_session,
+        )
+
+        timeout = getattr(args, "timeout", None)
+        timeout_sec = float(timeout) if timeout is not None else None
+
+        if is_frida_available():
+            target_str = spawn_target or attach_target or ""
+            target_val: int | str = int(target_str) if target_str.isdigit() else target_str
+            mode_val: Literal["spawn", "attach"] = "spawn" if spawn_target else "attach"
+            device_val: Literal["local", "usb", "remote"] = "usb" if use_usb else ("remote" if remote_host else "local")
+            cfg = FridaSessionConfig(
+                target=target_val,
+                mode=mode_val,
+                device_type=device_val,
+                remote_address=remote_host,
+            )
+            try:
+                res = run_frida_session(
+                    cfg,
+                    script,
+                    duration=timeout_sec,
+                    stream_to_stdout=True,
+                )
+                if res.error:
+                    print(f"[!] Live tracing error: {res.error}", file=sys.stderr)
+                    return 1
+                return 0
+            except KeyboardInterrupt:
+                print("\n[*] Live tracing interrupted by user.", file=sys.stderr)
+                return 130
+            except Exception as exc:
+                print(f"[!] Live tracing runner error: {exc}", file=sys.stderr)
+                return 1
+
         cmd = ["frida"]
         if use_usb:
             cmd.append("-U")
@@ -178,9 +217,8 @@ def cmd_trace(args: argparse.Namespace) -> int:
             cmd.extend(["-n", attach_target])
 
         cmd.extend(["-l", str(out_path)])
-        timeout = getattr(args, "timeout", None)
         try:
-            print(f"[*] Running command: {' '.join(cmd)}")
+            print(f"[*] Running CLI command: {' '.join(cmd)}")
             if timeout is not None:
                 subprocess.run(cmd, check=True, timeout=timeout)
             else:
@@ -189,7 +227,7 @@ def cmd_trace(args: argparse.Namespace) -> int:
             print(f"[*] Live tracing session completed ({timeout}s limit reached).", file=sys.stderr)
             return 0
         except FileNotFoundError:
-            print("[!] Frida CLI was not found on PATH.", file=sys.stderr)
+            print("[!] Neither Python 'frida' module nor 'frida' CLI was found on PATH.", file=sys.stderr)
             return 2
         except subprocess.CalledProcessError as exc:
             print(f"[!] Live tracing session ended: {exc}", file=sys.stderr)

@@ -561,8 +561,7 @@ def test_unknown_app_entities_flow_from_metadata_to_primary_candidates(
 
     config_file = tmp_path / "reforge.yaml"
     config_file.write_text(
-        'project_profile:\n  name: "generic-cpp"\n'
-        'data_handling:\n  allow_external_llm: false\n',
+        'project_profile:\n  name: "generic-cpp"\ndata_handling:\n  allow_external_llm: false\n',
         encoding="utf-8",
     )
     metadata_dir = tmp_path / "UnknownDump"
@@ -630,8 +629,7 @@ def test_dex_named_tiers_exclude_framework_decoys_and_prefer_app_namespace(
 
     config_file = tmp_path / "reforge.yaml"
     config_file.write_text(
-        'project_profile:\n  name: "generic-cpp"\n'
-        'data_handling:\n  allow_external_llm: false\n',
+        'project_profile:\n  name: "generic-cpp"\ndata_handling:\n  allow_external_llm: false\n',
         encoding="utf-8",
     )
     apk = tmp_path / "base.apk"

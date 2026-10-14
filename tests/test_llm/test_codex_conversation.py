@@ -1,4 +1,5 @@
 """Regression tests for Codex conversation recovery."""
+
 from __future__ import annotations
 
 from typing import Any

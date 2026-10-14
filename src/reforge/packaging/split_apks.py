@@ -62,9 +62,7 @@ def _iter_directory_apks(root: Path) -> tuple[Path, ...]:
                 elif entry.is_file(follow_symlinks=False) and path.suffix.casefold() == ".apk":
                     discovered.append(path.resolve())
                     if len(discovered) > MAX_SPLIT_APKS:
-                        raise SplitApkError(
-                            f"Split package exceeds the {MAX_SPLIT_APKS}-APK safety limit."
-                        )
+                        raise SplitApkError(f"Split package exceeds the {MAX_SPLIT_APKS}-APK safety limit.")
             except OSError:
                 continue
     return tuple(sorted(discovered, key=lambda path: path.as_posix().casefold()))
@@ -74,17 +72,11 @@ def _extract_archive_apks(source: Path, destination: Path) -> tuple[Path, ...]:
     try:
         with zipfile.ZipFile(source, "r") as archive:
             infos = inspect_archive(archive)
-            apk_infos = [
-                info
-                for info in infos
-                if not info.is_dir() and info.filename.casefold().endswith(".apk")
-            ]
+            apk_infos = [info for info in infos if not info.is_dir() and info.filename.casefold().endswith(".apk")]
             if not apk_infos:
                 return ()
             if len(apk_infos) > MAX_SPLIT_APKS:
-                raise SplitApkError(
-                    f"Split archive exceeds the {MAX_SPLIT_APKS}-APK safety limit."
-                )
+                raise SplitApkError(f"Split archive exceeds the {MAX_SPLIT_APKS}-APK safety limit.")
             destination.mkdir(parents=True, exist_ok=True)
             extracted: list[Path] = []
             for index, info in enumerate(apk_infos, start=1):
@@ -112,10 +104,7 @@ def _apk_inventory(path: Path) -> tuple[set[str], bool]:
         raise SplitApkError(f"Invalid APK member {path.name}: {exc}") from exc
     if "androidmanifest.xml" not in names:
         raise SplitApkError(f"Nested file is not an Android APK: {path.name}")
-    has_executable_dex = any(
-        re.fullmatch(r"classes(?:\d+)?\.dex", name.rsplit("/", 1)[-1])
-        for name in names
-    )
+    has_executable_dex = any(re.fullmatch(r"classes(?:\d+)?\.dex", name.rsplit("/", 1)[-1]) for name in names)
     return names, has_executable_dex
 
 
@@ -163,21 +152,15 @@ def resolve_android_package_set(
     if not apks:
         return None
 
-    inventories: dict[Path, tuple[set[str], bool]] = {
-        apk: _apk_inventory(apk) for apk in apks
-    }
+    inventories: dict[Path, tuple[set[str], bool]] = {apk: _apk_inventory(apk) for apk in apks}
     ranked = sorted(
-        (
-            (_base_score(apk, names, has_dex), apk)
-            for apk, (names, has_dex) in inventories.items()
-        ),
+        ((_base_score(apk, names, has_dex), apk) for apk, (names, has_dex) in inventories.items()),
         key=lambda item: (item[0], item[1].name.casefold()),
         reverse=True,
     )
     if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
         raise SplitApkError(
-            "Split archive has multiple equally plausible base APKs: "
-            f"{ranked[0][1].name}, {ranked[1][1].name}."
+            f"Split archive has multiple equally plausible base APKs: {ranked[0][1].name}, {ranked[1][1].name}."
         )
     base = ranked[0][1]
     splits = tuple(apk for apk in apks if apk != base)
@@ -192,9 +175,7 @@ def resolve_android_package_set(
     ]
     if mismatches:
         detail = ", ".join(f"{name}={identifier or 'unknown'}" for name, identifier in mismatches[:5])
-        raise SplitApkError(
-            f"Split APK package identifiers do not match {base_identifier}: {detail}"
-        )
+        raise SplitApkError(f"Split APK package identifiers do not match {base_identifier}: {detail}")
 
     executable_splits = [split.name for split in splits if inventories[split][1]]
     if executable_splits:

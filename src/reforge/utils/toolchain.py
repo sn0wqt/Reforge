@@ -218,4 +218,3 @@ def resolve_wakaru(explicit: str | Path | None = None) -> Path | None:
         if resolved:
             return Path(resolved).resolve()
     return None
-

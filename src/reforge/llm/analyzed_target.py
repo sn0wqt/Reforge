@@ -113,9 +113,7 @@ class AnalyzedTarget:
             ("json_path", self.json_path),
         ):
             if value is not None and (
-                not isinstance(value, str)
-                or not value.strip()
-                or any(character in value for character in "\r\n\x00")
+                not isinstance(value, str) or not value.strip() or any(character in value for character in "\r\n\x00")
             ):
                 raise ValueError(f"{label} must be a safe non-empty string when provided")
         self.parameter_types = tuple(self.parameter_types)

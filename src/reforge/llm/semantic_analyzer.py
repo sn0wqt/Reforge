@@ -61,9 +61,7 @@ def _candidate_relevance(
 ) -> int:
     """Score a class using only explicit goal terms and exact metadata evidence."""
     class_name, methods, fields = candidate
-    class_score = sum(
-        40 for term in entity_terms if matches_identifier_keyword(term, class_name)
-    )
+    class_score = sum(40 for term in entity_terms if matches_identifier_keyword(term, class_name))
     member_scores = [
         _metadata_member_relevance(
             member,
@@ -107,10 +105,7 @@ def _build_metadata_summary(
     entity_terms: list[str] | None = None,
     *,
     candidates_preselected: bool = False,
-    included_candidates: list[
-        tuple[str, list[dict[str, Any]], list[dict[str, Any]]]
-    ]
-    | None = None,
+    included_candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]] | None = None,
 ) -> str:
     """Build a compact text summary of candidate classes for the LLM.
 
@@ -120,9 +115,7 @@ def _build_metadata_summary(
     """
     terms = entity_terms or []
     selected_candidates = (
-        candidates[:_MAX_CANDIDATES_FOR_LLM]
-        if candidates_preselected
-        else _select_candidate_window(candidates, terms)
+        candidates[:_MAX_CANDIDATES_FOR_LLM] if candidates_preselected else _select_candidate_window(candidates, terms)
     )
     records: list[
         tuple[
@@ -398,9 +391,7 @@ def analyze_metadata(
     entity_targets = extract_entity_keywords(goal)
     terms = expand_goal_terms(goal)
     candidate_window = _select_candidate_window(candidates, terms)
-    submitted_candidates: list[
-        tuple[str, list[dict[str, Any]], list[dict[str, Any]]]
-    ] = []
+    submitted_candidates: list[tuple[str, list[dict[str, Any]], list[dict[str, Any]]]] = []
     summary = _build_metadata_summary(
         candidate_window,
         entity_terms=terms,

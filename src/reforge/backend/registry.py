@@ -65,6 +65,4 @@ def create_backend(
 
         return StubBackend()
 
-    raise ValueError(
-        f"Unknown backend type: {config.type!r}. Supported: ghidra-bridge, ghidra-json, rea, il2cpp, stub"
-    )
+    raise ValueError(f"Unknown backend type: {config.type!r}. Supported: ghidra-bridge, ghidra-json, rea, il2cpp, stub")

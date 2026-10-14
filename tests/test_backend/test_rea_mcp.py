@@ -38,9 +38,7 @@ def test_rea_mcp_backend_mock_calls() -> None:
                                 "name": "calculate_hash",
                                 "signature": "uint32_t calculate_hash(const char* buf, size_t len)",
                                 "pseudocode": (
-                                    "uint32_t calculate_hash(const char* buf, size_t len) {\n"
-                                    "  return 0x42;\n"
-                                    "}"
+                                    "uint32_t calculate_hash(const char* buf, size_t len) {\n  return 0x42;\n}"
                                 ),
                                 "assembly": "push rbp\nmov rbp, rsp\ncall 0x402000\npop rbp\nret",
                                 "callers": [{"address": "0x403000", "name": "main"}],

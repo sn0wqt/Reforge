@@ -185,8 +185,7 @@ class CircularMessageBuffer:
 
         # Evict oldest items while exceeding byte limit or item count limit
         while self._deque and (
-            (self._total_bytes + entry.charge > self.max_bytes)
-            or (len(self._deque) >= self.max_messages)
+            (self._total_bytes + entry.charge > self.max_bytes) or (len(self._deque) >= self.max_messages)
         ):
             evicted = self._deque.popleft()
             self._total_bytes -= evicted.charge
@@ -616,6 +615,7 @@ def run_frida_session(
     Returns:
         FridaRunResult summarizing execution and captured trace output.
     """
+
     def _combined_log_handler(entry: CapturedLogEntry) -> None:
         if stream_to_stdout:
             sys.stdout.write(f"{entry.formatted}\n")

@@ -626,11 +626,7 @@ def generate_frida_java_script(
         console.log("[!] Failed to attach " + {label_js} + ": " + error);
     }}"""
 
-    active_blocks = [
-        block
-        for target in active_targets
-        if (block := _build_js_block(target, mutation_enabled=True))
-    ]
+    active_blocks = [block for target in active_targets if (block := _build_js_block(target, mutation_enabled=True))]
     secondary_blocks = [
         block
         for target in (alt_targets or [])

@@ -421,8 +421,12 @@ def _validate_config(config: ReforgeConfig) -> None:
         value = getattr(config.validation, name)
         if not isinstance(value, list) or not all(
             (isinstance(item, str) and bool(item.strip()))
-            or (isinstance(item, list) and bool(item) and all(isinstance(arg, str) for arg in item)
-                and bool(item[0].strip()))
+            or (
+                isinstance(item, list)
+                and bool(item)
+                and all(isinstance(arg, str) for arg in item)
+                and bool(item[0].strip())
+            )
             for item in value
         ):
             raise ValueError(f"validation.{name} must contain nonempty shell strings or argument arrays")

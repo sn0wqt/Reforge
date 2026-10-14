@@ -107,11 +107,7 @@ def _match_candidate_keyword(
         member_name,
     ):
         return False
-    return (
-        direct
-        or keyword not in CURRENCY_KEYWORDS
-        or is_contextual_currency_match(keyword, class_name, member_name)
-    )
+    return direct or keyword not in CURRENCY_KEYWORDS or is_contextual_currency_match(keyword, class_name, member_name)
 
 
 def _is_application_owned_class(class_name: object, application_identifier: str | None) -> bool:
@@ -247,9 +243,7 @@ def rank_classes_by_relevance(
         for f in fields:
             f_name = str(f.get("name", ""))
             matches = [
-                kw
-                for kw in keywords
-                if _match_candidate_keyword(kw, cls_name, f_name, direct=kw in direct_terms)
+                kw for kw in keywords if _match_candidate_keyword(kw, cls_name, f_name, direct=kw in direct_terms)
             ]
             if matches:
                 score += 20 if any(kw in direct_terms for kw in matches) else 10
@@ -258,9 +252,7 @@ def rank_classes_by_relevance(
         for m in methods:
             m_name = str(m.get("method_name", m.get("name", "")))
             matches = [
-                kw
-                for kw in keywords
-                if _match_candidate_keyword(kw, cls_name, m_name, direct=kw in direct_terms)
+                kw for kw in keywords if _match_candidate_keyword(kw, cls_name, m_name, direct=kw in direct_terms)
             ]
             if matches:
                 score += 15 if any(kw in direct_terms for kw in matches) else 7
@@ -335,10 +327,10 @@ def cmd_batch(
         from reforge.core.dex_parser import parse_apk_or_dex
 
         dex_started = time.monotonic()
-        dex_scan_expected = (
-            Path(binary_arg).suffix.casefold() in {".apk", ".dex"}
-            or engine_type in {"android-java-dex", "react-native-hermes"}
-        )
+        dex_scan_expected = Path(binary_arg).suffix.casefold() in {".apk", ".dex"} or engine_type in {
+            "android-java-dex",
+            "react-native-hermes",
+        }
         if dex_scan_expected:
             print(
                 "[*] Parsing declared executable methods from Android DEX files "
@@ -363,9 +355,7 @@ def cmd_batch(
             )
             if application_identifier:
                 owned_count = sum(
-                    1
-                    for class_name in dex_classes
-                    if _is_application_owned_class(class_name, application_identifier)
+                    1 for class_name in dex_classes if _is_application_owned_class(class_name, application_identifier)
                 )
                 print(
                     f"[+] Manifest application namespace: {application_identifier} "
@@ -1027,9 +1017,8 @@ def cmd_batch(
                         or field_kind not in {"bool", "integer", "float"}
                     ):
                         continue
-                    application_owned = (
-                        not dex_metadata_loaded
-                        or _is_application_owned_class(cls_name, application_identifier)
+                    application_owned = not dex_metadata_loaded or _is_application_owned_class(
+                        cls_name, application_identifier
                     )
                     replacement = infer_primitive_replacement(
                         goal_prompt,
@@ -1043,11 +1032,7 @@ def cmd_batch(
                             hook_type="memory_patch",
                             return_value=replacement,
                             return_type=(
-                                "bool"
-                                if field_kind == "bool"
-                                else "double"
-                                if field_kind == "float"
-                                else "int64_t"
+                                "bool" if field_kind == "bool" else "double" if field_kind == "float" else "int64_t"
                             ),
                             confidence=(
                                 92
@@ -1098,20 +1083,15 @@ def cmd_batch(
                     method_kind = primitive_type_kind(method.get("return_type", ""))
                     if matched_direct is None or method_kind not in {"bool", "integer", "float"}:
                         continue
-                    application_owned = (
-                        not dex_metadata_loaded
-                        or _is_application_owned_class(cls_name, application_identifier)
+                    application_owned = not dex_metadata_loaded or _is_application_owned_class(
+                        cls_name, application_identifier
                     )
                     replacement = infer_primitive_replacement(
                         goal_prompt,
                         type_name=method.get("return_type", ""),
                     )
                     hook_return_type = (
-                        "bool"
-                        if method_kind == "bool"
-                        else "double"
-                        if method_kind == "float"
-                        else "int64_t"
+                        "bool" if method_kind == "bool" else "double" if method_kind == "float" else "int64_t"
                     )
                     fallback_targets.append(
                         AnalyzedTarget(
@@ -1144,9 +1124,7 @@ def cmd_batch(
                                 if isinstance(method.get("parameter_types"), (list, tuple))
                                 else ()
                             ),
-                            method_descriptor=(
-                                str(method["descriptor"]) if method.get("descriptor") else None
-                            ),
+                            method_descriptor=(str(method["descriptor"]) if method.get("descriptor") else None),
                             **_method_activation_facts(
                                 engine_type,
                                 method,

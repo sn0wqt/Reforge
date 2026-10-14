@@ -45,9 +45,7 @@ class Session:
     def _read_data(self) -> dict[str, Any]:
         raw = json.loads(self.path.read_text(encoding="utf-8"))
         schema_valid = (
-            isinstance(raw, dict)
-            and isinstance(raw.get("functions"), dict)
-            and isinstance(raw.get("runs"), list)
+            isinstance(raw, dict) and isinstance(raw.get("functions"), dict) and isinstance(raw.get("runs"), list)
         )
         if not schema_valid:
             logger.warning("Invalid session state in %s: schema mismatch", self.path)

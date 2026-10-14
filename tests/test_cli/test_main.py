@@ -256,6 +256,3 @@ def test_plan_command_executes(tmp_path: Path) -> None:
         )
     assert result == 0
     assert output_path.exists()
-
-
-

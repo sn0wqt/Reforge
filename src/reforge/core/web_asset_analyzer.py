@@ -36,9 +36,7 @@ MAX_SOURCE_RECORDS: Final[int] = 20_000
 MAX_EVIDENCE_SOURCES: Final[int] = 40
 JAVASCRIPT_MAX_SAFE_INTEGER: Final[int] = 9_007_199_254_740_991
 _FEATURE_PATH = re.compile(r"(?:^|/)features/([^/]+)/", re.IGNORECASE)
-_ENDPOINT_LITERAL = re.compile(
-    r"['\"]((?!https?://)[A-Za-z0-9_@.-]+(?:/[A-Za-z0-9_@{}:?.=&-]+)+)['\"]"
-)
+_ENDPOINT_LITERAL = re.compile(r"['\"]((?!https?://)[A-Za-z0-9_@.-]+(?:/[A-Za-z0-9_@{}:?.=&-]+)+)['\"]")
 _PROPERTY_PATH = re.compile(
     r"\b[A-Za-z_$][A-Za-z0-9_$]*"
     r"(?:(?:\?\.)|\.)[A-Za-z_$][A-Za-z0-9_$]*"
@@ -178,11 +176,7 @@ def _endpoint_for_path(
     # Treating ``sparkWallet`` as one opaque token made ``sparkWallet.balance``
     # incorrectly prefer an unrelated ``duo/balance`` endpoint over
     # ``spark/wallet``.
-    path_tokens = [
-        canonical_entity_token(token)
-        for part in json_path.split(".")
-        for token in identifier_tokens(part)
-    ]
+    path_tokens = [canonical_entity_token(token) for part in json_path.split(".") for token in identifier_tokens(part)]
     non_identity_tokens = {
         "amount",
         "available",
@@ -198,15 +192,11 @@ def _endpoint_for_path(
         "total",
         "value",
     }
-    identity_path_tokens = {
-        token for token in path_tokens if token not in non_identity_tokens
-    }
+    identity_path_tokens = {token for token in path_tokens if token not in non_identity_tokens}
     ranked: list[tuple[int, int, str]] = []
     for endpoint, endpoint_feature in endpoints:
         endpoint_tokens = [
-            canonical_entity_token(token)
-            for token in re.findall(r"[A-Za-z0-9]+", endpoint)
-            if token not in {"me"}
+            canonical_entity_token(token) for token in re.findall(r"[A-Za-z0-9]+", endpoint) if token not in {"me"}
         ]
         identity_overlap = identity_path_tokens & set(endpoint_tokens)
         overlap = len(identity_overlap)
@@ -229,8 +219,7 @@ def _replacement_for_path(goal: str, json_path: str) -> tuple[str | None, str]:
     final = json_path.rsplit(".", 1)[-1]
     final_tokens = identifier_tokens(final)
     boolean_shape = bool(
-        final.casefold().startswith(("is", "has", "can", "enabled", "active"))
-        or final_tokens & SUBSCRIPTION_KEYWORDS
+        final.casefold().startswith(("is", "has", "can", "enabled", "active")) or final_tokens & SUBSCRIPTION_KEYWORDS
     )
     type_name = "bool" if boolean_shape else "int64_t"
     replacement = infer_primitive_replacement(goal, type_name=type_name)
@@ -242,9 +231,7 @@ def _replacement_for_path(goal: str, json_path: str) -> tuple[str | None, str]:
         else:
             # JSON numbers are JavaScript doubles. Values above MAX_SAFE_INTEGER
             # silently round and can break equality/cache logic in the client.
-            replacement = str(
-                max(-JAVASCRIPT_MAX_SAFE_INTEGER, min(JAVASCRIPT_MAX_SAFE_INTEGER, numeric))
-            )
+            replacement = str(max(-JAVASCRIPT_MAX_SAFE_INTEGER, min(JAVASCRIPT_MAX_SAFE_INTEGER, numeric)))
     return replacement, type_name
 
 
@@ -252,10 +239,7 @@ def _trim_expression_prefix(json_path: str, endpoint: str | None) -> str:
     """Drop local variable prefixes when an endpoint proves the response root."""
     if not endpoint:
         return json_path
-    endpoint_tokens = {
-        canonical_entity_token(token)
-        for token in re.findall(r"[A-Za-z0-9]+", endpoint)
-    }
+    endpoint_tokens = {canonical_entity_token(token) for token in re.findall(r"[A-Za-z0-9]+", endpoint)}
     parts = json_path.split(".")
     for index, part in enumerate(parts):
         if canonical_entity_token(part) in endpoint_tokens:
@@ -300,9 +284,7 @@ def discover_web_asset_candidates(
                 "video",
             }:
                 continue
-            context = record.content[
-                max(0, match.start() - 180) : min(len(record.content), match.end() + 180)
-            ]
+            context = record.content[max(0, match.start() - 180) : min(len(record.content), match.end() + 180)]
             if not re.search(
                 r"(?:\burl\b|Url\b|PrivateApi|\.(?:get|post|put|patch|delete)\s*\()",
                 context,
@@ -315,24 +297,16 @@ def discover_web_asset_candidates(
         record.feature
         for record in records
         if record.feature is not None
-        and any(
-            canonical_entity_token(record.feature)
-            == canonical_entity_token(term)
-            for term in direct_terms
-        )
+        and any(canonical_entity_token(record.feature) == canonical_entity_token(term) for term in direct_terms)
     }
     value_terms = {
         canonical_entity_token(term)
-        for term in (
-            set(CORE_CURRENCY_VALUE_KEYWORDS)
-            | {"active", "enabled", "ispremium", "premium", "value"}
-        )
+        for term in (set(CORE_CURRENCY_VALUE_KEYWORDS) | {"active", "enabled", "ispremium", "premium", "value"})
     }
     direct_canonical = {canonical_entity_token(term) for term in direct_terms}
     expanded_canonical = {canonical_entity_token(term) for term in expanded_terms}
     subscription_goal = bool(
-        (direct_canonical | expanded_canonical)
-        & {canonical_entity_token(term) for term in SUBSCRIPTION_KEYWORDS}
+        (direct_canonical | expanded_canonical) & {canonical_entity_token(term) for term in SUBSCRIPTION_KEYWORDS}
     )
     if subscription_goal:
         value_terms = {
@@ -353,19 +327,13 @@ def discover_web_asset_candidates(
             continue
         seen_paths: set[str] = set()
         path_occurrences = [
-            (_normalize_property_path(match.group(0)), match.end())
-            for match in _PROPERTY_PATH.finditer(record.content)
+            (_normalize_property_path(match.group(0)), match.end()) for match in _PROPERTY_PATH.finditer(record.content)
         ]
         path_occurrences.extend(
-            (f"{match.group(1)}.{match.group(2)}", -1)
-            for match in _NESTED_OBJECT_PATH.finditer(record.content)
+            (f"{match.group(1)}.{match.group(2)}", -1) for match in _NESTED_OBJECT_PATH.finditer(record.content)
         )
         for json_path, expression_end in path_occurrences:
-            if (
-                expression_end >= 0
-                and expression_end < len(record.content)
-                and record.content[expression_end] == "("
-            ):
+            if expression_end >= 0 and expression_end < len(record.content) and record.content[expression_end] == "(":
                 continue
             if json_path in seen_paths:
                 continue
@@ -374,9 +342,7 @@ def discover_web_asset_candidates(
             if path_parts[0][:1].isupper() or path_parts[0].startswith(("use", "get")):
                 continue
             tokens = {
-                canonical_entity_token(token)
-                for part in json_path.split(".")
-                for token in identifier_tokens(part)
+                canonical_entity_token(token) for part in json_path.split(".") for token in identifier_tokens(part)
             }
             direct_path = bool(tokens & direct_canonical)
             expanded_path = bool(tokens & expanded_canonical)
@@ -403,16 +369,11 @@ def discover_web_asset_candidates(
             ui_tokens = tokens & UI_PENALTY_HINTS
             if ui_tokens and not ui_tokens & direct_canonical:
                 continue
-            if not direct_path and not expanded_path and not (
-                feature_grounded and generic_value_path
-            ):
+            if not direct_path and not expanded_path and not (feature_grounded and generic_value_path):
                 continue
             endpoint = _endpoint_for_path(json_path, record.feature, endpoints)
             response_path = _trim_expression_prefix(json_path, endpoint)
-            endpoint_direct = bool(
-                endpoint
-                and any(_term_in_text(term, endpoint) for term in direct_terms)
-            )
+            endpoint_direct = bool(endpoint and any(_term_in_text(term, endpoint) for term in direct_terms))
             if (
                 not subscription_goal
                 and not direct_path
@@ -424,13 +385,8 @@ def discover_web_asset_candidates(
             replacement, return_type = _replacement_for_path(goal, response_path)
             if replacement is None:
                 continue
-            response_final_tokens = identifier_tokens(
-                response_path.rsplit(".", 1)[-1]
-            )
-            state_value_path = bool(
-                response_final_tokens
-                & {"amount", "balance", "count", "current", "total", "value"}
-            )
+            response_final_tokens = identifier_tokens(response_path.rsplit(".", 1)[-1])
+            state_value_path = bool(response_final_tokens & {"amount", "balance", "count", "current", "total", "value"})
             confidence = (
                 98
                 if endpoint and feature_grounded and state_value_path

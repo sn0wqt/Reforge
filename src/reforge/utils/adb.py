@@ -84,9 +84,7 @@ AdbHostFileNameReason = Literal[
     "trailing_dot_or_space",
 ]
 
-_WINDOWS_RESERVED_BASENAME_RE = re.compile(
-    r"^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)", re.IGNORECASE
-)
+_WINDOWS_RESERVED_BASENAME_RE = re.compile(r"^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)", re.IGNORECASE)
 _WINDOWS_DISALLOWED_CHARS_RE = re.compile(r'[\\:*?"<>|]')
 
 
@@ -122,9 +120,7 @@ def validate_adb_host_file_name(
         return HostFileNameResult(ok=False, reason="dot_segment")
 
     if target_platform == "win32":
-        if _WINDOWS_DISALLOWED_CHARS_RE.search(file_name) or any(
-            0 < ord(c) < 0x20 for c in file_name
-        ):
+        if _WINDOWS_DISALLOWED_CHARS_RE.search(file_name) or any(0 < ord(c) < 0x20 for c in file_name):
             return HostFileNameResult(ok=False, reason="unsupported_character")
         if _WINDOWS_RESERVED_BASENAME_RE.search(file_name):
             return HostFileNameResult(ok=False, reason="reserved_name")
@@ -143,12 +139,7 @@ def display_device_path(device_path: str) -> str:
             out.append(" ")
         elif ch in ("\\", '"'):
             out.append(f"\\{ch}")
-        elif (
-            ord(ch) < 32
-            or ord(ch) == 127
-            or unicodedata.category(ch).startswith(("C", "Z"))
-            or ch == "\u2800"
-        ):
+        elif ord(ch) < 32 or ord(ch) == 127 or unicodedata.category(ch).startswith(("C", "Z")) or ch == "\u2800":
             out.append(f"\\u{{{ord(ch):X}}}")
         else:
             out.append(ch)
@@ -175,9 +166,7 @@ printf '%s\n' "$metadata" | {
   [ "$#" -eq 0 ]
 }"""
 
-_DIRECTORY_METADATA_RE = re.compile(
-    r"^([bcdlps-][rwxstST-]{9})\|([^|\n]+)\|([^|\n]+)\|(\d+)\|([^|\n]+)$"
-)
+_DIRECTORY_METADATA_RE = re.compile(r"^([bcdlps-][rwxstST-]{9})\|([^|\n]+)\|([^|\n]+)\|(\d+)\|([^|\n]+)$")
 
 
 @dataclass(frozen=True)
@@ -302,6 +291,7 @@ def build_directory_listing_args(
 # Package Path Parsing & Split APK Puller
 # -----------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class AdbPackagePathEntry:
     """One APK path belonging to an installed package."""
@@ -334,10 +324,12 @@ def parse_pm_path_output(
         device_path = match.group(1)
         validated = validate_adb_host_file_name(device_path, platform=platform)
         if not validated.ok or validated.file_name is None:
-            rejected_paths.append({
-                "device_path": device_path,
-                "reason": validated.reason or "unknown_error",
-            })
+            rejected_paths.append(
+                {
+                    "device_path": device_path,
+                    "reason": validated.reason or "unknown_error",
+                }
+            )
             continue
 
         file_name = validated.file_name
@@ -387,9 +379,7 @@ def reserve_package_destinations(
             try:
                 res.rmdir()
             except OSError as exc:
-                raise AdbOutputError(
-                    f"Could not release the local filename reservation for {res.name}: {exc}"
-                ) from exc
+                raise AdbOutputError(f"Could not release the local filename reservation for {res.name}: {exc}") from exc
 
 
 @dataclass(frozen=True)
@@ -752,6 +742,7 @@ def parse_package_change_output(
 # Exceptions
 # -----------------------------------------------------------------------------
 
+
 class AdbError(Exception):
     """Base exception for all ADB operations."""
 
@@ -779,6 +770,7 @@ class AdbTimeoutError(AdbError):
 # -----------------------------------------------------------------------------
 # ADB Client Runner
 # -----------------------------------------------------------------------------
+
 
 class AdbClient:
     """Robust ADB automation client executing hardened device commands."""
@@ -826,9 +818,7 @@ class AdbClient:
     ) -> tuple[int, str, str]:
         """Run an ADB command with operands, returning (returncode, stdout, stderr)."""
         full_args = self.build_args(operands)
-        code, out_b, err_b = self.run_cmd_bytes(
-            full_args, timeout_s=timeout_s, max_output_bytes=max_output_bytes
-        )
+        code, out_b, err_b = self.run_cmd_bytes(full_args, timeout_s=timeout_s, max_output_bytes=max_output_bytes)
         return code, out_b.decode("utf-8", errors="replace"), err_b.decode("utf-8", errors="replace")
 
     def run_shell(
@@ -839,12 +829,8 @@ class AdbClient:
         max_output_bytes: int = 32 * 1024 * 1024,
     ) -> tuple[int, str, str]:
         """Run an 'adb shell' command with safely quoted shell operands."""
-        full_args = build_adb_shell_args(
-            shell_operands, serial=self.serial, adb_bin=self.adb_bin
-        )
-        code, out_b, err_b = self.run_cmd_bytes(
-            full_args, timeout_s=timeout_s, max_output_bytes=max_output_bytes
-        )
+        full_args = build_adb_shell_args(shell_operands, serial=self.serial, adb_bin=self.adb_bin)
+        code, out_b, err_b = self.run_cmd_bytes(full_args, timeout_s=timeout_s, max_output_bytes=max_output_bytes)
         return code, out_b.decode("utf-8", errors="replace"), err_b.decode("utf-8", errors="replace")
 
     def list_devices(self, timeout_s: float = 20.0) -> tuple[list[AdbDeviceEntry], list[str], bool]:
@@ -879,9 +865,7 @@ class AdbClient:
         """Query package metadata via `dumpsys package`."""
         return query_package_details(package_name, client=self, timeout_s=timeout_s)
 
-    def list_directory(
-        self, device_path: str, timeout_s: float = 30.0
-    ) -> tuple[list[AdbDirectoryEntry], list[str]]:
+    def list_directory(self, device_path: str, timeout_s: float = 30.0) -> tuple[list[AdbDirectoryEntry], list[str]]:
         """List directory contents safely using the batched NUL-framing script."""
         return list_device_directory(device_path, client=self, timeout_s=timeout_s)
 
@@ -906,6 +890,7 @@ class AdbClient:
 # High-Level Operations
 # -----------------------------------------------------------------------------
 
+
 def list_device_directory(
     device_path: str,
     *,
@@ -916,9 +901,7 @@ def list_device_directory(
 ) -> tuple[list[AdbDirectoryEntry], list[str]]:
     """List directory contents on device safely using NUL-delimited batched stat output."""
     client = client or AdbClient(serial=serial, adb_bin=adb_bin)
-    full_args = build_directory_listing_args(
-        device_path, serial=client.serial, adb_bin=client.adb_bin
-    )
+    full_args = build_directory_listing_args(device_path, serial=client.serial, adb_bin=client.adb_bin)
     code, stdout_bytes, stderr_bytes = client.run_cmd_bytes(full_args, timeout_s=timeout_s)
     if code != 0:
         err_msg = stderr_bytes.decode("utf-8", errors="replace").strip()
@@ -942,13 +925,9 @@ def query_package_details(
 ) -> AdbPackageDetails:
     """Query package properties using `dumpsys package` without shell injection risks."""
     client = client or AdbClient(serial=serial, adb_bin=adb_bin)
-    code, stdout, stderr = client.run_shell(
-        ["dumpsys", "package", package_name], timeout_s=timeout_s
-    )
+    code, stdout, stderr = client.run_shell(["dumpsys", "package", package_name], timeout_s=timeout_s)
     if code != 0 or "Unable to find package:" in stdout or not stdout.strip():
-        raise AdbTargetError(
-            f"Package Manager did not report details for {package_name}; it may not be installed."
-        )
+        raise AdbTargetError(f"Package Manager did not report details for {package_name}; it may not be installed.")
     return parse_dumpsys_package_output(stdout)
 
 
@@ -972,9 +951,7 @@ def pull_split_apks(
     client = client or AdbClient(serial=serial, adb_bin=adb_bin)
     code, stdout, stderr = client.run_shell(["pm", "path", package_name], timeout_s=30.0)
     if code != 0 or not stdout.strip():
-        raise AdbTargetError(
-            f"Package Manager reported no APK paths for {package_name}; it may not be installed."
-        )
+        raise AdbTargetError(f"Package Manager reported no APK paths for {package_name}; it may not be installed.")
 
     paths, rejected_paths, unparsed_lines = parse_pm_path_output(stdout, platform=platform)
 
@@ -986,9 +963,7 @@ def pull_split_apks(
         )
 
     if not paths and not unparsed_lines:
-        raise AdbTargetError(
-            f"Package Manager reported no APK paths for {package_name}; it may not be installed."
-        )
+        raise AdbTargetError(f"Package Manager reported no APK paths for {package_name}; it may not be installed.")
 
     if unparsed_lines:
         raise AdbCommandError(f"pm path reported an unrecognized line: {unparsed_lines[0]}")

@@ -415,9 +415,7 @@ def test_cmd_pipeline_webview_uses_source_maps_instead_of_shell_dex(
             ],
             "sourcesContent": [
                 "const url = 'spark/wallet';\nPrivateApi.get(url).json();",
-                "function set(newBalance: number) {\n"
-                "  cache.set({ wallet: { balance: newBalance } });\n"
-                "}\n",
+                "function set(newBalance: number) {\n  cache.set({ wallet: { balance: newBalance } });\n}\n",
             ],
             "names": [],
             "mappings": "",
@@ -461,9 +459,7 @@ def test_cmd_pipeline_webview_uses_source_maps_instead_of_shell_dex(
     assert "9007199254740991" in hook
     assert hook in modified
     assert not (output_dir / "Hook_Frida.js").exists()
-    manifest = json.loads(
-        (output_dir / "pipeline_manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((output_dir / "pipeline_manifest.json").read_text(encoding="utf-8"))
     assert manifest["pathway"]["engine_type"] == "android-webview-js"
     assert manifest["capabilities"]["static_patch_created"] is True
 

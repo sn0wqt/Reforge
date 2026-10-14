@@ -97,8 +97,7 @@ def verify_candidate(
             branching_blocks = sum(
                 isinstance(block.get("out"), list) and len(set(block["out"])) > 1
                 for block in cfg
-                if isinstance(block.get("out"), list)
-                and all(isinstance(edge, int) for edge in block["out"])
+                if isinstance(block.get("out"), list) and all(isinstance(edge, int) for edge in block["out"])
             )
             source_has_branching = source_flow_count > 0 or bool(re.search(r"\?|&&|\|\|", source_body))
             if branching_blocks >= control_flow_tolerance and branching_blocks > 0 and not source_has_branching:

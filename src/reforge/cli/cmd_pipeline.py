@@ -346,12 +346,9 @@ def _discover_hermes_candidates(
         matching_terms = [term for term in terms if matches_identifier_keyword(term, property_name)]
         if not matching_terms:
             continue
-        tier_matches = [
-            term for term in direct_matching_terms if term in NAMED_TIER_ENTITY_KEYWORDS
-        ]
+        tier_matches = [term for term in direct_matching_terms if term in NAMED_TIER_ENTITY_KEYWORDS]
         tier_contextual = not tier_matches or any(
-            is_named_tier_match_contextual(term, "", property_name)
-            for term in tier_matches
+            is_named_tier_match_contextual(term, "", property_name) for term in tier_matches
         )
         # A named tier such as ``maxPlan`` is meaningful, while bare ALL_CAPS
         # MAX constants are framework implementation details. Use identifier
@@ -368,11 +365,7 @@ def _discover_hermes_candidates(
             # contextual rule above, but discard layout limits and device
             # model suffixes entirely instead of padding the review list.
             continue
-        current_literals = {
-            source_text[start:end]
-            for name, start, end in properties
-            if name == property_name
-        }
+        current_literals = {source_text[start:end] for name, start, end in properties if name == property_name}
         replacements = {
             replacement
             for literal in current_literals
@@ -583,8 +576,7 @@ def _patch_textual_bundle(
         current_literal = original[start:end]
         if not replacement_matches_literal(value, current_literal):
             notes.append(
-                f"Skipped {target.target}: replacement type does not match recovered "
-                f"literal {current_literal!r}."
+                f"Skipped {target.target}: replacement type does not match recovered literal {current_literal!r}."
             )
             continue
         replacements.append((start, end, value, target))
@@ -723,19 +715,20 @@ def _rewrite_apk_member(
                 if info.is_dir():
                     destination.writestr(info, b"")
                     continue
-                with source.open(info, "r") as input_stream, destination.open(
-                    info,
-                    "w",
-                ) as output_stream:
+                with (
+                    source.open(info, "r") as input_stream,
+                    destination.open(
+                        info,
+                        "w",
+                    ) as output_stream,
+                ):
                     shutil.copyfileobj(input_stream, output_stream, length=1024 * 1024)
     except (ArchiveSafetyError, OSError, ValueError, zipfile.BadZipFile) as exc:
         output_apk.unlink(missing_ok=True)
         return False, f"Direct APK asset replacement failed: {exc}"
     if replaced != 1:
         output_apk.unlink(missing_ok=True)
-        return False, (
-            f"Expected exactly one deployable member {safe_member!r}; found {replaced}."
-        )
+        return False, (f"Expected exactly one deployable member {safe_member!r}; found {replaced}.")
     return True, "APK asset member replaced without resource/manifest decoding."
 
 
@@ -777,9 +770,7 @@ def _repackage_android(
         unsigned_apk = temporary_path / "modded_app.apk"
         gadget_embedding: GadgetEmbedding | None = None
         direct_asset_replacement = (
-            gadget_path is None
-            and modified_bundle is not None
-            and architecture.bundle_member is not None
+            gadget_path is None and modified_bundle is not None and architecture.bundle_member is not None
         )
         if direct_asset_replacement:
             assert modified_bundle is not None
@@ -799,9 +790,7 @@ def _repackage_android(
                     "apktool is required for manifest/native structural changes, but "
                     "was not found on PATH and neither REFORGE_APKTOOL nor REFORGE_APKTOOL is a valid launcher.",
                 )
-            ok, output = _run_tool(
-                [apktool, "d", "-f", str(binary_path), "-o", str(decoded)]
-            )
+            ok, output = _run_tool([apktool, "d", "-f", str(binary_path), "-o", str(decoded)])
             if not ok:
                 return False, f"apktool decode failed:\n{output[-2000:]}"
 
@@ -831,9 +820,7 @@ def _repackage_android(
             except GadgetPackagingError as exc:
                 return False, f"Frida Gadget embedding failed: {exc}"
             assert apktool is not None
-            ok, output = _run_tool(
-                [apktool, "b", str(decoded), "-o", str(unsigned_apk)]
-            )
+            ok, output = _run_tool([apktool, "b", str(decoded), "-o", str(unsigned_apk)])
             if not ok or not unsigned_apk.exists():
                 return False, f"apktool build failed:\n{output[-2000:]}"
 
@@ -916,8 +903,7 @@ def _repackage_android(
             if not ok:
                 return (
                     False,
-                    "Split APK signature/alignment verification failed:\n"
-                    + verification_output[-2000:],
+                    "Split APK signature/alignment verification failed:\n" + verification_output[-2000:],
                 )
             final_set = output_dir / "modded_split_apks"
             suffix = 2
@@ -1118,9 +1104,7 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
     )
     split_package: AndroidPackageSet | None = getattr(args, "_android_package_set", None)
     try:
-        installer_package = validate_installer_package(
-            getattr(args, "installer_package", None)
-        )
+        installer_package = validate_installer_package(getattr(args, "installer_package", None))
     except SplitApkError as exc:
         print(f"[!] {exc}")
         return 2
@@ -1295,8 +1279,8 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
 
         print("[*] Recovering original application sources from packaged JavaScript source maps...")
         web_started = time.perf_counter()
-        web_targets, web_evidence_path, recovered_source_count = (
-            discover_web_asset_candidates(binary_path, goal, output_dir)
+        web_targets, web_evidence_path, recovered_source_count = discover_web_asset_candidates(
+            binary_path, goal, output_dir
         )
         print(
             f"[+] Web source-map analysis completed in {time.perf_counter() - web_started:.1f}s; "
@@ -1495,9 +1479,7 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
         )
         for class_name, field_name, offset in discovered_targets
     ]
-    candidates = list(
-        rank_candidates(web_targets + hermes_targets + batch_targets + raw_targets)
-    )
+    candidates = list(rank_candidates(web_targets + hermes_targets + batch_targets + raw_targets))
     if not candidates:
         print(
             "[!] INSUFFICIENT_EVIDENCE: no grounded candidates were discovered. "

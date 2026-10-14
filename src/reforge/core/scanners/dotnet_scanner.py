@@ -74,9 +74,7 @@ class DotNetScanner:
             return None
 
         # 4. Parse IMAGE_COR20_HEADER
-        cb, major_rt, minor_rt, meta_rva, meta_size, flags = struct.unpack_from(
-            "<IHHII I", data, cli_offset
-        )
+        cb, major_rt, minor_rt, meta_rva, meta_size, flags = struct.unpack_from("<IHHII I", data, cli_offset)
         if meta_rva == 0 or meta_size < 16:
             return None
 
@@ -115,10 +113,7 @@ class DotNetScanner:
 
         # 6. Extract assembly references by scanning metadata streams
         assembly_refs = cls._extract_strings(data, meta_offset)
-        is_unity = any(
-            "unity" in ref.lower() or "engine" in ref.lower()
-            for ref in assembly_refs
-        )
+        is_unity = any("unity" in ref.lower() or "engine" in ref.lower() for ref in assembly_refs)
 
         return DotNetInfo(
             clr_version=clr_ver or f"{major_rt}.{minor_rt}",
@@ -183,10 +178,10 @@ class DotNetScanner:
             if 3 <= len(token) <= 64:
                 try:
                     s = token.decode("utf-8")
-                    if any(
-                        s.startswith(p)
-                        for p in ("mscorlib", "System", "Unity", "Newtonsoft", "Microsoft")
-                    ) and s not in extracted:
+                    if (
+                        any(s.startswith(p) for p in ("mscorlib", "System", "Unity", "Newtonsoft", "Microsoft"))
+                        and s not in extracted
+                    ):
                         extracted.append(s)
                 except UnicodeDecodeError:
                     continue

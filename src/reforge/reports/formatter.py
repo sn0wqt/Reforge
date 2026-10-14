@@ -1,4 +1,5 @@
 """Output formatters for reforge results."""
+
 from __future__ import annotations
 
 import json

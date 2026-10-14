@@ -643,8 +643,7 @@ def compare_value_flow(left: ValueFlowGraph, right: ValueFlowGraph) -> ValueFlow
         )
     if left_counts["memory_reads"] != right_counts["memory_reads"]:
         diffs.append(
-            f"Memory reads mismatch: left has {left_counts['memory_reads']}, "
-            f"right has {right_counts['memory_reads']}"
+            f"Memory reads mismatch: left has {left_counts['memory_reads']}, right has {right_counts['memory_reads']}"
         )
     if left_counts["conditional_branches"] != right_counts["conditional_branches"]:
         diffs.append(
@@ -659,8 +658,7 @@ def compare_value_flow(left: ValueFlowGraph, right: ValueFlowGraph) -> ValueFlow
     right_op_counter = Counter(norm_right.opcodes)
     if left_op_counter != right_op_counter:
         diffs.append(
-            f"Opcode frequency mismatch: left has {len(norm_left.opcodes)} ops, "
-            f"right has {len(norm_right.opcodes)} ops"
+            f"Opcode frequency mismatch: left has {len(norm_left.opcodes)} ops, right has {len(norm_right.opcodes)} ops"
         )
 
     # Def-use topology comparison

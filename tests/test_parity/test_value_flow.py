@@ -305,14 +305,16 @@ def test_signal_branch_conditions() -> None:
     # Add a second conditional branch to value flow
     raw = _sample_native_value_flow()
     raw["effects"].append({"operation": "0x10050#5", "kind": "conditional_branch", "value_input": 1})
-    raw["operations"].append({
-        "id": "0x10050#5",
-        "address": "0x10050",
-        "sequence": 5,
-        "opcode": "CBRANCH",
-        "inputs": [],
-        "output": None,
-    })
+    raw["operations"].append(
+        {
+            "id": "0x10050#5",
+            "address": "0x10050",
+            "sequence": 5,
+            "opcode": "CBRANCH",
+            "inputs": [],
+            "output": None,
+        }
+    )
     vf = parse_value_flow(raw)
     ghidra = GhidraData(decompile_ok=True, value_flow=vf)
 

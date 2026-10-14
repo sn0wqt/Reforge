@@ -145,4 +145,3 @@ def test_reversal_result_serialization_roundtrip() -> None:
     assert restored.parity_status == ParityStatus.GREEN
     assert len(restored.parity_findings) == 1
     assert restored.parity_findings[0].reason == "clean match"
-

@@ -38,6 +38,8 @@ def test_export_requires_no_provider_or_backend(tmp_path: Path) -> None:
     plan = build_plan(StubBackend(), ["100"], "a" * 64)
     path = tmp_path / "plan.json"
     plan.save(path)
-    with patch("reforge.llm.registry.create_provider", side_effect=AssertionError), \
-         patch("reforge.backend.registry.create_backend", side_effect=AssertionError):
+    with (
+        patch("reforge.llm.registry.create_provider", side_effect=AssertionError),
+        patch("reforge.backend.registry.create_backend", side_effect=AssertionError),
+    ):
         assert main(["evidence", "--manifest", str(path), "--output", str(tmp_path / "out")]) == 0

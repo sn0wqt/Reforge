@@ -437,9 +437,7 @@ class AsarReader:
         )
 
         # Parse directory listing
-        self._entries = _parse_entries_recursive(
-            self._header, self._base_data_offset, self._archive_size, self._limits
-        )
+        self._entries = _parse_entries_recursive(self._header, self._base_data_offset, self._archive_size, self._limits)
 
     @property
     def archive_size(self) -> int:
@@ -497,13 +495,9 @@ class AsarReader:
                 "(no archive path or unpacked_dir provided)"
             )
         if not self._unpacked_dir.is_dir():
-            raise AsarUnpackedUnavailableError(
-                f"ASAR unpacked companion directory is missing: {self._unpacked_dir}"
-            )
+            raise AsarUnpackedUnavailableError(f"ASAR unpacked companion directory is missing: {self._unpacked_dir}")
         if self._unpacked_dir.is_symlink():
-            raise AsarSafetyError(
-                f"ASAR unpacked companion directory is a symlink: {self._unpacked_dir}"
-            )
+            raise AsarSafetyError(f"ASAR unpacked companion directory is a symlink: {self._unpacked_dir}")
 
         canonical_root = self._unpacked_dir.resolve()
         candidate = (self._unpacked_dir / Path(*PurePosixPath(entry.path).parts)).resolve()
@@ -511,18 +505,14 @@ class AsarReader:
         try:
             candidate.relative_to(canonical_root)
         except ValueError:
-            raise AsarSafetyError(
-                f"ASAR unpacked entry escaped its companion directory: {entry.path!r}"
-            ) from None
+            raise AsarSafetyError(f"ASAR unpacked entry escaped its companion directory: {entry.path!r}") from None
 
         if not candidate.exists():
             raise AsarUnpackedUnavailableError(
                 f"ASAR unpacked member file is missing: {entry.path!r} (expected at {candidate})"
             )
         if not candidate.is_file() or candidate.is_symlink():
-            raise AsarSafetyError(
-                f"ASAR unpacked entry is not a regular file: {entry.path!r} ({candidate})"
-            )
+            raise AsarSafetyError(f"ASAR unpacked entry is not a regular file: {entry.path!r} ({candidate})")
 
         return candidate
 
@@ -549,14 +539,10 @@ class AsarReader:
         if self._archive_path is not None:
             # Independent handle for thread safety and concurrent streaming
             raw_handle = open(self._archive_path, "rb")  # noqa: SIM115
-            return io.BufferedReader(
-                SubrangeReader(raw_handle, entry.data_offset, entry.size, close_raw=True)
-            )
+            return io.BufferedReader(SubrangeReader(raw_handle, entry.data_offset, entry.size, close_raw=True))
 
         # In-memory or shared stream
-        return io.BufferedReader(
-            SubrangeReader(self._file, entry.data_offset, entry.size, close_raw=False)
-        )
+        return io.BufferedReader(SubrangeReader(self._file, entry.data_offset, entry.size, close_raw=False))
 
     def read_file(
         self,

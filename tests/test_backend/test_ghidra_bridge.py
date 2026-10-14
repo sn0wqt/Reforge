@@ -124,13 +124,7 @@ def test_decompile_known_symbol_and_signature() -> None:
 
 
 def test_parse_xrefs_filters_non_hex_lines() -> None:
-    raw = (
-        "0x00401000  FunctionOne\n"
-        "not_an_address  InvalidLine\n"
-        "0x00402000  FunctionTwo\n"
-        "=== Header ===\n"
-        "# Comment\n"
-    )
+    raw = "0x00401000  FunctionOne\nnot_an_address  InvalidLine\n0x00402000  FunctionTwo\n=== Header ===\n# Comment\n"
     results = GhidraBridgeBackend._parse_xrefs(raw, ref_type="CALL")
     assert len(results) == 2
     assert results[0].address == "0x00401000"
@@ -141,12 +135,7 @@ def test_parse_xrefs_filters_non_hex_lines() -> None:
 
 def test_get_struct_legacy_field_format() -> None:
     backend = GhidraBridgeBackend(cli_path="fake-ghidra")
-    mock_output = (
-        "Size: 0x80 (128)\n"
-        "// 0x00 m_vtable\n"
-        "// 0x04 m_nFlags\n"
-        "+0x0008  int32_t  m_nValue\n"
-    )
+    mock_output = "Size: 0x80 (128)\n// 0x00 m_vtable\n// 0x04 m_nFlags\n+0x0008  int32_t  m_nValue\n"
     with patch.object(backend, "_try_run", return_value=mock_output):
         struct_def = backend.get_struct("CTestStruct")
         assert struct_def is not None

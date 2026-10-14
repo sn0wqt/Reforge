@@ -72,10 +72,7 @@ def test_status_cli_preserves_stale_session(tmp_path: Path, capsys: pytest.Captu
     plan.save(tmp_path / "plan.json")
     config.write_text(json.dumps({"output": {"session_file": str(session.path)}}))
     before = session.path.read_bytes()
-    assert (
-        main(["--config", str(config), "status", "--manifest", str(tmp_path / "plan.json"), "--format", "json"])
-        == 0
-    )
+    assert main(["--config", str(config), "status", "--manifest", str(tmp_path / "plan.json"), "--format", "json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["manifest_current"] is False
     assert session.path.read_bytes() == before

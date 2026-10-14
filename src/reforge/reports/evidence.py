@@ -1,4 +1,5 @@
 """Export stored manifest evidence without backend queries or model calls."""
+
 from __future__ import annotations
 
 import json
@@ -53,13 +54,15 @@ def export_evidence(plan: TargetPlan, output: Path) -> None:
         raw = json.dumps(packet, indent=2, sort_keys=True, ensure_ascii=True)
         packet_path = f"functions/{target.address}.json"
         (output / packet_path).write_text(raw + "\n", encoding="utf-8")
-        functions.append([
-            target.address,
-            target.class_name,
-            target.function_name,
-            record.get("selection", ""),
-            packet_path,
-        ])
+        functions.append(
+            [
+                target.address,
+                target.class_name,
+                target.function_name,
+                record.get("selection", ""),
+                packet_path,
+            ]
+        )
         index.append(f"- [{target.address}]({packet_path})")
         context = record.get("context", {})
         if isinstance(context, dict):
@@ -67,12 +70,14 @@ def export_evidence(plan: TargetPlan, output: Path) -> None:
                 items = context.get(kind, [])
                 if isinstance(items, list):
                     for item in items:
-                        references.append([
-                            target.address,
-                            kind,
-                            json.dumps(item, sort_keys=True),
-                            context.get("origin", "unspecified"),
-                        ])
+                        references.append(
+                            [
+                                target.address,
+                                kind,
+                                json.dumps(item, sort_keys=True),
+                                context.get("origin", "unspecified"),
+                            ]
+                        )
     for edge in sorted(plan.edges, key=lambda item: (item["source"], item["target"])):
         calls.append([edge["source"], edge["target"], edge["target"] in addresses])
     for gap in sorted(

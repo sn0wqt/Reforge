@@ -199,9 +199,7 @@ def detect_bundler(source_code: str) -> BundleSignature:
         if chunk_array_end != -1:
             first_element_start = source_code.find("[", push_start + 1)
             if first_element_start != -1 and first_element_start < chunk_array_end:
-                first_element_end = find_matching_delimiter(
-                    source_code, first_element_start, "[", "]"
-                )
+                first_element_end = find_matching_delimiter(source_code, first_element_start, "[", "]")
                 if first_element_end != -1:
                     inner = source_code[first_element_start + 1 : first_element_end]
                     for id_match in re.finditer(r"""["']([^"']+)["']|(\d+)""", inner):
@@ -230,10 +228,7 @@ def detect_bundler(source_code: str) -> BundleSignature:
         r"""(?:\!function\s*\(\s*(\w+)\s*\)|\(function\s*\(\s*(\w+)\s*\))\s*\{\s*var\s+(\w+)\s*=\s*\{\};.*?\b(?:\1|\w+)\[\w+\]\.call\(o\.exports""",
         source_code,
         re.DOTALL,
-    ) or (
-        "__webpack_require__" in source_code
-        and re.search(r"""function\s+__webpack_require__\s*\(""", source_code)
-    ):
+    ) or ("__webpack_require__" in source_code and re.search(r"""function\s+__webpack_require__\s*\(""", source_code)):
         return BundleSignature(
             bundler="webpack",
             runtime_name="webpack-bootstrap",
@@ -508,9 +503,7 @@ def _parse_module_array(source_code: str, arr_start: int, arr_end: int) -> list[
 def _extract_heuristic_modules(source_code: str) -> list[ExtractedModule]:
     """Heuristic extraction for isolated module definitions in minified scripts."""
     modules: list[ExtractedModule] = []
-    pattern = re.compile(
-        r"""(?:\bfunction\s*\([a-zA-Z0-9_$,\s]+\)|\([a-zA-Z0-9_$,\s]+\)\s*=>)\s*\{"""
-    )
+    pattern = re.compile(r"""(?:\bfunction\s*\([a-zA-Z0-9_$,\s]+\)|\([a-zA-Z0-9_$,\s]+\)\s*=>)\s*\{""")
     for match in pattern.finditer(source_code):
         start = match.start()
         brace_start = match.end() - 1
@@ -541,6 +534,7 @@ def decode_escaped_strings(source_code: str) -> str:
 
     Preserves quotes, newlines, and non-printable control bytes to prevent breaking code structure.
     """
+
     def _decode_string_literal(match: re.Match[str]) -> str:
         quote = match.group(1)
         content = match.group(2)

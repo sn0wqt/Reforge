@@ -31,9 +31,7 @@ def compare_commands(
     timeout_s: int = 30,
 ) -> DifferentialResult:
     if not reference or not candidate or not cases:
-        return DifferentialResult(
-            False, findings=["Differential validation requires two harnesses and nonempty cases"]
-        )
+        return DifferentialResult(False, findings=["Differential validation requires two harnesses and nonempty cases"])
     for number, case in enumerate(cases, 1):
         outputs = []
         for role, command in (("reference", reference), ("candidate", candidate)):

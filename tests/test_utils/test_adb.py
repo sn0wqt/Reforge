@@ -116,8 +116,7 @@ def test_validate_adb_host_file_name_universal_rejections() -> None:
 def test_validate_adb_host_file_name_windows_rules() -> None:
     assert validate_adb_host_file_name(r"/data/local/tmp/a\b", platform="win32").reason == "unsupported_character"
     assert (
-        validate_adb_host_file_name("/data/local/tmp/report:2024", platform="win32").reason
-        == "unsupported_character"
+        validate_adb_host_file_name("/data/local/tmp/report:2024", platform="win32").reason == "unsupported_character"
     )
     assert validate_adb_host_file_name("/data/local/tmp/a*b.txt", platform="win32").reason == "unsupported_character"
     assert validate_adb_host_file_name("/data/local/tmp/a?b.txt", platform="win32").reason == "unsupported_character"
@@ -149,7 +148,7 @@ def test_display_device_path() -> None:
 
     long_path = "/" + "a" * 200
     formatted = display_device_path(long_path)
-    assert formatted.endswith('(excerpt)')
+    assert formatted.endswith("(excerpt)")
     assert len(formatted) < 220
 
 
@@ -332,16 +331,15 @@ class MockAdbClient(AdbClient):
 
 
 def test_pull_split_apks_flow() -> None:
-    pm_output = (
-        b"package:/data/app/com.example/base.apk\n"
-        b"package:/data/app/com.example/split_config.arm64_v8a.apk\n"
-    )
+    pm_output = b"package:/data/app/com.example/base.apk\npackage:/data/app/com.example/split_config.arm64_v8a.apk\n"
 
-    mock = MockAdbClient({
-        "pm path com.example": (0, pm_output, b""),
-        "pull /data/app/com.example/base.apk": (0, b"100%", b""),
-        "pull /data/app/com.example/split_config.arm64_v8a.apk": (0, b"100%", b""),
-    })
+    mock = MockAdbClient(
+        {
+            "pm path com.example": (0, pm_output, b""),
+            "pull /data/app/com.example/base.apk": (0, b"100%", b""),
+            "pull /data/app/com.example/split_config.arm64_v8a.apk": (0, b"100%", b""),
+        }
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         result = pull_split_apks("com.example", temp_dir, client=mock)
@@ -366,9 +364,11 @@ def test_pull_split_apks_flow() -> None:
 
 
 def test_pull_split_apks_uninstalled_package() -> None:
-    mock = MockAdbClient({
-        "pm path com.absent": (0, b"", b""),
-    })
+    mock = MockAdbClient(
+        {
+            "pm path com.absent": (0, b"", b""),
+        }
+    )
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         pytest.raises(AdbTargetError, match="Package Manager reported no APK paths"),
@@ -377,13 +377,12 @@ def test_pull_split_apks_uninstalled_package() -> None:
 
 
 def test_pull_split_apks_duplicate_local_destination() -> None:
-    pm_output = (
-        b"package:/data/app/dir1/base.apk\n"
-        b"package:/data/app/dir2/base.apk\n"
+    pm_output = b"package:/data/app/dir1/base.apk\npackage:/data/app/dir2/base.apk\n"
+    mock = MockAdbClient(
+        {
+            "pm path com.dup": (0, pm_output, b""),
+        }
     )
-    mock = MockAdbClient({
-        "pm path com.dup": (0, pm_output, b""),
-    })
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         pytest.raises(AdbOutputError, match="multiple APK paths with the same local file name"),
@@ -393,9 +392,11 @@ def test_pull_split_apks_duplicate_local_destination() -> None:
 
 def test_pull_split_apks_unsafe_device_path() -> None:
     pm_output = b"package:/data/app/pkg/base.apk/\n"
-    mock = MockAdbClient({
-        "pm path com.unsafe": (0, pm_output, b""),
-    })
+    mock = MockAdbClient(
+        {
+            "pm path com.unsafe": (0, pm_output, b""),
+        }
+    )
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         pytest.raises(AdbOutputError, match="cannot be written as a file on this host"),
@@ -454,9 +455,11 @@ def test_parse_dumpsys_package_output_restricted_permissions() -> None:
 
 
 def test_query_package_details_not_found() -> None:
-    mock = MockAdbClient({
-        "dumpsys package com.missing": (0, b"Unable to find package: com.missing\n", b""),
-    })
+    mock = MockAdbClient(
+        {
+            "dumpsys package com.missing": (0, b"Unable to find package: com.missing\n", b""),
+        }
+    )
     with pytest.raises(AdbTargetError, match="Package Manager did not report details"):
         query_package_details("com.missing", client=mock)
 
@@ -552,11 +555,13 @@ def test_parse_package_change_output() -> None:
 
 
 def test_adb_client_methods_with_mock() -> None:
-    client = MockAdbClient({
-        "devices -l": (0, b"List of devices attached\nemulator-5554 device transport_id:1\n", b""),
-        "pm list packages -f -3": (0, b"package:/data/app/app.apk=com.example\n", b""),
-        "getprop": (0, b"[ro.build.version.sdk]: [34]\n", b""),
-    })
+    client = MockAdbClient(
+        {
+            "devices -l": (0, b"List of devices attached\nemulator-5554 device transport_id:1\n", b""),
+            "pm list packages -f -3": (0, b"package:/data/app/app.apk=com.example\n", b""),
+            "getprop": (0, b"[ro.build.version.sdk]: [34]\n", b""),
+        }
+    )
     devices, _, _ = client.list_devices()
     assert len(devices) == 1
     assert devices[0].serial == "emulator-5554"

@@ -49,10 +49,7 @@ def validation_preflight_error(config: ValidationConfig) -> str | None:
     commands: list[str | list[str]] = (
         list(config.build_commands) + list(config.test_commands) + list(config.runtime_commands)
     )
-    has_gates = bool(
-        commands
-        or getattr(config, "differential_cases_file", None)
-    )
+    has_gates = bool(commands or getattr(config, "differential_cases_file", None))
     if not has_gates:
         return "validation.require_verified is true but no build/test/runtime commands are configured"
     if config.require_build and not config.build_commands:
@@ -519,6 +516,3 @@ def _failed(
         checks=checks or [],
         overlay_file=str(candidate_file),
     )
-
-
-

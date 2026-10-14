@@ -88,9 +88,11 @@ class TestHarValidationAndProfiles:
     """Tests for HAR format validation, schema profile, and producer quirks."""
 
     def test_valid_har_12_parsing(self) -> None:
-        data = _build_har([
-            _build_entry("https://api.example.com/v1/health"),
-        ])
+        data = _build_har(
+            [
+                _build_entry("https://api.example.com/v1/health"),
+            ]
+        )
         capture = HarScanner.parse_dict(data)
         assert isinstance(capture, HarCapture)
         assert capture.version == "1.2"
@@ -348,9 +350,7 @@ class TestQueryParameterExtraction:
 
     def test_query_parameter_decoding_and_ordinals(self) -> None:
         entries = [
-            _build_entry(
-                "https://api.test/products?b=1&a+b=2&a%2Bb=3&=4&%E9%9B%AA=5&b=6&&%FF=7&__proto__=8#ignored=9"
-            ),
+            _build_entry("https://api.test/products?b=1&a+b=2&a%2Bb=3&=4&%E9%9B%AA=5&b=6&&%FF=7&__proto__=8#ignored=9"),
             _build_entry("https://api.test/products?b=10"),
             _build_entry("https://api.test/health"),
         ]
@@ -427,10 +427,12 @@ class TestFileIoAndSerialization:
     """Tests for file-based scanning and dictionary serialization."""
 
     def test_scan_file_and_to_dict(self, tmp_path: Path) -> None:
-        har_data = _build_har([
-            _build_entry("https://api.test/v1/users/42"),
-            _build_entry("https://api.test/v1/users/99"),
-        ])
+        har_data = _build_har(
+            [
+                _build_entry("https://api.test/v1/users/42"),
+                _build_entry("https://api.test/v1/users/99"),
+            ]
+        )
         har_file = tmp_path / "test_session.har"
         har_file.write_text(json.dumps(har_data), encoding="utf-8")
 

@@ -322,4 +322,3 @@ def test_validation_empty_command_is_rejected(tmp_path: Path) -> None:
     path.write_text("validation:\n  build_commands:\n    - ''\n", encoding="utf-8")
     with pytest.raises(ValueError, match="must contain nonempty"):
         load_config(path)
-

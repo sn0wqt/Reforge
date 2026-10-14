@@ -18,21 +18,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-CREDENTIAL_HEADERS: frozenset[str] = frozenset({
-    "authorization",
-    "proxy-authorization",
-    "cookie",
-    "set-cookie",
-})
+CREDENTIAL_HEADERS: frozenset[str] = frozenset(
+    {
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "set-cookie",
+    }
+)
 
-API_KEY_HEADERS: frozenset[str] = frozenset({
-    "x-api-key",
-    "api-key",
-    "apikey",
-    "x-auth-token",
-    "x-access-token",
-    "x-token",
-})
+API_KEY_HEADERS: frozenset[str] = frozenset(
+    {
+        "x-api-key",
+        "api-key",
+        "apikey",
+        "x-auth-token",
+        "x-access-token",
+        "x-token",
+    }
+)
 
 MEDIA_TYPE_ESSENCE_RE = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_`|~-]+/[A-Za-z0-9!#$%&'*+.^_`|~-]+$")
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -579,13 +583,15 @@ class HarScanner:
                 parsed_split = urllib.parse.urlsplit(req_url)
                 if "@" in parsed_split.netloc:
                     clean_netloc = parsed_split.netloc.rsplit("@", 1)[-1]
-                    req_url = urllib.parse.urlunsplit((
-                        parsed_split.scheme,
-                        clean_netloc,
-                        parsed_split.path,
-                        parsed_split.query,
-                        parsed_split.fragment,
-                    ))
+                    req_url = urllib.parse.urlunsplit(
+                        (
+                            parsed_split.scheme,
+                            clean_netloc,
+                            parsed_split.path,
+                            parsed_split.query,
+                            parsed_split.fragment,
+                        )
+                    )
                     redactions.append(HarRedaction(pointer="/request/url", reason="transport-credential"))
 
             # Redact explicit sensitive values from URL

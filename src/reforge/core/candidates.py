@@ -82,11 +82,7 @@ def target_activation_facts(
         and not isinstance(offset, bool)
         and offset >= 0
     )
-    native_return_type = (
-        target.return_type
-        if target is not None and target.return_type
-        else ev.get("return_type", "")
-    )
+    native_return_type = target.return_type if target is not None and target.return_type else ev.get("return_type", "")
     exact_il2cpp_integral_override = (
         engine_type.startswith("unity-il2cpp")
         and h_type == "return_override"
@@ -230,11 +226,7 @@ def rank_candidates(
 def _extract_entity_concept(target: AnalyzedTarget) -> str:
     """Extract the primary domain entity concept (e.g., coins, keys) for entity disambiguation."""
     for tokens in (identifier_tokens(target.target), identifier_tokens(target.class_name)):
-        entity_hits = {
-            canonical_entity_token(token)
-            for token in tokens
-            if token in ENTITY_KEYWORDS
-        }
+        entity_hits = {canonical_entity_token(token) for token in tokens if token in ENTITY_KEYWORDS}
         if entity_hits:
             return sorted(entity_hits)[0]
     return f"{target.class_name.casefold()}::{target.target.casefold()}"
@@ -337,11 +329,7 @@ def split_candidates(
     requested, compound_parts = _goal_entity_structure(goal_prompt)
 
     for target in high_conf:
-        entity = (
-            _goal_concept_for_target(target, requested)
-            if requested
-            else _extract_entity_concept(target)
-        )
+        entity = _goal_concept_for_target(target, requested) if requested else _extract_entity_concept(target)
         if entity is None:
             continue
         if entity not in selected_by_entity:

@@ -119,7 +119,7 @@ class RustScanner:
         for i in range(window_start, window_end):
             if data[i] == 0x78 and data[i + 1] in (0x01, 0x9C, 0xDA, 0x5E):
                 try:
-                    decomp = zlib.decompress(data[i:i + 256 * 1024])
+                    decomp = zlib.decompress(data[i : i + 256 * 1024])
                     if b'"packages"' in decomp and b'"version"' in decomp:
                         return cls._parse_auditable_json(decomp)
                 except Exception:

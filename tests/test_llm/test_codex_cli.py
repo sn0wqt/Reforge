@@ -127,4 +127,3 @@ def test_cli_failures_preserve_diagnostics_and_clean_output(monkeypatch: pytest.
     with pytest.raises(RuntimeError, match=match[failure]):
         CodexCLIProvider(timeout_s=7).send([Message(role="user", content="test")])
     assert all(not path.exists() for path in output_paths)
-

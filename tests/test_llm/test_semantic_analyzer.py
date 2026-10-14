@@ -561,9 +561,7 @@ def test_gemini_provider_uses_central_config_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configured_provider = MockLLMProvider("[]")
-    config = SimpleNamespace(
-        llm=SimpleNamespace(provider="gemini", model="configured-model")
-    )
+    config = SimpleNamespace(llm=SimpleNamespace(provider="gemini", model="configured-model"))
     loaded_paths: list[object] = []
 
     def fake_load_config(path: object) -> object:

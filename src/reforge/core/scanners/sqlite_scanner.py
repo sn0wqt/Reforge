@@ -306,9 +306,7 @@ class SqliteScanner:
             total_size += wal_stat_before.st_size
 
         if total_size > max_bytes:
-            raise ValueError(
-                f"Selected SQLite database and WAL exceed combined {max_bytes}-byte budget: {src}"
-            )
+            raise ValueError(f"Selected SQLite database and WAL exceed combined {max_bytes}-byte budget: {src}")
 
         with src.open("rb") as f:
             db_bytes = f.read()
@@ -332,10 +330,7 @@ class SqliteScanner:
 
         # Integrity checks: ensure file did not mutate during read
         db_stat_after = src.stat()
-        if (
-            db_stat_after.st_size != db_stat_before.st_size
-            or db_stat_after.st_mtime_ns != db_stat_before.st_mtime_ns
-        ):
+        if db_stat_after.st_size != db_stat_before.st_size or db_stat_after.st_mtime_ns != db_stat_before.st_mtime_ns:
             raise OSError(f"SQLite database changed during acquisition: {src}")
 
         if has_wal and wal_stat_before is not None:
@@ -427,9 +422,7 @@ class SqliteScanner:
         except sqlite3.OperationalError:
             schema_table = "sqlite_master"
 
-        schema_items = cur.execute(
-            f"SELECT type, name, tbl_name, rootpage, sql FROM main.{schema_table}"
-        ).fetchall()
+        schema_items = cur.execute(f"SELECT type, name, tbl_name, rootpage, sql FROM main.{schema_table}").fetchall()
 
         # Build name case-folding lookup for table references (e.g., triggers)
         canonical_tables = {item[1].lower(): item[1] for item in schema_items if item[0] == "table"}
@@ -446,9 +439,7 @@ class SqliteScanner:
                 without_rowid = bool(listed[4]) if listed else False
                 strict = bool(listed[5]) if listed else False
                 column_count = (
-                    None
-                    if (listed and listed[2] == "virtual" and listed[3] == 0)
-                    else (listed[3] if listed else None)
+                    None if (listed and listed[2] == "virtual" and listed[3] == 0) else (listed[3] if listed else None)
                 )
 
                 # Shadow table detection
@@ -514,9 +505,7 @@ class SqliteScanner:
 
                     # Foreign keys
                     try:
-                        fk_rows = cur.execute(
-                            f"PRAGMA main.foreign_key_list({quoted})"
-                        ).fetchall()
+                        fk_rows = cur.execute(f"PRAGMA main.foreign_key_list({quoted})").fetchall()
                         for fk in fk_rows:
                             foreign_keys.append(
                                 SqliteForeignKey(
@@ -656,9 +645,7 @@ class SqliteScanner:
             )
 
         trunc_cur = conn.cursor()
-        trunc_cur.execute(
-            f"SELECT 1 FROM main.{quoted_table} NOT INDEXED LIMIT 1 OFFSET ?", (limit,)
-        )
+        trunc_cur.execute(f"SELECT 1 FROM main.{quoted_table} NOT INDEXED LIMIT 1 OFFSET ?", (limit,))
         truncated = trunc_cur.fetchone() is not None
 
         return SqliteRowSample(
@@ -703,9 +690,7 @@ class SqliteScanner:
                         wal_artifact=snap.wal_artifact,
                     )
                     if sample_table:
-                        info.sampled_rows = cls.sample_table_rows(
-                            conn, sample_table, limit=row_limit
-                        )
+                        info.sampled_rows = cls.sample_table_rows(conn, sample_table, limit=row_limit)
                     return info
                 finally:
                     conn.close()
@@ -722,9 +707,7 @@ class SqliteScanner:
                             wal_artifact=snap.wal_artifact,
                         )
                         if sample_table:
-                            info.sampled_rows = cls.sample_table_rows(
-                                conn, sample_table, limit=row_limit
-                            )
+                            info.sampled_rows = cls.sample_table_rows(conn, sample_table, limit=row_limit)
                         return info
                     finally:
                         conn.close()

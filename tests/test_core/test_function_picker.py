@@ -102,4 +102,3 @@ def test_pick_next_dependency_order_handles_cycles_and_non_hex_xrefs(tmp_path: P
     assert result is not None
     # All candidates ordered without hanging or crashing on cycles/non-hex symbols
     assert result.function_name in {"FuncA", "FuncB", "FuncC"}
-

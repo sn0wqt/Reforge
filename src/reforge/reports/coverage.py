@@ -1,4 +1,5 @@
 """Reconcile a bounded inventory with existing session results without mutation."""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -27,15 +28,17 @@ def manifest_coverage(plan: TargetPlan, session: Session, current_identity: str)
             status = "accepted" if entry.get("success") else "failed"
         totals[status] += 1
         evidence = entry or checkpoint or {}
-        rows.append({
-            **asdict(target),
-            "status": status,
-            "checker": evidence.get("verdict"),
-            "objective": evidence.get("objective_verdict"),
-            "candidate_validation": evidence.get("validation_verdict"),
-            "validation_checks": evidence.get("validation_checks", []),
-            "parity": evidence.get("parity_status"),
-        })
+        rows.append(
+            {
+                **asdict(target),
+                "status": status,
+                "checker": evidence.get("verdict"),
+                "objective": evidence.get("objective_verdict"),
+                "candidate_validation": evidence.get("validation_verdict"),
+                "validation_checks": evidence.get("validation_checks", []),
+                "parity": evidence.get("parity_status"),
+            }
+        )
     selected = {target.address for target in plan.functions}
     return {
         "planned": len(plan.functions),
@@ -52,17 +55,18 @@ def manifest_coverage(plan: TargetPlan, session: Session, current_identity: str)
 def format_coverage(report: dict[str, Any], markdown: bool = False) -> str:
     lines = [
         report["scope"],
-        f"Planned: {report['planned']}; "
-        + ", ".join(f"{key}: {value}" for key, value in report["totals"].items()),
+        f"Planned: {report['planned']}; " + ", ".join(f"{key}: {value}" for key, value in report["totals"].items()),
         f"Manifest current: {report['manifest_current']}; session current: {report['session_current']}",
         f"External dependencies: {len(report['external_dependencies'])}; evidence gaps: {len(report['gaps'])}",
         "",
     ]
     if markdown:
-        lines.extend([
-            "| Address | Status | Checker | Objective | Candidate validation |",
-            "|---|---|---|---|---|",
-        ])
+        lines.extend(
+            [
+                "| Address | Status | Checker | Objective | Candidate validation |",
+                "|---|---|---|---|---|",
+            ]
+        )
     for row in report["functions"]:
         values = [
             row["address"],

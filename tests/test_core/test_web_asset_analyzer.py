@@ -23,16 +23,10 @@ def _write_web_apk(tmp_path: Path) -> Path:
         "../../src/features/subscription/utils/isPremium.ts",
     ]
     contents = [
-        "const getSparkWalletUrl = 'spark/wallet';\n"
-        "const queryFn = () => PrivateApi.get(getSparkWalletUrl).json();",
-        "function set(newBalance: number) {\n"
-        "  client.setQueryData(key, { wallet: { balance: newBalance } });\n"
-        "}\n",
-        "const getMyProfileUrl = 'profiles/@me';\n"
-        "const queryFn = () => PrivateApi.get(getMyProfileUrl).json();",
-        "export function isPremium(profile) {\n"
-        "  return profile?.isPremium ?? false;\n"
-        "}\n",
+        "const getSparkWalletUrl = 'spark/wallet';\nconst queryFn = () => PrivateApi.get(getSparkWalletUrl).json();",
+        "function set(newBalance: number) {\n  client.setQueryData(key, { wallet: { balance: newBalance } });\n}\n",
+        "const getMyProfileUrl = 'profiles/@me';\nconst queryFn = () => PrivateApi.get(getMyProfileUrl).json();",
+        "export function isPremium(profile) {\n  return profile?.isPremium ?? false;\n}\n",
     ]
     source_map = json.dumps(
         {
@@ -97,9 +91,7 @@ def test_web_entry_patch_contains_only_selected_verified_rules(tmp_path: Path) -
         "grant unlimited sparks",
         tmp_path,
     )
-    primary = list(
-        split_candidates(targets, goal_prompt="grant unlimited sparks").primary
-    )
+    primary = list(split_candidates(targets, goal_prompt="grant unlimited sparks").primary)
     entry = tmp_path / "app.js"
     entry.write_text("export const app = true;\n", encoding="utf-8")
 
@@ -128,8 +120,7 @@ def test_web_endpoint_matching_splits_camel_case_response_roots(
                 "../../src/features/subscription/dialog.tsx",
             ],
             "sourcesContent": [
-                "const sparkUrl = 'spark/wallet';\n"
-                "PrivateApi.get(sparkUrl).json();",
+                "const sparkUrl = 'spark/wallet';\nPrivateApi.get(sparkUrl).json();",
                 "const duoUrl = 'duo/balance';\n"
                 "PrivateApi.get(duoUrl).json();\n"
                 "const shown = sparkWallet.wallet.balance;",
@@ -150,7 +141,4 @@ def test_web_endpoint_matching_splits_camel_case_response_roots(
     wallet_targets = [target for target in targets if target.json_path == "wallet.balance"]
     assert wallet_targets
     assert all(target.endpoint_pattern == "spark/wallet" for target in wallet_targets)
-    assert not any(
-        target.endpoint_pattern == "duo/balance" and target.implementation_ready
-        for target in targets
-    )
+    assert not any(target.endpoint_pattern == "duo/balance" and target.implementation_ready for target in targets)

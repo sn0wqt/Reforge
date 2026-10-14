@@ -426,17 +426,21 @@ class TestFridaSessionRunnerLifecycle:
         assert isinstance(mock_script, MockFridaScript)
 
         # 1. Trace message with secret
-        mock_script.emit_message({
-            "type": "send",
-            "payload": "[reforge] Intercepted token: super_secret_auth_token",
-        })
+        mock_script.emit_message(
+            {
+                "type": "send",
+                "payload": "[reforge] Intercepted token: super_secret_auth_token",
+            }
+        )
 
         # 2. Error message from script
-        mock_script.emit_message({
-            "type": "error",
-            "description": "NullPointer in super_secret_auth_token handler",
-            "stack": "at func() line 12",
-        })
+        mock_script.emit_message(
+            {
+                "type": "error",
+                "description": "NullPointer in super_secret_auth_token handler",
+                "stack": "at func() line 12",
+            }
+        )
 
         # 3. Binary message with secret
         mock_script.emit_message(

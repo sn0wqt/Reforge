@@ -211,7 +211,6 @@ def test_validation_commands_do_not_inherit_interactive_stdin(tmp_path: Path) ->
     run.assert_called_once()
 
 
-
 def test_verified_validation_preflight_rejects_impossible_config() -> None:
     config = ValidationConfig(enabled=True, require_verified=True)
     assert "no build/test/runtime" in str(validation_preflight_error(config))

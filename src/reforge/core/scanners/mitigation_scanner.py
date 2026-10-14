@@ -901,9 +901,7 @@ class MitigationScanner:
         header_size = 32 if is_64 else 28
 
         try:
-            cputype, _, filetype, ncmds, sizeofcmds, flags = struct.unpack_from(
-                f"{endian_prefix}IIIIII", data, 4
-            )
+            cputype, _, filetype, ncmds, sizeofcmds, flags = struct.unpack_from(f"{endian_prefix}IIIIII", data, 4)
         except struct.error:
             return MitigationReport(
                 format="macho",

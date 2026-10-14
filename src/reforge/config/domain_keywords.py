@@ -14,25 +14,13 @@ from typing import Final
 MUTATION_NEGATIVE_ACTIONS: Final[frozenset[str]] = frozenset(
     {"block", "deactivate", "deny", "disable", "hide", "prevent", "remove", "stop"}
 )
-MUTATION_INCREASE_ACTIONS: Final[frozenset[str]] = frozenset(
-    {"add", "award", "give", "grant", "increase"}
-)
-MUTATION_ENABLE_ACTIONS: Final[frozenset[str]] = frozenset(
-    {"activate", "allow", "enable", "unlock"}
-)
-MUTATION_POSITIVE_ACTIONS: Final[frozenset[str]] = (
-    MUTATION_INCREASE_ACTIONS | MUTATION_ENABLE_ACTIONS
-)
+MUTATION_INCREASE_ACTIONS: Final[frozenset[str]] = frozenset({"add", "award", "give", "grant", "increase"})
+MUTATION_ENABLE_ACTIONS: Final[frozenset[str]] = frozenset({"activate", "allow", "enable", "unlock"})
+MUTATION_POSITIVE_ACTIONS: Final[frozenset[str]] = MUTATION_INCREASE_ACTIONS | MUTATION_ENABLE_ACTIONS
 MUTATION_MAXIMIZE_ACTIONS: Final[frozenset[str]] = frozenset({"maximize"})
-MUTATION_MAXIMIZE_VALUES: Final[frozenset[str]] = frozenset(
-    {"endless", "infinite", "max", "maximum", "unlimited"}
-)
-MUTATION_MAXIMIZE_WORDS: Final[frozenset[str]] = (
-    MUTATION_MAXIMIZE_ACTIONS | MUTATION_MAXIMIZE_VALUES
-)
-MUTATION_MAGNITUDE_ASSIGNMENT_ACTIONS: Final[frozenset[str]] = frozenset(
-    {"add", "increase", "set"}
-)
+MUTATION_MAXIMIZE_VALUES: Final[frozenset[str]] = frozenset({"endless", "infinite", "max", "maximum", "unlimited"})
+MUTATION_MAXIMIZE_WORDS: Final[frozenset[str]] = MUTATION_MAXIMIZE_ACTIONS | MUTATION_MAXIMIZE_VALUES
+MUTATION_MAGNITUDE_ASSIGNMENT_ACTIONS: Final[frozenset[str]] = frozenset({"add", "increase", "set"})
 MUTATION_ZERO_ACTIONS: Final[frozenset[str]] = frozenset({"clear", "reset"})
 MUTATION_ZERO_VALUES: Final[frozenset[str]] = frozenset({"empty", "none", "zero"})
 MUTATION_ZERO_WORDS: Final[frozenset[str]] = MUTATION_ZERO_ACTIONS | MUTATION_ZERO_VALUES
@@ -55,45 +43,55 @@ NUMBER_WORD_LITERALS: Final[Mapping[str, str]] = MappingProxyType(
     }
 )
 
-INTENT_VERBS: Final[frozenset[str]] = frozenset(
-    {
-        "bypass",
-        "get",
-        "has",
-        "inject",
-        "is",
-        "modify",
-        "mod",
-        "override",
-        "patch",
-        "receive",
-        "rotate",
-        "scan",
-        "set",
-        "trace",
-    }
-) | MUTATION_NEGATIVE_ACTIONS | MUTATION_POSITIVE_ACTIONS | MUTATION_MAXIMIZE_ACTIONS | MUTATION_ZERO_ACTIONS
+INTENT_VERBS: Final[frozenset[str]] = (
+    frozenset(
+        {
+            "bypass",
+            "get",
+            "has",
+            "inject",
+            "is",
+            "modify",
+            "mod",
+            "override",
+            "patch",
+            "receive",
+            "rotate",
+            "scan",
+            "set",
+            "trace",
+        }
+    )
+    | MUTATION_NEGATIVE_ACTIONS
+    | MUTATION_POSITIVE_ACTIONS
+    | MUTATION_MAXIMIZE_ACTIONS
+    | MUTATION_ZERO_ACTIONS
+)
 
-INTENT_MODIFIERS: Final[frozenset[str]] = frozenset(
-    {
-        "all",
-        "always",
-        "cheat",
-        "endless",
-        "free",
-        "full",
-        "god",
-        "hack",
-        "infinite",
-        "max",
-        "maximum",
-        "mode",
-        "modded",
-        "never",
-        "no",
-        "unlimited",
-    }
-) | MUTATION_MAXIMIZE_VALUES | MUTATION_ZERO_VALUES
+INTENT_MODIFIERS: Final[frozenset[str]] = (
+    frozenset(
+        {
+            "all",
+            "always",
+            "cheat",
+            "endless",
+            "free",
+            "full",
+            "god",
+            "hack",
+            "infinite",
+            "max",
+            "maximum",
+            "mode",
+            "modded",
+            "never",
+            "no",
+            "unlimited",
+        }
+    )
+    | MUTATION_MAXIMIZE_VALUES
+    | MUTATION_ZERO_VALUES
+)
 
 CURRENCY_KEYWORDS: Final[frozenset[str]] = frozenset(
     {
@@ -457,9 +455,7 @@ NAMED_TIER_ENTITY_KEYWORDS: Final[frozenset[str]] = frozenset(
         "vip",
     }
 )
-MAXIMUM_TIER_ENTITY_KEYWORDS: Final[frozenset[str]] = (
-    NAMED_TIER_ENTITY_KEYWORDS & MUTATION_MAXIMIZE_VALUES
-)
+MAXIMUM_TIER_ENTITY_KEYWORDS: Final[frozenset[str]] = NAMED_TIER_ENTITY_KEYWORDS & MUTATION_MAXIMIZE_VALUES
 
 FRAMEWORK_STOPWORDS: Final[frozenset[str]] = frozenset(
     {
@@ -629,16 +625,10 @@ ENTITY_KEYWORDS: Final[frozenset[str]] = (
 # Domain entities win when a framework word is also meaningful to the goal,
 # for example "keys", "pro", or "max".
 GOAL_STOPWORDS: Final[frozenset[str]] = (
-    INTENT_VERBS
-    | INTENT_MODIFIERS
-    | QUERY_STOPWORDS
-    | MUTATION_BOOLEAN_WORDS
-    | frozenset(NUMBER_WORD_LITERALS)
+    INTENT_VERBS | INTENT_MODIFIERS | QUERY_STOPWORDS | MUTATION_BOOLEAN_WORDS | frozenset(NUMBER_WORD_LITERALS)
 ) - ENTITY_KEYWORDS
 
-DOMAIN_EXPANSION_GROUPS: Final[
-    tuple[tuple[frozenset[str], frozenset[str], frozenset[str]], ...]
-] = (
+DOMAIN_EXPANSION_GROUPS: Final[tuple[tuple[frozenset[str], frozenset[str], frozenset[str]], ...]] = (
     (
         COLLISION_KEYWORDS,
         frozenset(
@@ -800,11 +790,7 @@ def _identifier_token_sequence(value: object, *, min_length: int = 1) -> tuple[s
     text = str(value)
     text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
     text = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", text)
-    return tuple(
-        token.casefold()
-        for token in re.findall(r"[A-Za-z0-9]+", text)
-        if len(token) >= min_length
-    )
+    return tuple(token.casefold() for token in re.findall(r"[A-Za-z0-9]+", text) if len(token) >= min_length)
 
 
 def identifier_tokens(value: object, *, min_length: int = 1) -> frozenset[str]:
@@ -913,8 +899,7 @@ def filter_entity_terms(values: list[str]) -> list[str]:
     """Normalize and deduplicate candidate entity terms."""
     normalized_values = [value.strip().casefold() for value in values]
     has_named_tier_context = bool(
-        {singularize_entity_token(value) for value in normalized_values}
-        & NAMED_TIER_CONTEXT_KEYWORDS
+        {singularize_entity_token(value) for value in normalized_values} & NAMED_TIER_CONTEXT_KEYWORDS
     )
     clean: list[str] = []
     seen: set[str] = set()

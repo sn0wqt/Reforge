@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from reforge.utils.toolchain import (
     resolve_frida_gadget_path,
     resolve_il2cpp_dumper,
     resolve_jadx,
+    resolve_wakaru,
 )
 
 _CAPABILITY_LABELS = {
@@ -78,11 +80,7 @@ def _capability_status(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any
             entry
             for entry in entries
             if capability in entry.get("required_for", ())
-            or (
-                capability == "analysis"
-                and "required_for" not in entry
-                and bool(entry.get("required"))
-            )
+            or (capability == "analysis" and "required_for" not in entry and bool(entry.get("required")))
         ]
         missing = [str(entry["name"]) for entry in required_entries if not entry.get("ok")]
         capabilities[capability] = {
@@ -122,6 +120,9 @@ def collect_toolchain_status() -> list[dict[str, Any]]:
     codex = shutil.which("codex") or shutil.which("codex.cmd")
     antigravity = shutil.which("agy") or shutil.which("agy.exe")
     hermes_available = importlib.util.find_spec("hermes_dec") is not None
+    frida_py_available = importlib.util.find_spec("frida") is not None
+    wakaru = resolve_wakaru()
+    rea_bridge = os.environ.get("REA_MCP_COMMAND") or shutil.which("rea") or shutil.which("rea.cmd")
 
     return [
         _entry(
@@ -181,8 +182,7 @@ def collect_toolchain_status() -> list[dict[str, Any]]:
             required_for=(),
             version=_version([str(jadx), "--version"]) if jadx else None,
             detail=(
-                "Available for manual Java/Kotlin review; automatic discovery "
-                "currently uses the bounded DEX parser."
+                "Available for manual Java/Kotlin review; automatic discovery currently uses the bounded DEX parser."
             ),
         ),
         _entry(
@@ -196,6 +196,25 @@ def collect_toolchain_status() -> list[dict[str, Any]]:
             "Hermes decoder",
             "python:hermes_dec" if hermes_available else None,
             required_for=(),
+        ),
+        _entry(
+            "Wakaru decompiler",
+            wakaru,
+            required_for=(),
+            version=_version([str(wakaru), "--version"]) if wakaru else None,
+            detail="Used for Webpack bundle recovery and JS de-minification.",
+        ),
+        _entry(
+            "Frida Python runtime",
+            "python:frida" if frida_py_available else None,
+            required_for=(),
+            detail="Enables in-process Frida tracing with 16 MiB circular buffer and orphan prevention.",
+        ),
+        _entry(
+            "REA MCP bridge",
+            rea_bridge,
+            required_for=(),
+            detail="Enables multi-decompiler backend bridge (--backend rea) for IDA Pro, Hopper, Cutter, Rizin.",
         ),
         _entry("Node.js", node, version=_version([node, "--version"]) if node else None),
         _entry("ghidra-bridge", ghidra_bridge),
@@ -272,9 +291,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     capabilities = _capability_status(entries)
     ready = bool(capabilities["analysis"]["ready"])
     android_repack_ready = bool(capabilities["android_repack"]["ready"])
-    android_structural_repack_ready = bool(
-        capabilities["android_structural_repack"]["ready"]
-    )
+    android_structural_repack_ready = bool(capabilities["android_structural_repack"]["ready"])
     gadget_ready = bool(capabilities["gadget_non_root"]["ready"])
     adb_ready = any(entry["name"] == "ADB" and entry["ok"] for entry in entries)
     if bool(getattr(args, "json", False)):
@@ -284,10 +301,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                     "ready": ready,
                     "capabilities": capabilities,
                     "full_android_toolchain_ready": (
-                        android_repack_ready
-                        and android_structural_repack_ready
-                        and gadget_ready
-                        and adb_ready
+                        android_repack_ready and android_structural_repack_ready and gadget_ready and adb_ready
                     ),
                     "managed_tools_root": str(managed_tools_root()),
                     "tools": entries,

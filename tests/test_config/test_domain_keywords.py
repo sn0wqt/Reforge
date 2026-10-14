@@ -88,21 +88,11 @@ def test_entity_filter_keeps_short_non_stopword_entities() -> None:
 
 
 def test_named_tier_matches_require_behavioral_tier_context() -> None:
-    assert domain_keywords.is_named_tier_match_contextual(
-        "pro", "SubscriptionState", "hasPro"
-    )
-    assert domain_keywords.is_named_tier_match_contextual(
-        "max", "EntitlementPlan", "getMax"
-    )
-    assert not domain_keywords.is_named_tier_match_contextual(
-        "max", "CustomTabsIntent", "getMaxToolbarItems"
-    )
-    assert not domain_keywords.is_named_tier_match_contextual(
-        "pro", "ExcludedSupportedSizesQuirk", "isRedmiNote9Pro"
-    )
-    assert not domain_keywords.is_named_tier_match_contextual(
-        "max", "QuotaLimit", "getMaxLimit"
-    )
+    assert domain_keywords.is_named_tier_match_contextual("pro", "SubscriptionState", "hasPro")
+    assert domain_keywords.is_named_tier_match_contextual("max", "EntitlementPlan", "getMax")
+    assert not domain_keywords.is_named_tier_match_contextual("max", "CustomTabsIntent", "getMaxToolbarItems")
+    assert not domain_keywords.is_named_tier_match_contextual("pro", "ExcludedSupportedSizesQuirk", "isRedmiNote9Pro")
+    assert not domain_keywords.is_named_tier_match_contextual("max", "QuotaLimit", "getMaxLimit")
 
 
 def test_platform_library_namespace_detection_is_exact_and_generic() -> None:

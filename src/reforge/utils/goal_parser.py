@@ -37,17 +37,9 @@ def extract_entity_keywords(goal_prompt: str) -> list[str]:
         if token not in MAXIMUM_TIER_ENTITY_KEYWORDS:
             continue
         nearby = tokens[max(0, index - 2) : index] + tokens[index + 1 : index + 3]
-        has_context = any(
-            singularize_entity_token(item) in NAMED_TIER_CONTEXT_KEYWORDS for item in nearby
-        )
-        coordinated_tier = (
-            index >= 2
-            and tokens[index - 1] == "and"
-            and tokens[index - 2] in NAMED_TIER_ENTITY_KEYWORDS
-        )
-        magnitude_assignment = any(
-            item in MUTATION_MAGNITUDE_ASSIGNMENT_ACTIONS for item in tokens[:index]
-        )
+        has_context = any(singularize_entity_token(item) in NAMED_TIER_CONTEXT_KEYWORDS for item in nearby)
+        coordinated_tier = index >= 2 and tokens[index - 1] == "and" and tokens[index - 2] in NAMED_TIER_ENTITY_KEYWORDS
+        magnitude_assignment = any(item in MUTATION_MAGNITUDE_ASSIGNMENT_ACTIONS for item in tokens[:index])
         if has_context and (not magnitude_assignment or coordinated_tier):
             contextual_entities.add(index)
 
