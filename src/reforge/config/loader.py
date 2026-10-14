@@ -84,25 +84,25 @@ def discover_config_path() -> Path | None:
     binary rather than from the Reforge repository.  In an editable install,
     silently falling back to dataclass defaults in that situation changes the
     configured provider and data-handling policy.  Prefer an explicit
-    ``REFORGE_CONFIG`` or ``REFORGE_CONFIG`` path, then the current directory,
-    then the editable checkout root.  A normal wheel install has no checkout-level
-    YAML and therefore continues to use schema defaults unless the user supplies one.
+    ``REFORGE_CONFIG`` path, then the current directory, then the editable
+    checkout root.  A normal wheel install has no checkout-level YAML and
+    therefore continues to use schema defaults unless the user supplies one.
     """
-    configured = os.environ.get("REFORGE_CONFIG") or os.environ.get("REFORGE_CONFIG")
+    configured = os.environ.get("REFORGE_CONFIG")
     if configured:
         configured_path = Path(configured).expanduser()
         if not configured_path.is_file():
             raise FileNotFoundError(f"Config file not found: {configured_path}")
         return configured_path.resolve()
 
-    for filename in ("reforge.yaml", "reforge.yaml"):
+    for filename in ("reforge.yaml", "reforge.yml", ".reforge.yaml"):
         cwd_config = Path.cwd() / filename
         if cwd_config.is_file():
             return cwd_config.resolve()
 
     # loader.py -> config -> reforge -> src -> repository root
     repo_root = Path(__file__).resolve().parents[3]
-    for filename in ("reforge.yaml", "reforge.yaml"):
+    for filename in ("reforge.yaml", "reforge.yml", ".reforge.yaml"):
         checkout_config = repo_root / filename
         if checkout_config.is_file():
             return checkout_config.resolve()
@@ -110,14 +110,14 @@ def discover_config_path() -> Path | None:
 
 
 def _apply_env_overrides(raw: dict[str, Any]) -> dict[str, Any]:
-    """Overlay REFORGE_* or REFORGE_* environment variables onto the raw config dict."""
+    """Overlay REFORGE_* environment variables onto the raw config dict."""
     env_mappings: list[tuple[tuple[str, ...], list[str], type]] = [
-        (("REFORGE_LLM_PROVIDER", "REFORGE_LLM_PROVIDER"), ["llm", "provider"], str),
-        (("REFORGE_LLM_API_KEY", "REFORGE_LLM_API_KEY"), ["llm", "api_key"], str),
-        (("REFORGE_LLM_MODEL", "REFORGE_LLM_MODEL"), ["llm", "model"], str),
-        (("REFORGE_LLM_BASE_URL", "REFORGE_LLM_BASE_URL"), ["llm", "base_url"], str),
-        (("REFORGE_BACKEND_CLI_PATH", "REFORGE_BACKEND_CLI_PATH"), ["backend", "cli_path"], str),
-        (("REFORGE_BACKEND_TIMEOUT", "REFORGE_BACKEND_TIMEOUT"), ["backend", "timeout_s"], int),
+        (("REFORGE_LLM_PROVIDER", "REFORGE_PROVIDER"), ["llm", "provider"], str),
+        (("REFORGE_LLM_API_KEY", "REFORGE_API_KEY"), ["llm", "api_key"], str),
+        (("REFORGE_LLM_MODEL", "REFORGE_MODEL"), ["llm", "model"], str),
+        (("REFORGE_LLM_BASE_URL", "REFORGE_BASE_URL"), ["llm", "base_url"], str),
+        (("REFORGE_BACKEND_CLI_PATH", "REFORGE_CLI_PATH"), ["backend", "cli_path"], str),
+        (("REFORGE_BACKEND_TIMEOUT", "REFORGE_TIMEOUT"), ["backend", "timeout_s"], int),
     ]
 
     for env_vars, key_path, cast_type in env_mappings:
@@ -196,7 +196,7 @@ def _coerce_field(value: Any, field_name: str, field_type_str: str) -> Any:
         try:
             return int(value)
         except (ValueError, TypeError) as exc:
-            raise ValueError(f"{field_name} must be an integer") from exc
+            raise ValueError(f"{field_name} must be a positive integer") from exc
     if "float" in normalized_type:
         if isinstance(value, bool):
             raise ValueError(f"{field_name} must be numeric, not a boolean")
@@ -386,16 +386,17 @@ def _validate_config(config: ReforgeConfig) -> None:
         validate_llm(config.agents.reverser, "agents.reverser")
     if config.agents.checker is not None:
         validate_llm(config.agents.checker, "agents.checker")
-    if config.backend.timeout_s <= 0:
-        raise ValueError("BackendConfig.timeout_s must be positive")
-    if config.orchestrator.max_review_rounds <= 0:
-        raise ValueError("OrchestratorConfig.max_review_rounds must be positive")
-    if config.orchestrator.max_functions_per_class <= 0:
-        raise ValueError("OrchestratorConfig.max_functions_per_class must be positive")
-    if config.orchestrator.max_attempts_per_function <= 0:
-        raise ValueError("OrchestratorConfig.max_attempts_per_function must be positive")
-    if config.orchestrator.max_investigations < 0:
-        raise ValueError("OrchestratorConfig.max_investigations may not be negative")
+    for name in (
+        "max_review_rounds",
+        "max_functions_per_class",
+        "max_attempts_per_function",
+        "max_llm_calls_per_function",
+    ):
+        value = getattr(config.orchestrator, name)
+        if type(value) is not int or value < 1:
+            raise ValueError(f"orchestrator.{name} must be a positive integer")
+    if type(config.orchestrator.max_investigations) is not int or config.orchestrator.max_investigations < 0:
+        raise ValueError("max_investigations must be a nonnegative integer")
     if config.orchestrator.objective_call_count_tolerance < 0:
         raise ValueError("OrchestratorConfig.objective_call_count_tolerance may not be negative")
     if config.orchestrator.objective_control_flow_tolerance < 0:

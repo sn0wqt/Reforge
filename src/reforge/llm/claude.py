@@ -19,10 +19,11 @@ class ClaudeProvider(BaseLLMProvider):
         model: str = "claude-sonnet-4-5-20250929",
         max_tokens: int = 4096,
         temperature: float = 0.0,
-        timeout_s: int = 600,
+        timeout_s: int = 1800,
     ) -> None:
         super().__init__()
         self._client = anthropic.Anthropic(api_key=api_key, timeout=timeout_s)
+        self.last_metadata: dict[str, Any] = {}
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
@@ -47,6 +48,9 @@ class ClaudeProvider(BaseLLMProvider):
             create_kwargs["system"] = system_text
 
         response = self._client.messages.create(**create_kwargs)
+
+        usage = getattr(response, "usage", None)
+        self.last_metadata = {"model": self._model, "usage": usage.model_dump() if usage is not None else {}}
 
         # Extract text from content blocks.
         parts: list[str] = []

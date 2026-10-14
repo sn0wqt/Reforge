@@ -37,17 +37,17 @@ def cmd_estimate(args: argparse.Namespace) -> int:
         inspected += 1
     rounds = max(config.orchestrator.max_review_rounds, 1)
     investigations = config.orchestrator.max_investigations if config.orchestrator.investigation_enabled else 0
-    reverser_calls = inspected * (rounds + investigations)
+    reverser_calls = inspected * rounds * (1 + investigations)
     checker_calls = inspected * rounds
     # Include growing conversation/candidate context. This is deliberately a
     # planning bound, not a tokenizer-exact quote from a provider.
-    input_tokens = base_input_tokens * (rounds + investigations + rounds)
+    input_tokens = base_input_tokens * (rounds * (1 + investigations) + rounds)
     input_tokens += inspected * rounds * reverser_config.max_tokens
     reverser_output = reverser_calls * reverser_config.max_tokens
     checker_output = checker_calls * checker_config.max_tokens
     output_tokens = reverser_output + checker_output
     input_cost = (
-        base_input_tokens * (rounds + investigations) / 1_000_000 * reverser_config.input_cost_per_million
+        base_input_tokens * rounds * (1 + investigations) / 1_000_000 * reverser_config.input_cost_per_million
         + (base_input_tokens * rounds + inspected * rounds * reverser_config.max_tokens)
         / 1_000_000
         * checker_config.input_cost_per_million

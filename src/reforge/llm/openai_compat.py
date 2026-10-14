@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 import openai
 
+from reforge.llm.base import BaseLLMProvider
 from reforge.llm.protocol import Message
 
 
-class OpenAIProvider:
+class OpenAIProvider(BaseLLMProvider):
     """LLM provider backed by any OpenAI-compatible API.
 
     Works with the official OpenAI API as well as any third-party endpoint
@@ -26,6 +26,7 @@ class OpenAIProvider:
         max_tokens: Maximum tokens in the response.
         temperature: Sampling temperature (``0.0`` = deterministic).
         base_url: Optional base URL for an OpenAI-compatible endpoint.
+        timeout_s: Request timeout in seconds.
     """
 
     def __init__(
@@ -35,17 +36,18 @@ class OpenAIProvider:
         max_tokens: int = 4096,
         temperature: float = 0.0,
         base_url: str | None = None,
-        timeout_s: int = 600,
+        timeout_s: int = 1800,
     ) -> None:
+        super().__init__()
         self._client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=timeout_s,
         )
+        self.last_metadata: dict[str, Any] = {}
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
-        self._conversations: dict[str, list[Message]] = {}
 
     # -- LLMProvider interface ------------------------------------------------
 
@@ -60,34 +62,10 @@ class OpenAIProvider:
             temperature=kwargs.get("temperature", self._temperature),
         )
 
+        usage = getattr(response, "usage", None)
+        self.last_metadata = {"model": self._model, "usage": usage.model_dump() if usage is not None else {}}
+
         if not response.choices:
             raise RuntimeError("OpenAI-compatible provider returned no choices")
         choice = response.choices[0]
         return choice.message.content or ""
-
-    @property
-    def supports_conversations(self) -> bool:
-        """OpenAI-compatible providers support multi-turn (client-side history)."""
-        return True
-
-    def new_conversation(self, system: str) -> str:
-        """Create a new conversation with a system prompt, returning its ID."""
-        cid = uuid.uuid4().hex
-        self._conversations[cid] = [Message(role="system", content=system)]
-        return cid
-
-    def resume(self, conversation_id: str, message: str) -> str:
-        """Append a user message to the conversation and return the response."""
-        history = self._conversations.get(conversation_id)
-        if history is None:
-            raise KeyError(f"Unknown conversation ID: {conversation_id}")
-
-        pending = [*history, Message(role="user", content=message)]
-        response_text = self.send(pending)
-        history.extend(
-            [
-                Message(role="user", content=message),
-                Message(role="assistant", content=response_text),
-            ]
-        )
-        return response_text

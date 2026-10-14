@@ -1,4 +1,4 @@
-"""Individual parity heuristic signals :  each returns a Finding or None."""
+"""Individual parity heuristic signals: each returns a Finding or None."""
 
 from __future__ import annotations
 

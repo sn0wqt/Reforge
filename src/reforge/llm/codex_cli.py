@@ -19,8 +19,8 @@ class CodexCLIProvider(BaseLLMProvider):
 
     def __init__(
         self,
-        model: str | None = None,
-        timeout_s: int = 600,
+        model: str = "gpt-5.4",
+        timeout_s: int = 1800,
         codex_bin: str = "codex",
         effort: str | None = None,
     ) -> None:
@@ -68,17 +68,18 @@ class CodexCLIProvider(BaseLLMProvider):
                     env=sanitized_cli_environment(),
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
                     timeout=self._timeout_s,
                     check=False,
                 )
             except subprocess.TimeoutExpired as exc:
                 raise RuntimeError(f"codex exec timed out after {self._timeout_s}s") from exc
             except FileNotFoundError as exc:
-                raise RuntimeError(f"Codex CLI not found: {self._codex_bin}") from exc
+                raise RuntimeError(f"codex CLI not found: {self._codex_bin}") from exc
             except OSError as exc:
                 raise RuntimeError(f"Could not run Codex CLI: {self._codex_bin}") from exc
             if proc.returncode != 0:
-                detail = proc.stderr.strip() or proc.stdout.strip() or "no error details"
+                detail = (proc.stderr or "").strip() or (proc.stdout or "").strip() or "no error details"
                 raise RuntimeError(f"codex exec failed with exit code {proc.returncode}\n{detail}")
 
             response = out_path.read_text(encoding="utf-8").strip() if out_path.is_file() else ""

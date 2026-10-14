@@ -35,7 +35,7 @@ class ClaudeCLIProvider(BaseLLMProvider):
     def __init__(
         self,
         model: str = "sonnet",
-        timeout_s: int = 600,
+        timeout_s: int = 1800,
         claude_bin: str = "claude",
         max_budget_usd: float | None = None,
         effort: str | None = None,
@@ -122,11 +122,14 @@ class ClaudeCLIProvider(BaseLLMProvider):
                     input=prompt,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
                     timeout=self._timeout_s,
                     check=False,
                 )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"claude CLI timed out after {self._timeout_s}s") from exc
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Claude CLI not found: {self._claude_bin}") from exc
         except OSError as exc:
             raise RuntimeError(f"Claude CLI could not be started: {self._claude_bin}") from exc
 
@@ -134,7 +137,7 @@ class ClaudeCLIProvider(BaseLLMProvider):
             payload = json.loads(proc.stdout)
         except json.JSONDecodeError as exc:
             if proc.returncode != 0:
-                detail = proc.stderr.strip() or proc.stdout.strip()
+                detail = (proc.stderr or "").strip() or (proc.stdout or "").strip() or "no error details"
                 raise RuntimeError(f"claude CLI failed with exit code {proc.returncode}\n{detail}") from exc
             raise RuntimeError("claude CLI returned invalid JSON") from exc
         if not isinstance(payload, dict):

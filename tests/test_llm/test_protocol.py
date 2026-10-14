@@ -70,6 +70,23 @@ def test_registry_creates_cliproxy_provider() -> None:
     assert provider.supports_conversations
 
 
+def test_registry_creates_claude_provider() -> None:
+    provider = create_provider(LLMConfig(provider="claude", api_key="test-key"))
+    assert provider.supports_conversations
+    assert getattr(provider, "last_metadata", None) == {}
+
+
+def test_registry_creates_claude_cli_provider() -> None:
+    provider = create_provider(LLMConfig(provider="claude-cli"))
+    assert provider.supports_conversations
+
+
+def test_registry_creates_openai_provider() -> None:
+    provider = create_provider(LLMConfig(provider="openai", api_key="test-key"))
+    assert provider.supports_conversations
+    assert getattr(provider, "last_metadata", None) == {}
+
+
 def test_registry_creates_explicit_failover_chain() -> None:
     from reforge.llm.failover import FailoverLLMProvider
 

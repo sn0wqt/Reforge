@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Target identification
@@ -99,6 +100,91 @@ class ReversalResult:
     validation_verdict: ValidationVerdict | None = None
     run_id: str = ""
     error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize result to a dictionary representation matching session checkpoints."""
+        from reforge.reports.formatter import _result_to_dict
+
+        return _result_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ReversalResult:
+        """Reconstruct a ReversalResult from a dictionary representation."""
+        address = str(data.get("address", ""))
+        class_name = str(data.get("class_name", ""))
+        function_name = str(data.get("function_name", ""))
+        target = FunctionTarget(
+            address=address,
+            class_name=class_name,
+            function_name=function_name,
+            caller_count=int(data.get("caller_count", 0)),
+        )
+        code = str(data.get("code") or "")
+        rounds_used = int(data.get("rounds_used", 0))
+        success = bool(data.get("success", False))
+        run_id = str(data.get("run_id", ""))
+        error = data.get("error")
+        if error is not None:
+            error = str(error)
+
+        checker_verdict: CheckerVerdict | None = None
+        if data.get("verdict"):
+            raw_v = data["verdict"]
+            v = raw_v if isinstance(raw_v, Verdict) else Verdict(raw_v)
+            checker_verdict = CheckerVerdict(
+                verdict=v,
+                summary=str(data.get("summary", "")),
+                issues=list(data.get("issues", [])),
+                fix_instructions=list(data.get("fix_instructions", [])),
+            )
+
+        objective_verdict: ObjectiveVerdict | None = None
+        if data.get("objective_verdict"):
+            raw_ov = data["objective_verdict"]
+            ov = raw_ov if isinstance(raw_ov, Verdict) else Verdict(raw_ov)
+            objective_verdict = ObjectiveVerdict(
+                verdict=ov,
+                summary=str(data.get("objective_summary", "")),
+                findings=list(data.get("objective_findings", [])),
+            )
+
+        validation_verdict: ValidationVerdict | None = None
+        if data.get("validation_verdict"):
+            raw_vv = data["validation_verdict"]
+            vv = raw_vv if isinstance(raw_vv, Verdict) else Verdict(raw_vv)
+            validation_verdict = ValidationVerdict(
+                verdict=vv,
+                summary=str(data.get("validation_summary", "")),
+                findings=list(data.get("validation_findings", [])),
+                overlay_file=data.get("candidate_overlay"),
+                checks=list(data.get("validation_checks", [])),
+            )
+
+        parity_status: ParityStatus | None = None
+        if data.get("parity_status"):
+            raw_ps = data["parity_status"]
+            parity_status = raw_ps if isinstance(raw_ps, ParityStatus) else ParityStatus(raw_ps)
+
+        parity_findings: list[Finding] = []
+        for item in data.get("parity_findings", []):
+            if isinstance(item, Finding):
+                parity_findings.append(item)
+            elif isinstance(item, dict):
+                parity_findings.append(Finding(level=str(item.get("level", "")), reason=str(item.get("reason", ""))))
+
+        return cls(
+            target=target,
+            code=code,
+            checker_verdict=checker_verdict,
+            objective_verdict=objective_verdict,
+            parity_status=parity_status,
+            parity_findings=parity_findings,
+            rounds_used=rounds_used,
+            success=success,
+            validation_verdict=validation_verdict,
+            run_id=run_id,
+            error=error,
+        )
 
 
 # ---------------------------------------------------------------------------

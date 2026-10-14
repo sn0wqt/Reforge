@@ -13,7 +13,7 @@ class ProgressTracker:
     def print_summary(self) -> str:
         summary = self.session.get_summary()
         lines = [
-            "reforge Progress Summary",
+            "Reforge Progress Summary",
             "=" * 40,
             f"Total functions:  {summary['total_functions']}",
             f"Passed:           {summary['passed']}",

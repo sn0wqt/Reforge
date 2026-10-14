@@ -326,16 +326,14 @@ def test_isolated_working_directory_cannot_escape_overlay(tmp_path: Path) -> Non
     candidate = overlay / "candidate.cpp"
     candidate.write_text("void f() {}", encoding="utf-8")
 
-    verdict = validate_candidate(
-        ValidationConfig(
-            copy_project=True,
-            build_commands=["check"],
-            working_directory=str(tmp_path),
-            allow_host_commands=True,
-        ),
-        candidate,
-        "candidate.cpp",
-    )
-
-    assert verdict.verdict == Verdict.FAIL
-    assert "must stay inside" in verdict.summary
+    with pytest.raises(ValueError, match="must stay inside"):
+        validate_candidate(
+            ValidationConfig(
+                copy_project=True,
+                build_commands=["check"],
+                working_directory=str(tmp_path),
+                allow_host_commands=True,
+            ),
+            candidate,
+            "candidate.cpp",
+        )

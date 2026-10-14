@@ -218,6 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     # doctor
     doctor_p = _command_parser(sub, "doctor", help="Check analysis, packaging, and deployment tools")
     doctor_p.add_argument("--json", action="store_true", help="Emit machine-readable tool status")
+    doctor_p.add_argument("--address", help="Check evidence for one function")
 
     # scan-strings
     from reforge.cli.cmd_scan_strings import register_subparser as register_scan_strings

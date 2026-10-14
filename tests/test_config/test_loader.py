@@ -156,9 +156,9 @@ def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_reforge_env_override_takes_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REFORGE_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("REFORGE_PROVIDER", "openai")
     monkeypatch.setenv("REFORGE_LLM_PROVIDER", "anthropic")
-    monkeypatch.setenv("REFORGE_LLM_MODEL", "gpt-4o")
+    monkeypatch.setenv("REFORGE_MODEL", "gpt-4o")
     monkeypatch.setenv("REFORGE_LLM_MODEL", "claude-3-7-sonnet")
     config = load_config(None)
     assert config.llm.provider == "anthropic"

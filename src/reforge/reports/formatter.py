@@ -84,6 +84,7 @@ def _result_to_dict(result: ReversalResult) -> dict[str, Any]:
         d["verdict"] = result.checker_verdict.verdict.value
         d["summary"] = result.checker_verdict.summary
         d["issues"] = result.checker_verdict.issues
+        d["fix_instructions"] = result.checker_verdict.fix_instructions
     if result.objective_verdict:
         d["objective_verdict"] = result.objective_verdict.verdict.value
         d["objective_summary"] = result.objective_verdict.summary

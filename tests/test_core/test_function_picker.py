@@ -70,3 +70,36 @@ def test_pick_next_dependency_order_prefers_low_caller_count(tmp_path: Path) -> 
     result = pick_next("CTest", backend, session, strategy="dependency-order")
     assert result is not None
     assert result.function_name == "Leaf"
+
+
+def test_pick_next_dependency_order_handles_cycles_and_non_hex_xrefs(tmp_path: Path) -> None:
+    from reforge.core.models import XRef
+
+    class CyclicBackend(StubBackend):
+        def __init__(self, remaining_functions: list[FunctionEntry], xrefs_map: dict[str, list[XRef]]) -> None:
+            super().__init__(remaining_functions)
+            self._xrefs_map = xrefs_map
+
+        def xrefs_from(self, target: str) -> list[XRef]:
+            return self._xrefs_map.get(target, [])
+
+    session = Session(tmp_path / "progress.json")
+    backend = CyclicBackend(
+        remaining_functions=[
+            FunctionEntry(address="0x100", name="FuncA", class_name="CTest", caller_count=5),
+            FunctionEntry(address="0x200", name="FuncB", class_name="CTest", caller_count=10),
+            FunctionEntry(address="0x300", name="FuncC", class_name="CTest", caller_count=2),
+        ],
+        xrefs_map={
+            # Cycle between 0x100 and 0x200, plus an invalid non-hex external xref
+            "0x100": [XRef("0x200", "FuncB", "CALL"), XRef("external_symbol", "External", "CALL")],
+            "0x200": [XRef("0x100", "FuncA", "CALL")],
+            "0x300": [],
+        },
+    )
+
+    result = pick_next("CTest", backend, session, strategy="dependency-order")
+    assert result is not None
+    # All candidates ordered without hanging or crashing on cycles/non-hex symbols
+    assert result.function_name in {"FuncA", "FuncB", "FuncC"}
+

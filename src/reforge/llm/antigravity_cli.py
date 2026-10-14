@@ -18,16 +18,19 @@ class AntigravityCLIProvider(BaseLLMProvider):
     def __init__(
         self,
         model: str = "gemini-3.8-flash-high",
-        timeout_s: int = 600,
+        timeout_s: int = 1800,
         agy_bin: str = "agy",
     ) -> None:
         super().__init__()
         self._model = model
         self._timeout_s = timeout_s
         self._agy_bin = agy_bin
+        self.last_metadata: dict[str, Any] = {}
 
     def send(self, messages: list[Message], **kwargs: Any) -> str:
         prompt = self._render_messages(messages)
+        model = str(kwargs.get("model", self._model))
+        self.last_metadata = {"model": model}
 
         try:
             with tempfile.TemporaryDirectory(prefix="reforge-agy-") as work_dir:
@@ -46,7 +49,7 @@ class AntigravityCLIProvider(BaseLLMProvider):
                     "--mode",
                     "plan",
                     "--model",
-                    str(kwargs.get("model", self._model)),
+                    model,
                     "--print-timeout",
                     f"{self._timeout_s}s",
                     "--print",
@@ -59,6 +62,7 @@ class AntigravityCLIProvider(BaseLLMProvider):
                     capture_output=True,
                     input="",
                     text=True,
+                    encoding="utf-8",
                     timeout=self._timeout_s,
                     check=False,
                 )
@@ -84,6 +88,7 @@ class AntigravityCLIProvider(BaseLLMProvider):
                 capture_output=True,
                 input="",
                 text=True,
+                encoding="utf-8",
                 timeout=min(self._timeout_s, 15),
                 check=False,
             )

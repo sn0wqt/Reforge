@@ -28,7 +28,7 @@ class GeminiProvider(BaseLLMProvider):
         temperature: float = 0.0,
         base_url: str | None = None,
         service_account_file: str | None = None,
-        timeout_s: int = 600,
+        timeout_s: int = 1800,
         allow_provider_fallback: bool = False,
     ) -> None:
         super().__init__()
@@ -39,6 +39,7 @@ class GeminiProvider(BaseLLMProvider):
         self._max_tokens = max_tokens
         self._temperature = temperature
         self._allow_provider_fallback = allow_provider_fallback
+        self.last_metadata: dict[str, Any] = {}
         http_options = types.HttpOptions(
             timeout=timeout_s * 1000,
             base_url=base_url,
@@ -154,6 +155,11 @@ class GeminiProvider(BaseLLMProvider):
             contents=contents,
             config=config,
         )
+        usage = getattr(response, "usage_metadata", None)
+        self.last_metadata = {
+            "model": self._model,
+            "usage": usage.model_dump() if usage and hasattr(usage, "model_dump") else {},
+        }
         return response.text or ""
 
     @staticmethod

@@ -58,7 +58,15 @@ def pick_next(
                 dependencies = backend.xrefs_from(by_address[address].address)
             except Exception as exc:
                 raise RuntimeError(f"Cannot read dependencies for {address}: {exc}") from exc
-            for dependency in sorted({normalize_address(x.address) for x in dependencies}):
+            dep_addrs: set[str] = set()
+            for x in dependencies:
+                try:
+                    norm = normalize_address(x.address)
+                    if norm:
+                        dep_addrs.add(norm)
+                except ValueError:
+                    continue
+            for dependency in sorted(dep_addrs):
                 if dependency in by_address:
                     visit(dependency)
             active.remove(address)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
@@ -75,3 +77,54 @@ def test_codex_cli_surfaces_stderr_on_failure() -> None:
         pytest.raises(RuntimeError, match="Not logged in"),
     ):
         provider.send([Message(role="user", content="hello")])
+
+
+def test_large_unicode_prompt_uses_utf8_stdin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = tmp_path / "fake_codex.py"
+    fake.write_text(
+        "import pathlib, sys\n"
+        "assert sys.argv[-1] == '-'\n"
+        "prompt = sys.stdin.buffer.read().decode('utf-8')\n"
+        "out = sys.argv[sys.argv.index('--output-last-message') + 1]\n"
+        "pathlib.Path(out).write_bytes(prompt.encode('utf-8'))\n"
+        "sys.stdout.buffer.write('\\u8a3a\\u65ad \\u2713'.encode('utf-8'))\n",
+        encoding="utf-8",
+    )
+    run = subprocess.run
+    output_paths: list[Path] = []
+
+    content = "\u65e5\u672c\u8a9e evidence & | > \" ' " * 5000
+    expected = "[USER]\n" + content.strip()
+
+    def invoke(args: list[str], **kwargs: object) -> CompletedProcess[str]:
+        assert sum(len(arg) for arg in args) < 4096
+        assert kwargs.get("encoding") == "utf-8"
+        assert kwargs.get("input") == expected
+        output_paths.append(Path(args[args.index("--output-last-message") + 1]))
+        return run([sys.executable, str(fake), *args[1:]], **kwargs)
+
+    monkeypatch.setattr("reforge.llm.codex_cli.subprocess.run", invoke)
+    assert CodexCLIProvider().send([Message(role="user", content=content)]) == expected
+    assert all(not path.exists() for path in output_paths)
+
+
+@pytest.mark.parametrize("failure", ["model", "timeout", "missing"])
+def test_cli_failures_preserve_diagnostics_and_clean_output(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
+    output_paths: list[Path] = []
+
+    def invoke(args: list[str], **kwargs: object) -> CompletedProcess[str]:
+        output_paths.append(Path(args[args.index("--output-last-message") + 1]))
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(args, 7)
+        if failure == "missing":
+            raise FileNotFoundError("not installed")
+        return CompletedProcess(
+            args, 1, stdout="The selected model requires a newer version of Codex. \u8a3a\u65ad", stderr=""
+        )
+
+    monkeypatch.setattr("reforge.llm.codex_cli.subprocess.run", invoke)
+    match = {"model": "requires a newer version", "timeout": "timed out after 7s", "missing": "CLI not found"}
+    with pytest.raises(RuntimeError, match=match[failure]):
+        CodexCLIProvider(timeout_s=7).send([Message(role="user", content="test")])
+    assert all(not path.exists() for path in output_paths)
+

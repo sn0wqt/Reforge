@@ -61,7 +61,10 @@ class KnowledgeGraph:
             if not isinstance(callee, dict):
                 continue
             raw_target = str(callee.get("addr", ""))
-            target = normalize_address(raw_target) if raw_target else ""
+            try:
+                target = normalize_address(raw_target) if raw_target else ""
+            except ValueError:
+                target = ""
             if target:
                 self._edge(source, self._put("function", target, callee), "calls")
         for item in payload.get("strings", []):
@@ -79,8 +82,12 @@ class KnowledgeGraph:
         related = [edge for edge in self.edges if edge.get("source") == root or edge.get("target") == root]
         node_ids = {root}
         for edge in related:
-            node_ids.add(edge.get("source", ""))
-            node_ids.add(edge.get("target", ""))
+            src = edge.get("source", "")
+            tgt = edge.get("target", "")
+            if src:
+                node_ids.add(src)
+            if tgt:
+                node_ids.add(tgt)
         payload = {
             "nodes": {node_id: self.nodes[node_id] for node_id in node_ids if node_id in self.nodes},
             "edges": related,

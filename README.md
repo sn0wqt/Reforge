@@ -88,8 +88,12 @@ python -m pip install --upgrade "frida==17.16.4" "frida-tools==14.10.4"
 | Full pipeline analysis and hook generation | `reforge pipeline --binary app.apk --goal "..."` |
 | Build signed non-root Gadget APK | `reforge pipeline --binary app.apk --goal "..." --embed-frida-gadget` |
 | Live Frida tracing | `reforge trace --class CLASS --symbol METHOD ...` |
+| Plan bounded function targets | `reforge plan --address RVA --output plan.json` |
 | Reconstruct C/C++ functions from Ghidra | `reforge reverse --address RVA` or `reforge reverse --class CLASS` |
+| Reverse manifest targets | `reforge reverse --manifest plan.json` |
+| Export linked evidence packets | `reforge evidence --manifest plan.json --output packets` |
 | Check source parity against disassembly | `reforge parity --address RVA --strict-exit` |
+| Differential benchmark harness | `reforge benchmark --manifest benchmark.json` |
 
 ## Quick Start
 
@@ -301,9 +305,13 @@ Global options precede subcommands (e.g. `reforge --config custom.yaml status`).
 |---|---|
 | `reforge doctor [--json]` | Check toolchain and backend readiness |
 | `reforge init --profile NAME` | Generate `reforge.yaml` from profile |
+| `reforge plan --address ADDR [--output FILE]` | Plan bounded function targets without LLM calls |
 | `reforge reverse --address ADDR` | Reverse one function |
 | `reforge reverse --class CLASS --max-functions N` | Reverse a class batch |
+| `reforge reverse --manifest FILE` | Reverse functions from a target plan manifest |
 | `reforge reverse --class CLASS --dry-run` | Preview target list without LLM calls |
+| `reforge evidence --manifest FILE --output DIR` | Export searchable evidence packets and TSV facts |
+| `reforge benchmark --manifest FILE` | Run differential test harness benchmark |
 | `reforge batch --binary FILE --goal TEXT` | Discover and rank targets |
 | `reforge pipeline --binary FILE --goal TEXT` | End-to-end detection, analysis, and hooks |
 | `reforge pipeline ... --embed-frida-gadget` | Build signed APK with embedded Frida Gadget |
@@ -311,7 +319,7 @@ Global options precede subcommands (e.g. `reforge --config custom.yaml status`).
 | `reforge trace --class CLASS --symbol METHOD` | Generate Frida trace script |
 | `reforge trace ... --attach PROCESS --usb` | Generate trace and attach to process |
 | `reforge parity --address ADDR [--strict-exit]` | Run parity checks on existing source |
-| `reforge status [--class CLASS]` | Show session state and progress |
+| `reforge status [--class CLASS] [--manifest FILE]` | Show session state and manifest coverage |
 | `reforge estimate --address ADDR` | Estimate complexity and token allowance |
 
 ## Environment Variables

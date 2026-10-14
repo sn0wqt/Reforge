@@ -279,10 +279,7 @@ def validate_candidate(
     )
     findings: list[str] = []
     checks: list[dict[str, str]] = []
-    try:
-        working_directory = _working_directory(config, candidate_file)
-    except ValueError as exc:
-        return _failed(str(exc), candidate_file, findings, checks)
+    working_directory = _working_directory(config, candidate_file)
 
     for kind, command in commands:
         expanded = (
@@ -546,4 +543,8 @@ def _remap_links(overlay: Path, project: Path) -> None:
                 raise ValueError(f"Cannot isolate source symlink: {original}") from exc
             link.unlink()
             link.symlink_to(os.path.relpath(overlay / target, link.parent), target_is_directory=original.is_dir())
+
+
+remap_links = _remap_links
+
 

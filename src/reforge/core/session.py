@@ -34,52 +34,52 @@ class Session:
             self.load()
 
     def load(self) -> None:
-        """Load and validate session state, quarantining corrupt files."""
+        """Load and validate session state."""
         with self._thread_lock, self._file_lock():
-            self._data = self._read_data(quarantine=True)
+            self._data = self._read_data()
 
     @staticmethod
     def _empty_data() -> dict[str, Any]:
-        return {"schema_version": _SCHEMA_VERSION, "functions": {}, "runs": []}
+        return {"schema_version": _SCHEMA_VERSION, "functions": {}, "runs": [], "checkpoints": {}}
 
-    def _read_data(self, *, quarantine: bool) -> dict[str, Any]:
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                raise ValueError("session root must be an object")
-            version = raw.get("schema_version", _SCHEMA_VERSION)
-            if version != _SCHEMA_VERSION:
-                raise ValueError(f"unsupported session schema_version: {version!r}")
-            functions = raw.get("functions", {})
-            runs = raw.get("runs", [])
-            if not isinstance(functions, dict) or not isinstance(runs, list):
-                raise ValueError("session functions/runs have invalid types")
-            valid_functions = {
-                str(address): dict(entry) for address, entry in functions.items() if isinstance(entry, dict)
-            }
-            valid_runs = [dict(entry) for entry in runs if isinstance(entry, dict)]
-            out: dict[str, Any] = {
-                "schema_version": _SCHEMA_VERSION,
-                "functions": valid_functions,
-                "runs": valid_runs,
-            }
-            if "identity" in raw:
-                out["identity"] = raw["identity"]
-            if "checkpoints" in raw and isinstance(raw["checkpoints"], dict):
-                out["checkpoints"] = raw["checkpoints"]
-            if "history" in raw and isinstance(raw["history"], list):
-                out["history"] = raw["history"]
-            return out
-        except (json.JSONDecodeError, OSError, ValueError) as exc:
-            logger.warning("Invalid session state in %s: %s", self.path, exc)
-            if quarantine and self.path.exists():
-                quarantine_path = self.path.with_name(f"{self.path.name}.corrupt-{int(time.time() * 1000)}")
-                try:
-                    os.replace(self.path, quarantine_path)
-                    logger.warning("Corrupt session quarantined as %s", quarantine_path)
-                except OSError:
-                    logger.warning("Could not quarantine corrupt session", exc_info=True)
+    def _read_data(self) -> dict[str, Any]:
+        raw = json.loads(self.path.read_text(encoding="utf-8"))
+        schema_valid = (
+            isinstance(raw, dict)
+            and isinstance(raw.get("functions"), dict)
+            and isinstance(raw.get("runs"), list)
+        )
+        if not schema_valid:
+            logger.warning("Invalid session state in %s: schema mismatch", self.path)
+            quarantine_path = self.path.with_name(f"{self.path.name}.corrupt-{int(time.time() * 1000)}")
+            try:
+                os.replace(self.path, quarantine_path)
+                logger.warning("Corrupt session quarantined as %s", quarantine_path)
+            except OSError:
+                logger.warning("Could not quarantine corrupt session", exc_info=True)
             return self._empty_data()
+
+        checkpoints = raw.get("checkpoints", {})
+        if not isinstance(checkpoints, dict):
+            checkpoints = {}
+        valid_functions = {
+            str(address): dict(entry) for address, entry in raw["functions"].items() if isinstance(entry, dict)
+        }
+        valid_runs = [dict(entry) for entry in raw["runs"] if isinstance(entry, dict)]
+        valid_checkpoints = {
+            str(address): dict(entry) for address, entry in checkpoints.items() if isinstance(entry, dict)
+        }
+        out: dict[str, Any] = {
+            "schema_version": raw.get("schema_version", _SCHEMA_VERSION),
+            "functions": valid_functions,
+            "runs": valid_runs,
+            "checkpoints": valid_checkpoints,
+        }
+        if "identity" in raw:
+            out["identity"] = raw["identity"]
+        if "history" in raw and isinstance(raw["history"], list):
+            out["history"] = raw["history"]
+        return out
 
     def save(self) -> None:
         """Atomically replace the session file on POSIX and Windows."""
@@ -149,12 +149,18 @@ class Session:
         """Archive old results when the project/evidence/acceptance policy changes."""
         with self._thread_lock, self._file_lock():
             if self.path.exists():
-                self._data = self._read_data(quarantine=False)
+                self._data = self._read_data()
             previous = self._data.get("identity")
             if previous != identity and (self._data["functions"] or self._data.get("checkpoints")):
                 history = self._data.get("history", [])
                 history.append({k: v for k, v in self._data.items() if k != "history"})
-                self._data = {"schema_version": _SCHEMA_VERSION, "functions": {}, "runs": [], "history": history}
+                self._data = {
+                    "schema_version": _SCHEMA_VERSION,
+                    "functions": {},
+                    "runs": [],
+                    "checkpoints": {},
+                    "history": history,
+                }
             self._data["identity"] = identity
             self._save_unlocked()
 
@@ -163,13 +169,14 @@ class Session:
 
         with self._thread_lock, self._file_lock():
             if self.path.exists():
-                self._data = self._read_data(quarantine=False)
+                self._data = self._read_data()
             self._data.setdefault("checkpoints", {})[normalize_address(result.target.address)] = _result_to_dict(result)
             self._save_unlocked()
 
     def previous_feedback(self, address: str) -> str:
-        entry = self._data.get("checkpoints", {}).get(normalize_address(address))
-        return json.dumps(entry, indent=2) if entry else ""
+        with self._thread_lock:
+            entry = self._data.get("checkpoints", {}).get(normalize_address(address))
+            return json.dumps(entry, indent=2) if entry else ""
 
     def record_result(self, result: ReversalResult) -> None:
         addr = normalize_address(result.target.address)
@@ -180,83 +187,100 @@ class Session:
             "code_sha256": hashlib.sha256(result.code.encode()).hexdigest(),
             "code": result.code,
             "objective_verdict": result.objective_verdict.verdict.value if result.objective_verdict else None,
+            "validation_verdict": (result.validation_verdict.verdict.value if result.validation_verdict else None),
+            "validation_summary": result.validation_verdict.summary if result.validation_verdict else None,
             "validation_checks": result.validation_verdict.checks if result.validation_verdict else [],
-            "objective_findings": result.objective_verdict.findings if result.objective_verdict else [],
             "validation_findings": result.validation_verdict.findings if result.validation_verdict else [],
+            "candidate_overlay": result.validation_verdict.overlay_file if result.validation_verdict else None,
+            "objective_findings": result.objective_verdict.findings if result.objective_verdict else [],
             "parity_findings": [asdict(f) for f in result.parity_findings],
             "class_name": result.target.class_name,
             "function_name": result.target.function_name,
             "success": result.success,
             "rounds_used": result.rounds_used,
             "verdict": result.checker_verdict.verdict.value if result.checker_verdict else None,
-            "validation_verdict": (result.validation_verdict.verdict.value if result.validation_verdict else None),
             "parity_status": result.parity_status.value if result.parity_status else None,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         with self._thread_lock, self._file_lock():
             # Merge against the latest on-disk state to avoid lost updates from
             # concurrent class/function workers.
-            self._data = self._read_data(quarantine=False) if self.path.exists() else self._empty_data()
+            self._data = self._read_data() if self.path.exists() else self._empty_data()
             self._data["functions"][addr] = entry
             self._data["runs"].append(entry)
             self._save_unlocked()
 
     def is_completed(self, address: str) -> bool:
-        addr = normalize_address(address)
-        func = self._data["functions"].get(addr)
-        return func is not None and func.get("success", False)
+        with self._thread_lock:
+            addr = normalize_address(address)
+            func = self._data["functions"].get(addr)
+            return func is not None and func.get("success", False)
 
     def is_attempted(self, address: str) -> bool:
         """Return True if this address has been attempted (pass or fail)."""
-        addr = normalize_address(address)
-        return addr in self._data["functions"]
+        with self._thread_lock:
+            addr = normalize_address(address)
+            return addr in self._data["functions"]
 
     def attempt_count(self, address: str) -> int:
         """Return the number of recorded runs for an address."""
-        addr = normalize_address(address)
-        return sum(
-            1 for entry in self._data.get("runs", []) if normalize_address(str(entry.get("address", ""))) == addr
-        )
+        with self._thread_lock:
+            addr = normalize_address(address)
+            return sum(
+                1 for entry in self._data.get("runs", []) if normalize_address(str(entry.get("address", ""))) == addr
+            )
 
     def get_class_summary(self, class_name: str) -> dict[str, int]:
-        total = 0
-        passed = 0
-        failed = 0
-        for func in self._data["functions"].values():
-            if func.get("class_name") == class_name:
-                total += 1
-                if func.get("success"):
-                    passed += 1
-                else:
-                    failed += 1
-        return {"total": total, "passed": passed, "failed": failed}
+        with self._thread_lock:
+            total = 0
+            passed = 0
+            failed = 0
+            for func in self._data["functions"].values():
+                if func.get("class_name") == class_name:
+                    total += 1
+                    if func.get("success"):
+                        passed += 1
+                    else:
+                        failed += 1
+            return {"total": total, "passed": passed, "failed": failed}
 
     def get_summary(self) -> dict[str, Any]:
-        funcs = self._data["functions"]
-        total = len(funcs)
-        passed = sum(1 for f in funcs.values() if f.get("success"))
-        failed = total - passed
-        classes: set[str] = set()
-        for f in funcs.values():
-            cn = f.get("class_name", "")
-            if cn:
-                classes.add(cn)
-        return {
-            "total_functions": total,
-            "passed": passed,
-            "failed": failed,
-            "classes_touched": len(classes),
-        }
+        with self._thread_lock:
+            funcs = self._data["functions"]
+            total = len(funcs)
+            passed = sum(1 for f in funcs.values() if f.get("success"))
+            failed = total - passed
+            classes: set[str] = set()
+            for f in funcs.values():
+                cn = f.get("class_name", "")
+                if cn:
+                    classes.add(cn)
+            return {
+                "total_functions": total,
+                "passed": passed,
+                "failed": failed,
+                "classes_touched": len(classes),
+            }
 
     def get_all_functions(self) -> list[dict[str, Any]]:
-        return list(self._data["functions"].values())
+        with self._thread_lock:
+            return list(self._data["functions"].values())
 
     @property
     def identity(self) -> str | None:
         """Fingerprint of current records; reading never rebinds or archives them."""
-        value = self._data.get("identity")
-        return value if isinstance(value, str) else None
+        with self._thread_lock:
+            value = self._data.get("identity")
+            return value if isinstance(value, str) else None
 
     def get_checkpoint(self, address: str) -> dict[str, Any] | None:
-        value = self._data.get("checkpoints", {}).get(normalize_address(address))
-        return dict(value) if isinstance(value, dict) else None
+        with self._thread_lock:
+            value = self._data.get("checkpoints", {}).get(normalize_address(address))
+            return dict(value) if isinstance(value, dict) else None
+
+    def restore_checkpoint(self, address: str) -> ReversalResult | None:
+        """Restore a previously recorded checkpoint as a ReversalResult."""
+        raw = self.get_checkpoint(address)
+        if raw is None:
+            return None
+        return ReversalResult.from_dict(raw)
