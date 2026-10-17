@@ -1215,6 +1215,8 @@ def cmd_batch(
                     "C++ offset inventories (bounded artifact set)...",
                     flush=True,
                 )
+            headers_dir = output_dir / "headers"
+            headers_dir.mkdir(parents=True, exist_ok=True)
             used_filenames: set[str] = set()
             for class_name in selected_inventory_classes:
                 header_code = generate_vtable_header(
@@ -1230,7 +1232,7 @@ def cmd_batch(
                     header_name = f"{stem}_{collision_index}.h"
                     collision_index += 1
                 used_filenames.add(header_name.casefold())
-                header_file = output_dir / header_name
+                header_file = headers_dir / header_name
                 header_file.write_text(header_code, encoding="utf-8")
                 dumped_count += 1
                 logger.info(
@@ -1245,7 +1247,7 @@ def cmd_batch(
                 print(summary_line)
 
         if dumped_count > 0:
-            print(f"\n[DONE] Wrote {dumped_count} evidence-backed C++ offset inventories into '{output_dir}'.")
+            print(f"\n[DONE] Wrote {dumped_count} evidence-backed C++ offset inventories into '{headers_dir}'.")
         elif engine_type in {"android-java-dex", "react-native-hermes"}:
             print("\n[DONE] Successfully ingested Android Java/Kotlin class metadata.")
         else:

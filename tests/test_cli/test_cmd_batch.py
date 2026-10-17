@@ -344,7 +344,8 @@ def test_large_metadata_inventory_detects_once_and_bounds_header_artifacts(
 
     assert result == 0
     assert detection_calls == 1
-    assert len(list(output_dir.glob("*.h"))) == 50
+    assert (output_dir / "headers").is_dir()
+    assert len(list(output_dir.glob("**/*.h"))) == 50
 
 
 def test_metadata_join_does_not_add_lowercase_class_aliases(
