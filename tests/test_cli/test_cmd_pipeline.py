@@ -575,7 +575,7 @@ def test_cmd_pipeline_android_apk_extracts_il2cpp_so(
     assert result == 0
     assert observed["binary_bytes"] == b"64-bit"
     assert observed["metadata_bytes"] == b"metadata"
-    assert observed["dumper_path"] == dumper_path.as_posix()
+    assert Path(str(observed["dumper_path"])) == dumper_path
     assert Path(str(observed["metadata_dir"])).name == "il2cpp_dumper_output"
     assert (output_dir / "Hook_Goal.cpp").is_file()
 
