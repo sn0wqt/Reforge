@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -24,7 +26,12 @@ class AntigravityCLIProvider(BaseLLMProvider):
         super().__init__()
         self._model = model
         self._timeout_s = timeout_s
-        self._agy_bin = agy_bin
+        self._agy_bin = (
+            shutil.which(agy_bin)
+            or (shutil.which(f"{agy_bin}.exe") if os.name == "nt" else None)
+            or (shutil.which(f"{agy_bin}.cmd") if os.name == "nt" else None)
+            or agy_bin
+        )
         self.last_metadata: dict[str, Any] = {}
 
     def send(self, messages: list[Message], **kwargs: Any) -> str:

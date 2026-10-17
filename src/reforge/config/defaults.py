@@ -94,16 +94,33 @@ validation:
   allow_host_commands: false
   trust_configured_commands: false
   environment_allowlist:
+    - "CC"
+    - "CFLAGS"
     - "COMSPEC"
+    - "CXX"
+    - "CXXFLAGS"
+    - "DEVELOPER_DIR"
     - "HOME"
     - "LANG"
     - "LC_ALL"
+    - "LDFLAGS"
+    - "LOGNAME"
     - "PATH"
     - "PATHEXT"
+    - "PKG_CONFIG_PATH"
+    - "SDKROOT"
+    - "SHELL"
     - "SYSTEMROOT"
     - "TEMP"
+    - "TERM"
     - "TMP"
+    - "TMPDIR"
+    - "USER"
     - "USERPROFILE"
+    - "XDG_CACHE_HOME"
+    - "XDG_CONFIG_HOME"
+    - "XDG_DATA_HOME"
+    - "XDG_RUNTIME_DIR"
   parity_fail_on_red: true
   parity_fail_on_yellow: false
   command_timeout_s: 900

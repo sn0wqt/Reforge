@@ -2,10 +2,84 @@
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import replace
+from pathlib import Path
 
 from reforge.config.schema import LLMConfig
 from reforge.llm.protocol import LLMProvider
+
+
+def _resolve_cliproxy_api_key(explicit_key: str | None = None) -> str:
+    """Resolve CLIProxy API key from explicit config, env, or local config files on macOS/Windows/Linux."""
+    if explicit_key:
+        return explicit_key
+
+    env_key = os.environ.get("CLIPROXY_API_KEY")
+    if env_key:
+        return env_key
+
+    candidate_paths: list[Path] = []
+    custom_cfg = os.environ.get("CLIPROXY_CONFIG")
+    if custom_cfg:
+        candidate_paths.append(Path(custom_cfg).expanduser())
+
+    candidate_paths.extend(
+        [
+            # macOS CPA-GUI (cli-proxy-api desktop app)
+            Path.home() / "Library" / "Application Support" / "com.cpa.gui" / "cpa-core" / "config.yaml",
+            # Windows / standalone default
+            Path.home() / "CLIProxyAPI" / "config.yaml",
+            # Standard XDG / Linux / macOS CLI locations
+            Path.home() / ".config" / "cliproxy" / "config.yaml",
+            Path.home() / ".cli-proxy-api" / "config.yaml",
+        ]
+    )
+
+    for proxy_cfg in candidate_paths:
+        if not proxy_cfg.is_file():
+            continue
+        try:
+            content = proxy_cfg.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        # Try structured YAML parsing first
+        try:
+            import yaml  # type: ignore[import-untyped]
+
+            data = yaml.safe_load(content)
+            if isinstance(data, dict):
+                access = data.get("access")
+                if isinstance(access, dict):
+                    keys = access.get("api-keys")
+                    if isinstance(keys, list) and keys:
+                        first = str(keys[0]).strip()
+                        if first:
+                            return first
+                    elif isinstance(keys, str) and keys.strip():
+                        return keys.strip()
+                top_keys = data.get("api-keys")
+                if isinstance(top_keys, list) and top_keys:
+                    first = str(top_keys[0]).strip()
+                    if first:
+                        return first
+                elif isinstance(top_keys, str) and top_keys.strip():
+                    return top_keys.strip()
+        except Exception:
+            pass
+
+        # Regex fallback for sk-local-* or access.api-keys
+        match = re.search(r"sk-local-[a-f0-9]+", content)
+        if match:
+            return match.group(0)
+
+        key_match = re.search(r"""(?:api-keys:|\bapi-key:)\s*\n\s*-\s*['"]?([^'"\s#]+)['"]?""", content)
+        if key_match:
+            return key_match.group(1)
+
+    return "sk-local-cliproxy"
 
 
 def create_provider(config: LLMConfig) -> LLMProvider:
@@ -94,23 +168,12 @@ def _create_single_provider(config: LLMConfig) -> LLMProvider:
         )
 
     if config.provider in ("cliproxy", "cli-proxy"):
-        import os
-        import re
-        from pathlib import Path
-
         from reforge.llm.openai_compat import OpenAIProvider
 
-        api_key = config.api_key or os.environ.get("CLIPROXY_API_KEY")
-        if not api_key:
-            proxy_cfg = Path.home() / "CLIProxyAPI" / "config.yaml"
-            if proxy_cfg.is_file():
-                match = re.search(r"sk-local-[a-f0-9]+", proxy_cfg.read_text(encoding="utf-8"))
-                if match:
-                    api_key = match.group(0)
-
+        api_key = _resolve_cliproxy_api_key(config.api_key)
         base_url = config.base_url or os.environ.get("CLIPROXY_BASE_URL", "http://127.0.0.1:8317/v1")
         return OpenAIProvider(
-            api_key=api_key or "sk-local-cliproxy",
+            api_key=api_key,
             model=config.model or "gemini-3.8-flash-high",
             max_tokens=config.max_tokens,
             temperature=config.temperature,

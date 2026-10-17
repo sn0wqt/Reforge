@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -43,7 +45,12 @@ class ClaudeCLIProvider(BaseLLMProvider):
         super().__init__()
         self._model = model
         self._timeout_s = timeout_s
-        self._claude_bin = claude_bin
+        self._claude_bin = (
+            shutil.which(claude_bin)
+            or (shutil.which(f"{claude_bin}.cmd") if os.name == "nt" else None)
+            or (shutil.which(f"{claude_bin}.exe") if os.name == "nt" else None)
+            or claude_bin
+        )
         self._max_budget_usd = max_budget_usd
         self._effort = effort
         self._conversations_claude: dict[str, _Conversation] = {}

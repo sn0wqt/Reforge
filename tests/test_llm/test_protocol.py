@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from reforge.config.schema import LLMConfig
 from reforge.llm.protocol import LLMProvider, Message
 from reforge.llm.registry import create_provider
@@ -68,6 +72,29 @@ def test_registry_creates_codex_provider() -> None:
 def test_registry_creates_cliproxy_provider() -> None:
     provider = create_provider(LLMConfig(provider="cliproxy", model="gemini-3.8-flash-high", api_key="test-key"))
     assert provider.supports_conversations
+
+
+def test_resolve_cliproxy_api_key_explicit() -> None:
+    from reforge.llm.registry import _resolve_cliproxy_api_key
+
+    assert _resolve_cliproxy_api_key("custom-key") == "custom-key"
+
+
+def test_resolve_cliproxy_api_key_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from reforge.llm.registry import _resolve_cliproxy_api_key
+
+    monkeypatch.setenv("CLIPROXY_API_KEY", "env-key-999")
+    assert _resolve_cliproxy_api_key() == "env-key-999"
+
+
+def test_resolve_cliproxy_api_key_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from reforge.llm.registry import _resolve_cliproxy_api_key
+
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("access:\n  api-keys:\n    - 'mac-cpa-key-456'\n", encoding="utf-8")
+    monkeypatch.delenv("CLIPROXY_API_KEY", raising=False)
+    monkeypatch.setenv("CLIPROXY_CONFIG", str(cfg))
+    assert _resolve_cliproxy_api_key() == "mac-cpa-key-456"
 
 
 def test_registry_creates_claude_provider() -> None:

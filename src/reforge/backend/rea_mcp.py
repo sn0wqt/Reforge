@@ -5,7 +5,9 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import shlex
+import shutil
 import subprocess
 import threading
 from collections.abc import Callable
@@ -85,7 +87,13 @@ class ReaMcpBackend(REBackend, EvidenceBackend):
 
     def _start_server(self) -> None:
         """Spawn REA MCP server subprocess."""
-        args = shlex.split(self.cli_cmd)
+        args = shlex.split(self.cli_cmd, posix=(os.name != "nt"))
+        if os.name == "nt" and args:
+            resolved_bin = shutil.which(args[0])
+            if resolved_bin and resolved_bin.lower().endswith((".cmd", ".bat")):
+                args = ["cmd.exe", "/c", resolved_bin, *args[1:]]
+            elif args[0].lower() in {"npx", "rea"}:
+                args = ["cmd.exe", "/c", *args]
         try:
             self._proc = subprocess.Popen(
                 args,
@@ -415,7 +423,15 @@ class ReaMcpBackend(REBackend, EvidenceBackend):
             try:
                 if self._proc.stdin:
                     self._proc.stdin.close()
-                self._proc.terminate()
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(self._proc.pid), "/T", "/F"],
+                        capture_output=True,
+                        check=False,
+                        timeout=5.0,
+                    )
+                else:
+                    self._proc.terminate()
                 self._proc.wait(timeout=5.0)
             except Exception:
                 with contextlib.suppress(Exception):

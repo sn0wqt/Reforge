@@ -154,16 +154,33 @@ class ValidationConfig:
     trust_configured_commands: bool = False
     environment_allowlist: list[str] = field(
         default_factory=lambda: [
+            "CC",
+            "CFLAGS",
             "COMSPEC",
+            "CXX",
+            "CXXFLAGS",
+            "DEVELOPER_DIR",
             "HOME",
             "LANG",
             "LC_ALL",
+            "LDFLAGS",
+            "LOGNAME",
             "PATH",
             "PATHEXT",
+            "PKG_CONFIG_PATH",
+            "SDKROOT",
+            "SHELL",
             "SYSTEMROOT",
             "TEMP",
+            "TERM",
             "TMP",
+            "TMPDIR",
+            "USER",
             "USERPROFILE",
+            "XDG_CACHE_HOME",
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "XDG_RUNTIME_DIR",
         ]
     )
     parity_fail_on_red: bool = True
