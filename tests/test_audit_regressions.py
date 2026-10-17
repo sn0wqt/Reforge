@@ -517,7 +517,7 @@ def test_large_evidence_remains_parseable_json() -> None:
 
 
 def test_differential_counterexample_repairs_compiled_candidate(tmp_path: Path) -> None:
-    compiler = shutil.which("c++")
+    compiler = shutil.which("clang++") or shutil.which("g++") or shutil.which("c++")
     if not compiler:
         pytest.skip("C++ compiler required")
     config = config_for(tmp_path)

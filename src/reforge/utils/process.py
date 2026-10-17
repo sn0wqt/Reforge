@@ -12,14 +12,20 @@ _CLI_ENVIRONMENT_KEYS = frozenset(
         "CODEX_CA_CERTIFICATE",
         "CODEX_HOME",
         "COMSPEC",
+        "CURL_CA_BUNDLE",
+        "DEVELOPER_DIR",
         "HOME",
         "LANG",
         "LC_ALL",
         "LOCALAPPDATA",
+        "LOGNAME",
         "NO_COLOR",
         "PATH",
         "PATHEXT",
         "PROGRAMDATA",
+        "SDKROOT",
+        "SHELL",
+        "SSH_AUTH_SOCK",
         "SSL_CERT_DIR",
         "SSL_CERT_FILE",
         "SYSTEMDRIVE",
@@ -28,13 +34,23 @@ _CLI_ENVIRONMENT_KEYS = frozenset(
         "TERM",
         "TMP",
         "TMPDIR",
+        "USER",
         "USERPROFILE",
         "WINDIR",
         "XDG_CACHE_HOME",
         "XDG_CONFIG_HOME",
         "XDG_DATA_HOME",
+        "XDG_RUNTIME_DIR",
     }
 )
+
+
+def _prepare_args(args: Sequence[str]) -> list[str]:
+    """Ensure batch scripts on Windows are wrapped with cmd.exe /c for shell=False execution."""
+    cmd_args = [str(a) for a in args]
+    if os.name == "nt" and cmd_args and cmd_args[0].lower().endswith((".bat", ".cmd")):
+        cmd_args = ["cmd.exe", "/c", *cmd_args]
+    return cmd_args
 
 
 def sanitized_cli_environment() -> dict[str, str]:
@@ -54,9 +70,10 @@ def run_cmd(args: Sequence[str], timeout_s: int = 45) -> tuple[bool, str]:
         A tuple of ``(ok, output)`` where *ok* is ``True`` when the process
         exits with return code 0 and *output* contains combined stdout/stderr.
     """
+    cmd_args = _prepare_args(args)
     try:
         proc = subprocess.run(
-            list(args),
+            cmd_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -80,9 +97,10 @@ def run_cmd_split(args: Sequence[str], timeout_s: int = 45) -> tuple[int, str, s
 
     Returns ``(-1, "", error_message)`` on timeout or missing executable.
     """
+    cmd_args = _prepare_args(args)
     try:
         proc = subprocess.run(
-            list(args),
+            cmd_args,
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -112,9 +130,10 @@ def run_process(
     import tempfile
     import typing
 
+    cmd_args = _prepare_args(args)
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         proc = subprocess.Popen(
-            list(args),
+            cmd_args,
             cwd=cwd,
             env=env,
             stdin=subprocess.PIPE,
@@ -128,20 +147,28 @@ def run_process(
         except BaseException:
             if os.name == "nt":
                 if proc.poll() is None:
-                    subprocess.run(
-                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                        capture_output=True,
-                        check=False,
-                        timeout=5.0,
-                    )
+                    with contextlib.suppress(Exception):
+                        subprocess.run(
+                            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                            capture_output=True,
+                            check=False,
+                            timeout=5.0,
+                        )
+                    if proc.poll() is None:
+                        with contextlib.suppress(Exception):
+                            proc.kill()
             else:
                 killpg = getattr(os, "killpg", None)
                 sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
                 if callable(killpg):
-                    with contextlib.suppress(ProcessLookupError):
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
                         killpg(proc.pid, sigkill)
+                if proc.poll() is None:
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
+                        proc.kill()
 
-            proc.wait()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=5.0)
             raise
 
         def read_tail(handle: object) -> str:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -26,10 +28,12 @@ def definitions(database: Path, source_root: Path) -> list[tuple[str, str, Path,
         file = (cwd / item["file"]).resolve()
         if not file.is_relative_to(root):
             continue
-        args = item.get("arguments") or shlex.split(item["command"])
+        args = item.get("arguments") or shlex.split(item["command"], posix=(os.name != "nt"))
         # Preserve compiler flags, remove output/compile-only flags.
         cleaned: list[str] = []
         skip = False
+        raw_compiler = Path(args[0]).name.lower()
+        is_msvc_cl = raw_compiler in {"cl", "cl.exe"}
         for arg in args[1:]:
             if skip:
                 skip = False
@@ -37,11 +41,19 @@ def definitions(database: Path, source_root: Path) -> list[tuple[str, str, Path,
             if arg in {"-o", "-MF", "-MT", "-MQ"}:
                 skip = True
                 continue
-            if arg in {"-c", "-MD", "-MMD", "-MP"}:
+            if not is_msvc_cl and arg in {"-c", "-MD", "-MMD", "-MP"}:
+                continue
+            if is_msvc_cl and arg in {"/c", "-c"}:
                 continue
             cleaned.append(arg)
+        compiler = "clang-cl" if is_msvc_cl and shutil.which("clang-cl") else "clang++"
+        dump_flags = (
+            ["/Zs", "-Xclang", "-ast-dump=json"]
+            if compiler == "clang-cl"
+            else ["-fsyntax-only", "-Xclang", "-ast-dump=json"]
+        )
         proc = subprocess.run(
-            ["clang++", *cleaned, "-fsyntax-only", "-Xclang", "-ast-dump=json"],
+            [compiler, *cleaned, *dump_flags],
             cwd=cwd,
             capture_output=True,
             text=True,

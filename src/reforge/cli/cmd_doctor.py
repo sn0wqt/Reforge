@@ -116,9 +116,27 @@ def collect_toolchain_status() -> list[dict[str, Any]]:
     dumper = resolve_il2cpp_dumper()
     node = shutil.which("node")
     ghidra_bridge = shutil.which("ghidra-bridge")
-    ghidra = shutil.which("ghidraRun") or shutil.which("ghidraRun.bat") or shutil.which("analyzeHeadless")
+    from reforge.utils.toolchain import resolve_ghidra
+
+    ghidra = (
+        resolve_ghidra()
+        or shutil.which("ghidraRun")
+        or shutil.which("ghidraRun.bat")
+        or shutil.which("analyzeHeadless")
+        or shutil.which("analyzeHeadless.bat")
+    )
     codex = shutil.which("codex") or shutil.which("codex.cmd")
     antigravity = shutil.which("agy") or shutil.which("agy.exe")
+    cliproxy_candidates = [
+        shutil.which("cli-proxy"),
+        shutil.which("cli-proxy.exe"),
+        shutil.which("cpa-gui"),
+        Path.home() / "Library" / "Application Support" / "com.cpa.gui" / "cpa-core" / "cli-proxy-api",
+        Path.home() / ".local" / "share" / "cpa-core" / "cli-proxy-api",
+        Path.home() / ".config" / "CLIProxyAPI" / "cli-proxy-api",
+        Path.home() / "CLIProxyAPI" / "cli-proxy-api.exe",
+    ]
+    cliproxy = next((str(p) for p in cliproxy_candidates if p and (isinstance(p, str) or Path(p).is_file())), None)
     hermes_available = importlib.util.find_spec("hermes_dec") is not None
     frida_py_available = importlib.util.find_spec("frida") is not None
     wakaru = resolve_wakaru()
@@ -221,6 +239,7 @@ def collect_toolchain_status() -> list[dict[str, Any]]:
         _entry("Ghidra runtime", ghidra),
         _entry("Codex CLI", codex),
         _entry("AntiGravity CLI", antigravity),
+        _entry("CLIProxyAPI", cliproxy, detail="Local OpenAI-compatible API gateway"),
     ]
 
 
@@ -242,13 +261,28 @@ def _cmd_doctor_config(args: argparse.Namespace) -> int:
         if model.provider in {"claude-cli", "codex"}:
             executable = model.cli_path or ("claude" if model.provider == "claude-cli" else "codex")
             add(role + " executable", shutil.which(executable) is not None, executable)
+        elif model.provider in {"cliproxy", "cli-proxy"}:
+            from reforge.llm.registry import _resolve_cliproxy_api_key
+
+            key = _resolve_cliproxy_api_key(model.api_key)
+            has_key = bool(key and key != "sk-local-cliproxy")
+            detail = f"Key detected: {key[:3]}***" if has_key else "Default key fallback"
+            add(role + " cliproxy key", has_key, detail)
     validation = config.validation
     commands = validation.build_commands + validation.test_commands + validation.runtime_commands
     if validation.enabled and any(isinstance(command, str) for command in commands):
+        if os.name == "nt":
+            comspec = os.environ.get("COMSPEC", "cmd.exe")
+            shell_ok = shutil.which(comspec) is not None or shutil.which("cmd.exe") is not None
+            detail = "cmd.exe available for Windows validation shell commands"
+        else:
+            sh_bin = os.environ.get("SHELL", "/bin/sh")
+            shell_ok = shutil.which(sh_bin) is not None or shutil.which("/bin/sh") is not None
+            detail = "POSIX shell available for validation shell commands"
         add(
             "validation shell",
-            shutil.which("/bin/sh") is not None,
-            "Shell strings require /bin/sh; use argument arrays for native Windows validation",
+            shell_ok,
+            detail,
         )
     has_gates = bool(
         validation.build_commands

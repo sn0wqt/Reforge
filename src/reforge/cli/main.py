@@ -17,6 +17,10 @@ _PLATFORM_CHOICES = (
     "windows-x64",
     "linux",
     "linux-x64",
+    "macos",
+    "macos-arm64",
+    "macos-x64",
+    "darwin",
 )
 
 
@@ -53,10 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         default=None,
-        help="Explicit config file path (defaults to reforge.yaml or reforge.yaml)",
+        help="Explicit config file path (defaults to reforge.yaml or .reforge.yaml)",
     )
 
-    sub = parser.add_subparsers(dest="command", help="Available commands")
+    sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     # init
     init_p = _command_parser(sub, "init", help="Initialize reforge.yaml config file")
@@ -237,7 +241,7 @@ def _resolve_default_config_argument(args: argparse.Namespace) -> None:
         if configured is None:
             args.config = "reforge.yaml"
         return
-    if command is None:
+    if command is None or (command == "doctor" and configured is None):
         return
 
     if configured is not None:

@@ -100,7 +100,11 @@ Interceptor.attach(targetAddress, {{
 const modName = {mod_str};
 const mod = modName
     ? Process.findModuleByName(modName)
-    : (Process.findModuleByName("libil2cpp.so") || Process.enumerateModules()[0]);
+    : (Process.findModuleByName("libil2cpp.so")
+       || Process.findModuleByName("GameAssembly.dll")
+       || Process.findModuleByName("UnityFramework")
+       || Process.findModuleByName("GameAssembly.so")
+       || Process.enumerateModules()[0]);
 if (!mod) throw new Error("Could not resolve module for address tracing");
 const targetAddress = mod.base.add(ptr({json.dumps(addr_val)}));
 
@@ -214,7 +218,10 @@ def cmd_trace(args: argparse.Namespace) -> int:
         if spawn_target:
             cmd.extend(["-f", spawn_target])
         elif attach_target:
-            cmd.extend(["-n", attach_target])
+            if str(attach_target).isdigit():
+                cmd.extend(["-p", str(attach_target)])
+            else:
+                cmd.extend(["-n", attach_target])
 
         cmd.extend(["-l", str(out_path)])
         try:

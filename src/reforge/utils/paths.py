@@ -20,7 +20,8 @@ def safe_filename(value: str, *, suffix: str = "", max_length: int = 180) -> str
     cleaned = _UNSAFE_COMPONENT.sub("_", value).strip(" ._")
     if not cleaned:
         cleaned = "artifact"
-    if cleaned.upper() in _WINDOWS_RESERVED:
+    base_stem = cleaned.split(".", 1)[0].upper()
+    if cleaned.upper() in _WINDOWS_RESERVED or base_stem in _WINDOWS_RESERVED:
         cleaned = f"_{cleaned}"
     suffix_value = suffix if suffix.startswith(".") or not suffix else f".{suffix}"
     room = max(1, max_length - len(suffix_value))

@@ -280,11 +280,15 @@ def validate_candidate(
     working_directory = _working_directory(config, candidate_file)
 
     for kind, command in commands:
-        expanded = (
-            ["/bin/sh", "-lc", _expand_shell(command)]
-            if isinstance(command, str)
-            else [_expand_argument(arg, env) for arg in command]
-        )
+        if isinstance(command, str):
+            if os.name == "nt":
+                shell_bin = os.environ.get("COMSPEC", "cmd.exe")
+                expanded = [shell_bin, "/d", "/c", _expand_shell(command)]
+            else:
+                shell_bin = os.environ.get("SHELL", "/bin/sh")
+                expanded = [shell_bin, "-lc", _expand_shell(command)]
+        else:
+            expanded = [_expand_argument(arg, env) for arg in command]
         try:
             proc = run_process(
                 expanded,
@@ -463,7 +467,14 @@ def _remap_links(overlay: Path, project: Path) -> None:
                     f"(symlink: {original})"
                 ) from exc
             link.unlink()
-            link.symlink_to(os.path.relpath(overlay / target, link.parent), target_is_directory=original.is_dir())
+            try:
+                link.symlink_to(os.path.relpath(overlay / target, link.parent), target_is_directory=original.is_dir())
+            except OSError:
+                target_resolved = (overlay / target).resolve()
+                if original.is_dir():
+                    shutil.copytree(target_resolved, link)
+                else:
+                    shutil.copy2(target_resolved, link)
 
 
 def _expand_shell(command: str) -> str:

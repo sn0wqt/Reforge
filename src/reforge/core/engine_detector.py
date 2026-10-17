@@ -43,6 +43,11 @@ PLATFORM_HINTS: Final[dict[str, str]] = {
     "ios-arm64": "ios",
     "linux": "linux",
     "linux-x64": "linux",
+    "macos": "macos",
+    "macos-arm64": "macos",
+    "macos-x64": "macos",
+    "darwin": "macos",
+    "osx": "macos",
     "windows": "windows",
     "windows-x64": "windows",
 }
@@ -229,6 +234,16 @@ def _il2cpp_detection(
             7,
             "unity-il2cpp-linux",
             "Unity IL2CPP (Linux)",
+        ),
+        "macos": (
+            8,
+            "unity-il2cpp-macos",
+            "Unity IL2CPP (macOS)",
+        ),
+        "darwin": (
+            8,
+            "unity-il2cpp-macos",
+            "Unity IL2CPP (macOS)",
         ),
     }.get(platform)
     if route is None:

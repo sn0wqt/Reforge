@@ -569,6 +569,8 @@ def generate_frida_java_script(
                 "unity-il2cpp-android": "libil2cpp.so",
                 "unity-il2cpp-ios": "UnityFramework",
                 "unity-il2cpp-windows": "GameAssembly.dll",
+                "unity-il2cpp-linux": "GameAssembly.so",
+                "unity-il2cpp-macos": "GameAssembly.dylib",
             }.get(pathway, "libil2cpp.so")
             pointer_literal = _native_pointer_literal(getattr(target, "return_value", None))
             if mutation_enabled and pointer_literal is not None:
@@ -1114,7 +1116,12 @@ def generate_windows_hook(address: str, symbol: str) -> str:
     safe_symbol = safe_identifier(symbol)
     safe_address = format_address(address)
     return f"""// Auto-generated Windows MinHook / Detour C++ template
-#include <windows.h>
+#if defined(_WIN32)
+  #include <windows.h>
+#else
+  #include <cstdint>
+  #define __fastcall
+#endif
 
 // Candidate address: {safe_address} ({_safe_comment(symbol)})
 typedef void (__fastcall* {safe_symbol}_t)(void* self);
@@ -1223,18 +1230,20 @@ def cmd_hook(args: argparse.Namespace) -> int:
     else:
         assert address is not None
         platform_name = (getattr(args, "platform", None) or config.project_profile.name).lower()
-        if not any(name in platform_name for name in ("ios", "android", "windows", "linux")):
+        if not any(name in platform_name for name in ("ios", "android", "windows", "linux", "macos", "darwin")):
             print(
                 "Error: --platform is required when the configured profile is platform-neutral",
                 file=sys.stderr,
             )
             return 2
-        if "ios" in platform_name:
+        if "ios" in platform_name or "macos" in platform_name or "darwin" in platform_name:
             code = generate_ios_hook(address, symbol)
         elif "android" in platform_name:
             code = generate_android_hook(address, symbol)
         elif "linux" in platform_name:
             code = generate_linux_hook(address, symbol)
+        elif "windows" in platform_name:
+            code = generate_windows_hook(address, symbol)
         else:
             code = generate_windows_hook(address, symbol)
 
