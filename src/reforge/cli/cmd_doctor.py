@@ -265,8 +265,9 @@ def _cmd_doctor_config(args: argparse.Namespace) -> int:
             from reforge.llm.registry import _resolve_cliproxy_api_key
 
             key = _resolve_cliproxy_api_key(model.api_key)
-            has_key = bool(key and key != "sk-local-cliproxy")
-            detail = f"Key detected: {key[:3]}***" if has_key else "Default key fallback"
+            has_key = bool(key)
+            has_custom = bool(key and key != "sk-local-cliproxy")
+            detail = f"Key detected: {key[:3]}***" if has_custom else "Default local gateway key"
             add(role + " cliproxy key", has_key, detail)
     validation = config.validation
     commands = validation.build_commands + validation.test_commands + validation.runtime_commands

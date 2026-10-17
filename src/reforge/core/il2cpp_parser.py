@@ -89,7 +89,7 @@ def unchain_macho_fixups(binary_path: str | Path, output_path: str | Path | None
         if seg_starts_off + 22 > len(data):
             continue
         size, page_size, pointer_format = struct.unpack_from(f"{endian}IHH", data, seg_starts_off)
-        segment_offset = struct.unpack_from(f"{endian}Q", data, seg_starts_off + 8)[0]
+        _segment_offset = struct.unpack_from(f"{endian}Q", data, seg_starts_off + 8)[0]
         max_valid, page_count = struct.unpack_from(f"{endian}IH", data, seg_starts_off + 16)
 
         seg_file_off = segments[seg_idx][3]

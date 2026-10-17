@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -517,9 +518,18 @@ def test_large_evidence_remains_parseable_json() -> None:
 
 
 def test_differential_counterexample_repairs_compiled_candidate(tmp_path: Path) -> None:
-    compiler = shutil.which("clang++") or shutil.which("g++") or shutil.which("c++")
+    compiler = shutil.which("c++") or shutil.which("g++") or shutil.which("clang++")
     if not compiler:
         pytest.skip("C++ compiler required")
+    probe_source = tmp_path / "probe.cpp"
+    probe_source.write_text("#include <iostream>\nint main() { return 0; }\n")
+    probe_exe = tmp_path / "probe.exe"
+    try:
+        probe = subprocess.run([compiler, str(probe_source), "-o", str(probe_exe)], capture_output=True, timeout=15)
+        if probe.returncode != 0:
+            pytest.skip(f"Compiler {compiler} cannot compile standard C++ in this environment")
+    except Exception:
+        pytest.skip(f"Compiler {compiler} failed execution probe")
     config = config_for(tmp_path)
     source = Path(config.project_profile.source_root) / "f.cpp"
     source.write_text("#include <iostream>\nint Foo() { return 0; }\nint main() { std::cout << Foo(); }")
