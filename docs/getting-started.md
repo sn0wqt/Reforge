@@ -2,9 +2,21 @@
 
 Clone and install Reforge locally:
 
+### Using `uv` (Recommended)
+
 ```bash
 git clone https://github.com/sn0wqt/Reforge.git
 cd Reforge
+uv sync --extra dev --extra providers
+```
+
+### Using standard `pip`
+
+```bash
+git clone https://github.com/sn0wqt/Reforge.git
+cd Reforge
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 python3 -m pip install -e ".[dev,providers]"
 ```
 

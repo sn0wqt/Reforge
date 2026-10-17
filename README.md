@@ -38,17 +38,30 @@ Generated code is placed in isolated candidate overlays rather than modifying th
 
 ## Installation
 
-Clone the repository and install Reforge locally in editable mode:
+Clone the repository and install Reforge locally:
+
+### Using `uv` (Recommended)
 
 ```bash
 git clone https://github.com/sn0wqt/Reforge.git
 cd Reforge
-python3 -m pip install -e ".[dev,providers]"
+uv sync --extra dev --extra providers
 ```
 
 If using Ghidra as your decompiler backend, install `ghidra-ai-bridge`:
 
 ```bash
+uv pip install "ghidra-ai-bridge @ git+https://github.com/Dryxio/ghidra-bridge.git@main"
+```
+
+### Using standard `pip`
+
+```bash
+git clone https://github.com/sn0wqt/Reforge.git
+cd Reforge
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+python3 -m pip install -e ".[dev,providers]"
 python3 -m pip install "ghidra-ai-bridge @ git+https://github.com/Dryxio/ghidra-bridge.git@main"
 ```
 
@@ -56,14 +69,21 @@ python3 -m pip install "ghidra-ai-bridge @ git+https://github.com/Dryxio/ghidra-
 
 Basic static analysis does not require external Android tools. Web bundle repacking requires Java and an APK signer. Frida Gadget embedding and manifest/smali modifications require `apktool`.
 
-Run the automated installer on Windows:
+Run the automated installer:
 
+**On macOS / Linux:**
+```bash
+./scripts/setup_android_tools.sh
+reforge doctor
+```
+
+**On Windows:**
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup_android_tools.ps1
 reforge doctor
 ```
 
-The script installs tools into `%LOCALAPPDATA%\Reforge\tools`:
+The script installs tools into `~/Library/Application Support/Reforge/tools` (macOS), `~/.local/share/Reforge/tools` (Linux), or `%LOCALAPPDATA%\Reforge\tools` (Windows):
 
 | Tool | Version | Purpose |
 |---|---:|---|
@@ -75,7 +95,11 @@ The script installs tools into `%LOCALAPPDATA%\Reforge\tools`:
 
 Install matching Frida host tools:
 
-```powershell
+```bash
+# With uv:
+uv pip install --upgrade "frida==17.16.4" "frida-tools==14.10.4"
+
+# Or with pip:
 python -m pip install --upgrade "frida==17.16.4" "frida-tools==14.10.4"
 ```
 
@@ -241,10 +265,10 @@ data_handling:
 
 Reforge accepts directories or ZIP/XAPK/APKS archives containing `base.apk` and configuration splits:
 
-```powershell
-reforge pipeline `
-  --binary "C:\path\app.xapk" `
-  --goal "unlimited coins" `
+```bash
+reforge pipeline \
+  --binary path/to/app.xapk \
+  --goal "unlimited coins" \
   --repack-apk
 ```
 
@@ -257,19 +281,19 @@ Outputs:
 
 Injects Frida Gadget into all APK ABIs, configures the loader, and re-signs the APK:
 
-```powershell
-reforge pipeline `
-  --binary "C:\path\game.apk" `
-  --goal "infinite coins" `
+```bash
+reforge pipeline \
+  --binary path/to/game.apk \
+  --goal "infinite coins" \
   --embed-frida-gadget
 ```
 
 Install and attach:
 
-```powershell
-adb install "C:\path\app_output\modded_app-aligned-signed.apk"
+```bash
+adb install path/to/app_output/modded_app-aligned-signed.apk
 adb forward tcp:27042 tcp:27042
-frida -H 127.0.0.1:27042 -n Gadget -l "C:\path\app_output\Hook_Frida.js"
+frida -H 127.0.0.1:27042 -n Gadget -l path/to/app_output/Hook_Frida.js
 ```
 
 ## Parity Verification Signals
@@ -371,6 +395,20 @@ Global options precede subcommands (e.g. `reforge --config custom.yaml status`).
 - `reforge-progress.json`: Session progress and attempt history
 
 ## Development
+
+### Using `uv` (Recommended)
+
+```bash
+git clone https://github.com/sn0wqt/Reforge.git
+cd Reforge
+uv sync --extra dev
+
+uv run pytest tests/ -m "not llm and not ghidra" --strict-markers
+uv run ruff check src/ tests/
+uv run mypy src/reforge/
+```
+
+### Using standard `venv` & `pip`
 
 ```bash
 git clone https://github.com/sn0wqt/Reforge.git

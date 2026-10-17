@@ -154,14 +154,9 @@ try {
     $dumperExe = Join-Path $dumperDir "Il2CppDumper.exe"
 
     [Environment]::SetEnvironmentVariable("REFORGE_TOOLS_DIR", $resolvedInstallRoot, "User")
-    [Environment]::SetEnvironmentVariable("REFORGE_TOOLS_DIR", $resolvedInstallRoot, "User")
-    [Environment]::SetEnvironmentVariable("REFORGE_APK_SIGNER_JAR", $signerJar, "User")
     [Environment]::SetEnvironmentVariable("REFORGE_APK_SIGNER_JAR", $signerJar, "User")
     [Environment]::SetEnvironmentVariable("REFORGE_FRIDA_GADGET_DIR", $gadgetDir, "User")
-    [Environment]::SetEnvironmentVariable("REFORGE_FRIDA_GADGET_DIR", $gadgetDir, "User")
     [Environment]::SetEnvironmentVariable("REFORGE_FRIDA_GADGET_VERSION", $FridaVersion, "User")
-    [Environment]::SetEnvironmentVariable("REFORGE_FRIDA_GADGET_VERSION", $FridaVersion, "User")
-    [Environment]::SetEnvironmentVariable("REFORGE_IL2CPP_DUMPER", $dumperExe, "User")
     [Environment]::SetEnvironmentVariable("REFORGE_IL2CPP_DUMPER", $dumperExe, "User")
     Add-UserPathEntry $platformDir
     Add-UserPathEntry (Join-Path $jadxDir "bin")
@@ -181,7 +176,7 @@ try {
         -Encoding utf8
 
     Write-Host "[+] Android tools installed in $resolvedInstallRoot"
-    Write-Host "[+] Open a new terminal, then run: reforge doctor (or: reforge doctor)"
+    Write-Host "[+] Open a new terminal, then run: reforge doctor"
 }
 finally {
     if (Test-Path -LiteralPath $tempRoot) {
