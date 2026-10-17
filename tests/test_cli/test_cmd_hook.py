@@ -379,6 +379,58 @@ def test_il2cpp_mutation_remains_review_only_even_with_readiness_flags() -> None
     assert "Wallet::GetGems" in review
 
 
+def test_il2cpp_activates_verified_integral_method_rva_hooks() -> None:
+    from reforge.cli.cmd_hook import generate_cpp_hook_for_pathway
+    from reforge.llm.analyzed_target import AnalyzedTarget
+
+    verified_coins = AnalyzedTarget(
+        "RunSessionData",
+        "get_AvailableCoinsForUse",
+        hook_type="return_override",
+        confidence=96,
+        method_rva=0x2E1BA0C,
+        return_type="int32_t",
+        return_value="999999999",
+        signature_verified=True,
+        address_verified=True,
+        implementation_ready=True,
+    )
+    verified_keys = AnalyzedTarget(
+        "CoreRunnerManager",
+        "GetAvailableKeysForUse",
+        hook_type="return_override",
+        confidence=96,
+        method_rva=0x34180CC,
+        return_type="int32_t",
+        return_value="999999999",
+        signature_verified=True,
+        address_verified=True,
+        implementation_ready=True,
+    )
+    unverified = AnalyzedTarget(
+        "Wallet",
+        "GetGems",
+        hook_type="return_override",
+        confidence=99,
+    )
+
+    code = generate_cpp_hook_for_pathway(
+        "give unlimited coins and keys",
+        [verified_coins, verified_keys, unverified],
+        pathway="unity-il2cpp-ios",
+    )
+    active, review = code.split("// TARGET GROUP B", maxsplit=1)
+
+    assert "RunSessionData::get_AvailableCoinsForUse" in active
+    assert "hk_RunSessionData_get_AvailableCoinsForUse" in active
+    assert "CoreRunnerManager::GetAvailableKeysForUse" in active
+    assert "hk_CoreRunnerManager_GetAvailableKeysForUse" in active
+    assert "void install_universal_mod_hooks()" in code
+    assert "klass_0->GetMethod(" in code
+    assert "Wallet::GetGems" not in active
+    assert "Wallet::GetGems" in review
+
+
 def test_hook_generation_has_no_implicit_file_write(
     tmp_path: Path,
     monkeypatch,

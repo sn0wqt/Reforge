@@ -83,21 +83,20 @@ def _is_activation_ready(
         return False
 
     hook_type = str(getattr(target, "hook_type", ""))
-    if generator != "frida":
+    if generator not in {"frida", "il2cpp", "cpp", "native"}:
         return False
 
     if pathway in _DEX_FRIDA_PATHWAYS:
         return (
-            hook_type == "return_override"
+            generator == "frida"
+            and hook_type == "return_override"
             and bool(getattr(target, "method_descriptor", None))
             and str(getattr(target, "return_type", "")) in MUTABLE_SCALAR_CPP_TYPES
         )
 
-    # Frida exposes integer and pointer-sized native return values through
-    # ``retval`` without requiring argument decoding.  Exact IL2CPP method
-    # RVAs may therefore be activated for verified bool/integer returns. Float,
-    # object, struct, field, and behavior-changing argument hooks stay closed
-    # because their ABI/register semantics are not represented by retval.
+    # Exact IL2CPP method RVAs may be activated for verified bool/integer returns
+    # across Frida and Il2CppResolver hooks. Float, object, struct, field, and
+    # behavior-changing argument hooks stay closed for review until ABI verification.
     if pathway.startswith("unity-il2cpp"):
         method_rva = getattr(target, "method_rva", None)
         return_kind = primitive_type_kind(getattr(target, "return_type", ""))
@@ -167,6 +166,7 @@ def generate_universal_hook_for_goal(
     goal_text: str,
     top_matches: list[tuple[str, str, int]] | None = None,
     analyzed_targets: list[Any] | None = None,
+    pathway: str = "unity-il2cpp",
 ) -> str:
     """Generate C++ hooks from LLM-analyzed targets or raw tuples.
 
@@ -201,6 +201,7 @@ def generate_universal_hook_for_goal(
     active_individual, review_individual = _partition_for_activation(
         targets,
         generator="il2cpp",
+        pathway=pathway,
         goal_prompt=goal_text,
     )
     review_total = len(review_individual)
@@ -337,6 +338,7 @@ def generate_cpp_hook_for_pathway(
         return generate_universal_hook_for_goal(
             goal_text,
             analyzed_targets=analyzed_targets,
+            pathway=pathway,
         )
 
     from reforge.llm.analyzed_target import AnalyzedTarget
