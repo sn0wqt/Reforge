@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import struct
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -14,18 +15,157 @@ from reforge.utils.toolchain import resolve_il2cpp_dumper
 MAX_METADATA_TEXT_BYTES = 268_435_456
 
 
+def unchain_macho_fixups(binary_path: str | Path, output_path: str | Path | None = None) -> Path:
+    """Preprocess a Mach-O arm64 binary with LC_DYLD_CHAINED_FIXUPS to resolve rebases.
+
+    Modern Apple toolchains (iOS 15+, macOS 12+) store internal data pointers with chained fixup
+    descriptors rather than raw virtual addresses. This breaks IL2CPP dumpers that rely on direct
+    pointer searches. This function resolves in-binary chained rebases into absolute VAs so that
+    Il2CppDumper and il2dump can locate CodeRegistration, MetadataRegistration, and method pointers.
+    """
+    bin_p = Path(binary_path)
+    if not bin_p.is_file():
+        return bin_p
+
+    try:
+        data = bytearray(bin_p.read_bytes())
+    except (OSError, MemoryError):
+        return bin_p
+
+    if len(data) < 32:
+        return bin_p
+
+    magic = struct.unpack_from("<I", data, 0)[0]
+    # 0xFEEDFACF is MH_MAGIC_64, 0xCFFAEDFE is MH_CIGAM_64
+    if magic not in (0xFEEDFACF, 0xCFFAEDFE):
+        return bin_p
+
+    endian = "<" if magic == 0xFEEDFACF else ">"
+    cputype, cpusubtype, filetype, ncmds, sizeofcmds, flags, reserved = struct.unpack_from(
+        f"{endian}iiIIIII", data, 4
+    )
+
+    offset = 32
+    segments: list[tuple[str, int, int, int, int]] = []
+    chained_fixups_off: int | None = None
+
+    LC_SEGMENT_64 = 0x19
+    LC_DYLD_CHAINED_FIXUPS = 0x80000034
+
+    for _ in range(ncmds):
+        if offset + 8 > len(data):
+            break
+        cmd, cmdsize = struct.unpack_from(f"{endian}II", data, offset)
+        if cmd == LC_SEGMENT_64 and offset + 72 <= len(data):
+            segname = data[offset + 8 : offset + 24].rstrip(b"\x00").decode("latin1", errors="ignore")
+            vmaddr, vmsize, fileoff, filesize = struct.unpack_from(f"{endian}QQQQ", data, offset + 24)
+            segments.append((segname, vmaddr, vmsize, fileoff, filesize))
+        elif cmd == LC_DYLD_CHAINED_FIXUPS and offset + 16 <= len(data):
+            chained_fixups_off, _datasize = struct.unpack_from(f"{endian}II", data, offset + 8)
+        offset += cmdsize
+
+    if chained_fixups_off is None or chained_fixups_off + 28 > len(data):
+        return bin_p
+
+    # Parse dyld_chained_fixups_header
+    version, starts_off, imports_off, symbols_off, imports_count, imports_format, symbols_format = (
+        struct.unpack_from(f"{endian}IIIIIII", data, chained_fixups_off)
+    )
+
+    starts_in_image_off = chained_fixups_off + starts_off
+    if starts_in_image_off + 4 > len(data):
+        return bin_p
+
+    seg_count = struct.unpack_from(f"{endian}I", data, starts_in_image_off)[0]
+    if starts_in_image_off + 4 + (4 * seg_count) > len(data):
+        return bin_p
+
+    rebase_count = 0
+    for seg_idx in range(min(seg_count, len(segments))):
+        seg_info_offset = struct.unpack_from(f"{endian}I", data, starts_in_image_off + 4 + 4 * seg_idx)[0]
+        if seg_info_offset == 0:
+            continue
+        seg_starts_off = starts_in_image_off + seg_info_offset
+        if seg_starts_off + 22 > len(data):
+            continue
+        size, page_size, pointer_format = struct.unpack_from(f"{endian}IHH", data, seg_starts_off)
+        segment_offset = struct.unpack_from(f"{endian}Q", data, seg_starts_off + 8)[0]
+        max_valid, page_count = struct.unpack_from(f"{endian}IH", data, seg_starts_off + 16)
+
+        seg_file_off = segments[seg_idx][3]
+        if seg_starts_off + 22 + (2 * page_count) > len(data):
+            continue
+
+        page_starts = [
+            struct.unpack_from(f"{endian}H", data, seg_starts_off + 22 + 2 * p)[0] for p in range(page_count)
+        ]
+
+        for page_idx, page_start in enumerate(page_starts):
+            if page_start == 0xFFFF:  # DYLD_CHAINED_PTR_START_NONE
+                continue
+            chain_loc = seg_file_off + (page_idx * page_size) + page_start
+            while chain_loc + 8 <= len(data):
+                raw_val = struct.unpack_from(f"{endian}Q", data, chain_loc)[0]
+                if pointer_format in (2, 6):  # DYLD_CHAINED_PTR_64 / DYLD_CHAINED_PTR_64_OFFSET
+                    is_bind = (raw_val >> 63) & 1
+                    next_stride = (raw_val >> 51) & 0xFFF
+                    if not is_bind:
+                        target = raw_val & 0xFFFFFFFFF
+                        high8 = (raw_val >> 36) & 0xFF
+                        fixed_va = target | (high8 << 56)
+                        struct.pack_into(f"{endian}Q", data, chain_loc, fixed_va)
+                        rebase_count += 1
+                    if next_stride == 0:
+                        break
+                    chain_loc += next_stride * 4
+                elif pointer_format in (1, 7, 9, 10, 12):  # ARM64E variants
+                    is_bind = (raw_val >> 62) & 1
+                    is_auth = (raw_val >> 63) & 1
+                    next_stride = (raw_val >> 51) & 0x7FF
+                    if not is_bind and not is_auth:
+                        target = raw_val & 0x7FFFFFFFFFF
+                        high8 = (raw_val >> 43) & 0xFF
+                        fixed_va = target | (high8 << 56)
+                        struct.pack_into(f"{endian}Q", data, chain_loc, fixed_va)
+                        rebase_count += 1
+                    if next_stride == 0:
+                        break
+                    chain_loc += next_stride * (4 if pointer_format in (7, 10) else 8)
+                else:
+                    break
+
+    if rebase_count == 0:
+        return bin_p
+
+    target_out = Path(output_path) if output_path else bin_p.with_name(f"{bin_p.stem}.fixed{bin_p.suffix}")
+    try:
+        target_out.write_bytes(data)
+        return target_out
+    except OSError:
+        return bin_p
+
+
 def find_il2cpp_dumper(explicit_path: str | Path | None = None) -> str | None:
-    """Single source of truth for resolving the Il2CppDumper CLI executable path."""
+    """Single source of truth for resolving the Il2CppDumper / il2dump CLI executable path."""
     if explicit_path:
         explicit = Path(explicit_path).expanduser()
         if explicit.is_file():
-            return str(explicit_path)
-    cargo_bin = Path.home() / ".cargo" / "bin" / "il2cpp_dumper.exe"
-    resolved = resolve_il2cpp_dumper()
+            return str(explicit.resolve())
+    resolved = resolve_il2cpp_dumper(explicit_path)
     if resolved is not None:
         return str(resolved)
-    if cargo_bin.is_file():
-        return str(cargo_bin.resolve())
+    for name in (
+        "il2cpp-dumper",
+        "il2cpp_dumper",
+        "il2cpp_dumper.exe",
+        "Il2CppDumper",
+        "Il2CppDumper.exe",
+        "il2dump",
+        "il2dump.exe",
+    ):
+        cargo_bin = Path.home() / ".cargo" / "bin" / name
+        if cargo_bin.is_file():
+            return str(cargo_bin.resolve())
     return None
 
 
@@ -69,6 +209,10 @@ def run_il2cpp_dumper_cli(
             "output_dir": str(out_p),
         }
 
+    # Resolve modern Mach-O chained fixups (iOS 15+, macOS 12+) so dumper heuristic scans succeed
+    fixed_bin_candidate = out_p / f"{bin_p.name}.fixed"
+    effective_bin = unchain_macho_fixups(bin_p, fixed_bin_candidate)
+
     artifact_paths = tuple(out_p / name for name in ("script.json", "dump.cs", "il2cpp.h", "static_metadata.json"))
 
     try:
@@ -95,17 +239,23 @@ def run_il2cpp_dumper_cli(
             stale_file.unlink(missing_ok=True)
 
         commands_to_try = [
-            # Rust dumper
-            [dumper_bin, "-b", str(bin_p), "-m", str(meta_p), "-o", str(out_p)],
-            # Standard C# dumper
-            [dumper_bin, str(bin_p), str(meta_p), str(out_p)],
+            # Standard positional syntax used by both C# Il2CppDumper and Rust il2dump
+            [dumper_bin, str(effective_bin), str(meta_p), str(out_p)],
+            # Rust dumper flag syntax (-b, -m, -o)
+            [dumper_bin, "-b", str(effective_bin), "-m", str(meta_p), "-o", str(out_p)],
         ]
+        if effective_bin != bin_p:
+            commands_to_try.extend([
+                [dumper_bin, str(bin_p), str(meta_p), str(out_p)],
+                [dumper_bin, "-b", str(bin_p), "-m", str(meta_p), "-o", str(out_p)],
+            ])
 
         artifacts: tuple[Path, ...] = ()
         res: subprocess.CompletedProcess[str] | None = None
         for cmd in commands_to_try:
             res = subprocess.run(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 encoding="utf-8",
                 errors="replace",
@@ -118,6 +268,10 @@ def run_il2cpp_dumper_cli(
             )
             if res.returncode == 0 and bool(artifacts):
                 break
+
+        # Clean up temporary fixed binary if sidecars were created
+        if bool(artifacts) and effective_bin != bin_p and effective_bin.is_file():
+            effective_bin.unlink(missing_ok=True)
 
         success = bool(artifacts)
         stdout = res.stdout if res is not None else ""

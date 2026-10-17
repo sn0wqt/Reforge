@@ -27,6 +27,15 @@ def managed_tools_root() -> Path:
         if legacy_dir.is_dir() and not reforge_dir.is_dir():
             return legacy_dir
         return reforge_dir
+    import sys
+
+    if sys.platform == "darwin":
+        mac_dir = Path.home() / "Library" / "Application Support" / "Reforge" / "tools"
+        legacy_mac_dir = Path.home() / "Library" / "Application Support" / "auto-re-agent" / "tools"
+        if legacy_mac_dir.is_dir() and not mac_dir.is_dir():
+            return legacy_mac_dir
+        return mac_dir
+
     reforge_home = Path.home() / ".local" / "share" / "Reforge" / "tools"
     legacy_home = Path.home() / ".local" / "share" / "auto-re-agent" / "tools"
     if legacy_home.is_dir() and not reforge_home.is_dir():
@@ -91,7 +100,11 @@ def resolve_apktool(explicit: str | Path | None = None) -> Path | None:
             return candidate.resolve()
 
     parent = managed_tools_root() / "apktool"
-    names = ("apktool.bat", "apktool.cmd", "apktool.exe", "apktool")
+    names = (
+        ("apktool.bat", "apktool.cmd", "apktool.exe", "apktool")
+        if os.name == "nt"
+        else ("apktool", "apktool.jar", "apktool.sh", "apktool.bat")
+    )
     for version_dir in _version_directories(parent):
         for name in names:
             candidate = version_dir / name
@@ -99,9 +112,10 @@ def resolve_apktool(explicit: str | Path | None = None) -> Path | None:
                 return candidate.resolve()
     resolved = (
         shutil.which("apktool")
+        or (shutil.which("apktool.bat") if os.name == "nt" else None)
+        or (shutil.which("apktool.cmd") if os.name == "nt" else None)
+        or (shutil.which("apktool.exe") if os.name == "nt" else None)
         or shutil.which("apktool.bat")
-        or shutil.which("apktool.cmd")
-        or shutil.which("apktool.exe")
     )
     return Path(resolved).resolve() if resolved else None
 
@@ -149,8 +163,13 @@ def resolve_il2cpp_dumper(explicit: str | Path | None = None) -> Path | None:
             return candidate.resolve()
 
     parent = managed_tools_root() / "il2cpp-dumper"
+    dumper_names = (
+        ("Il2CppDumper.exe", "Il2CppDumper")
+        if os.name == "nt"
+        else ("Il2CppDumper", "il2dump", "Il2CppDumper.exe")
+    )
     for version_dir in _version_directories(parent):
-        for name in ("Il2CppDumper.exe", "Il2CppDumper"):
+        for name in dumper_names:
             candidate = version_dir / name
             if candidate.is_file():
                 return candidate.resolve()
@@ -161,10 +180,20 @@ def resolve_il2cpp_dumper(explicit: str | Path | None = None) -> Path | None:
         "il2cpp-dumper.exe",
         "il2cpp_dumper",
         "il2cpp_dumper.exe",
+        "il2dump",
+        "il2dump.exe",
     ):
         resolved = shutil.which(name)
         if resolved:
             return Path(resolved).resolve()
+
+    cargo_candidates = [
+        Path.home() / ".cargo" / "bin" / name
+        for name in ("il2cpp_dumper", "il2cpp_dumper.exe", "il2cpp-dumper", "Il2CppDumper", "il2dump", "il2dump.exe")
+    ]
+    for candidate in cargo_candidates:
+        if candidate.is_file():
+            return candidate.resolve()
     return None
 
 
@@ -214,6 +243,90 @@ def resolve_wakaru(explicit: str | Path | None = None) -> Path | None:
             if candidate.is_file():
                 return candidate.resolve()
     for name in names:
+        resolved = shutil.which(name)
+        if resolved:
+            return Path(resolved).resolve()
+    return None
+
+
+def resolve_ghidra(explicit: str | Path | None = None) -> Path | None:
+    """Resolve Ghidra launcher or headless analysis script across platforms."""
+    import sys
+
+    values = [
+        explicit,
+        os.environ.get("REFORGE_GHIDRA"),
+        os.environ.get("GHIDRA_INSTALL_DIR"),
+        os.environ.get("GHIDRA_HOME"),
+    ]
+    for value in values:
+        if not value:
+            continue
+        candidate = Path(value).expanduser()
+        if candidate.is_file():
+            return candidate.resolve()
+        if candidate.is_dir():
+            names = (
+                ("ghidraRun.bat", "analyzeHeadless.bat", "ghidraRun", "analyzeHeadless")
+                if os.name == "nt"
+                else ("ghidraRun", "analyzeHeadless", "support/analyzeHeadless")
+            )
+            for name in names:
+                launcher = candidate / name
+                if launcher.is_file():
+                    return launcher.resolve()
+
+    system_dirs: list[Path] = []
+    if sys.platform == "darwin":
+        system_dirs.extend(
+            [
+                Path("/Applications"),
+                Path.home() / "Applications",
+                Path("/opt/homebrew/bin"),
+                Path("/usr/local/bin"),
+            ]
+        )
+    elif os.name != "nt":
+        system_dirs.extend(
+            [
+                Path("/opt"),
+                Path("/usr/local"),
+                Path("/usr/share"),
+            ]
+        )
+    else:
+        for drive in ("C:", "D:"):
+            system_dirs.extend(
+                [
+                    Path(f"{drive}\\Program Files"),
+                    Path(f"{drive}\\ghidra"),
+                ]
+            )
+
+    for sys_dir in system_dirs:
+        if not sys_dir.is_dir():
+            continue
+        try:
+            for child in sys_dir.glob("ghidra*"):
+                if child.is_dir():
+                    ghidra_launchers: tuple[str, ...] = (
+                        ("ghidraRun.bat", "analyzeHeadless.bat")
+                        if os.name == "nt"
+                        else ("ghidraRun", "support/analyzeHeadless", "analyzeHeadless")
+                    )
+                    for launcher_name in ghidra_launchers:
+                        launcher = child / launcher_name
+                        if launcher.is_file():
+                            return launcher.resolve()
+        except OSError:
+            pass
+
+    names_to_which: tuple[str, ...] = (
+        ("ghidraRun.bat", "analyzeHeadless.bat", "ghidraRun", "analyzeHeadless")
+        if os.name == "nt"
+        else ("ghidraRun", "analyzeHeadless", "ghidra-bridge")
+    )
+    for name in names_to_which:
         resolved = shutil.which(name)
         if resolved:
             return Path(resolved).resolve()

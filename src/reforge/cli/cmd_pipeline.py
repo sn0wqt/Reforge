@@ -638,14 +638,24 @@ def _write_ios_notes(
         else "No deployable bundle was created; use Hook_Frida.js for runtime injection."
     )
     notes = output_dir / "IOS_DEPLOYMENT_NOTES.txt"
+    if sys.platform == "darwin":
+        platform_signing_note = (
+            "Apple IPA code signing on macOS requires a valid provisioning profile and certificate.\n"
+            "Sign manually using codesign:\n"
+            '  codesign --force --sign "<identity>" --entitlements Entitlements.plist Payload/<App>.app'
+        )
+    else:
+        platform_signing_note = (
+            f"Apple IPA code signing requires macOS codesign, a provisioning profile,\n"
+            f"and an Apple Developer certificate. Reforge does not claim to sign\n"
+            f"an IPA from non-macOS platforms ({sys.platform})."
+        )
     notes.write_text(
         "\n".join(
             [
                 f"Pathway: {architecture.display_name}",
                 "",
-                "Apple IPA code signing requires macOS codesign, a provisioning profile,",
-                "and an Apple Developer certificate. Reforge does not claim to sign",
-                "an IPA from Windows.",
+                platform_signing_note,
                 "",
                 bundle_note,
                 "Deploy Hook_Frida.js on a jailbroken or tethered test device using Frida.",
@@ -754,10 +764,15 @@ def _repackage_android(
     if not java:
         return False, "Java was not found on PATH."
     if signer is None:
+        setup_script = (
+            "scripts/setup_android_tools.ps1"
+            if sys.platform == "win32"
+            else "scripts/setup_android_tools.sh"
+        )
         return (
             False,
-            "No trusted uber-apk-signer JAR was found. Run "
-            "scripts/setup_android_tools.ps1 or set REFORGE_APK_SIGNER_JAR / REFORGE_APK_SIGNER_JAR.",
+            f"No trusted uber-apk-signer JAR was found. Run {setup_script} "
+            "or set REFORGE_APK_SIGNER_JAR / RE_AGENT_APK_SIGNER_JAR.",
         )
 
     signed_apk = output_dir / "modded_app-aligned-signed.apk"
@@ -788,7 +803,7 @@ def _repackage_android(
                 return (
                     False,
                     "apktool is required for manifest/native structural changes, but "
-                    "was not found on PATH and neither REFORGE_APKTOOL nor REFORGE_APKTOOL is a valid launcher.",
+                    "was not found on PATH and neither REFORGE_APKTOOL nor RE_AGENT_APKTOOL is a valid launcher.",
                 )
             ok, output = _run_tool([apktool, "d", "-f", str(binary_path), "-o", str(decoded)])
             if not ok:
@@ -1002,7 +1017,7 @@ def _prepare_windows_package(
     (package_dir / "SIGNING_NOTES.txt").write_text(
         "Windows Authenticode signing requires your code-signing certificate.\n"
         "Review and compile Hook_Goal.cpp, inject it using your chosen framework,\n"
-        "then sign the resulting executable with signtool on a trusted machine.\n",
+        "then sign the resulting executable with signtool on Windows or osslsigncode on Linux/macOS.\n",
         encoding="utf-8",
     )
     return package_dir
@@ -1151,9 +1166,14 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
             version=str(configured_version or local_frida or "") or None,
         )
         if resolved_gadget is None:
+            setup_script = (
+                "scripts/setup_android_tools.ps1"
+                if sys.platform == "win32"
+                else "scripts/setup_android_tools.sh"
+            )
             print(
-                "[!] No matching local Frida Gadget installation was found. "
-                "Run scripts/setup_android_tools.ps1 or pass --frida-gadget-path."
+                f"[!] No matching local Frida Gadget installation was found. "
+                f"Run {setup_script} or pass --frida-gadget-path."
             )
             return 2
         gadget_input = resolved_gadget
@@ -1222,11 +1242,11 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
         dumper_value = find_il2cpp_dumper(getattr(args, "il2cpp_dumper", None))
         if not dumper_value:
             print(
-                "[!] Warning: Unity IL2CPP target detected, but Il2CppDumper executable was not found in system PATH."
+                "[!] Warning: Unity IL2CPP target detected, but Il2CppDumper / il2dump was not found."
             )
             print(
                 "[!] To enable automatic C# metadata dumping (dump.cs / script.json), "
-                "pass --il2cpp-dumper <path/to/Il2CppDumper.exe>"
+                "install il2dump (cargo install il2dump) or pass --il2cpp-dumper <path>"
             )
         else:
             print(f"[+] Found Il2CppDumper executable: {dumper_value}")
@@ -1415,7 +1435,7 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
         from reforge.cli.cmd_batch import cmd_batch
 
         batch_args = argparse.Namespace(
-            config=getattr(args, "config", None) or "reforge.yaml",
+            config=getattr(args, "config", None),
             auto_discover=True,
             goal=goal or None,
             symbol=None,
@@ -1890,12 +1910,20 @@ def _cmd_pipeline_impl(args: argparse.Namespace) -> int:
         )
         print(f"[+] Prepared Windows package: {package_dir}")
     elif bool(getattr(args, "repack_apk", False)) and architecture.is_ios:
-        print("[!] iOS IPA signing is unavailable on Windows; see IOS_DEPLOYMENT_NOTES.txt.")
+        if sys.platform == "darwin":
+            print(
+                "[!] iOS IPA automated repackaging requires valid Apple Developer certificates; "
+                "see IOS_DEPLOYMENT_NOTES.txt for macOS codesign instructions."
+            )
+        else:
+            print(f"[!] iOS IPA signing is unavailable on {sys.platform}; see IOS_DEPLOYMENT_NOTES.txt.")
         stages.append(
             PipelineStage(
                 "packaging",
                 "FAILED",
-                "iOS signing is unavailable on this platform.",
+                "iOS signing requires Apple Developer certificates; see deployment notes."
+                if sys.platform == "darwin"
+                else "iOS signing is unavailable on this platform.",
             )
         )
         _write_pipeline_manifest(
